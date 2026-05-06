@@ -1,7 +1,10 @@
-#spring:
-#  profiles:
-#    active: common, interactive
-#    include: common, interactive
-#
-#  main:
-#    allow-bean-definition-overriding: true
+server:
+  port: 9016
+
+spring:
+  profiles:
+    active: common
+    include: common
+
+  main:
+    allow-bean-definition-overriding: true

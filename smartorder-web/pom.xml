@@ -32,6 +32,11 @@
         <java.version>21</java.version>
     </properties>
     <dependencies>
+        <!-- Spring Boot Web Starter - 必须直接引入以确保 SpringApplication 类可用 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.smartorder.edu</groupId>
             <artifactId>smartorder-common</artifactId>
