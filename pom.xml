@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.11</version>
+        <version>3.5.14</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.smartorder.edu</groupId>
@@ -16,14 +16,11 @@
     <packaging>pom</packaging>
 
     <modules>
-        <module>smartorder-web</module>
         <module>smartorder-common</module>
-        <module>smartorder-teacher</module>
-        <module>smartorder-manage</module>
+        <module>smartorder-web</module>
         <module>smartorder-student</module>
-<!--        <module>smartorder-interactive</module>-->
+        <module>smartorder-manage</module>
     </modules>
-
     <url/>
     <licenses>
         <license/>
@@ -38,8 +35,8 @@
         <url/>
     </scm>
     <properties>
-        <commons-codec.version>1.16.0</commons-codec.version>
         <java.version>21</java.version>
+        <commons-codec.version>1.16.0</commons-codec.version>
         <spring-ai.version>1.1.2</spring-ai.version>
         <hutool.version>5.8.40</hutool.version>
         <mybatis-plus.version>3.5.12</mybatis-plus.version>
@@ -52,6 +49,8 @@
         <langchain4j.version>1.0.0-beta3</langchain4j.version>
         <swagger.version>4.5.0</swagger.version>
     </properties>
+
+
 
     <dependencyManagement>
         <dependencies>
@@ -140,6 +139,24 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- JUnit Platform Launcher 依赖 -->
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- JUnit Platform Launcher 依赖 -->
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- JUnit Platform Launcher 依赖 -->
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
             <scope>test</scope>
         </dependency>
         <!-- JUnit Platform Launcher 依赖 -->
@@ -349,6 +366,17 @@
             <version>4.37.0</version>
         </dependency>
 
+        <!--Apache POI 处理 Office 文件的核心库-->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.2.3</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-scratchpad</artifactId>
+            <version>5.2.3</version>
+        </dependency>
         <!-- fastjson依赖（解析JSON响应） -->
         <dependency>
             <groupId>com.alibaba</groupId>
@@ -369,14 +397,12 @@
             <scope>compile</scope> <!-- 非测试环境需改为compile，默认test -->
         </dependency>
 
-
         <!-- langchain4j 的 MyBatis 存储支持 -->
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-easy-rag</artifactId>
             <version>${langchain4j.version}</version>
         </dependency>
-
 
         <dependency>
             <groupId>dev.langchain4j</groupId>
@@ -389,7 +415,6 @@
             <artifactId>langchain4j-core</artifactId>
             <version>${langchain4j.version}</version>
         </dependency>
-
 
         <dependency>
             <groupId>dev.langchain4j</groupId>
@@ -450,7 +475,6 @@
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
 
-
         <dependency>
             <groupId>org.bytedeco</groupId>
             <artifactId>javacv-platform</artifactId>
@@ -462,14 +486,15 @@
             <artifactId>tls-sig-api-v2</artifactId>
             <version>1.1</version>
         </dependency>
-
-
-
-
     </dependencies>
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
         </plugins>
     </build>
+
 </project>

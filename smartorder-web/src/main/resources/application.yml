@@ -1,10 +1,7 @@
-server:
-  port: 9016
-
 spring:
   profiles:
-    active: common
-    include: common
+    active: common, interactive
+    include: common, interactive
 
   main:
     allow-bean-definition-overriding: true
