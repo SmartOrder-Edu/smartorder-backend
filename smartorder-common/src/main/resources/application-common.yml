@@ -7,90 +7,89 @@ spring:
       max-file-size: 500MB
       max-request-size: 500MB
 
-#  ai:
-#    openai:
-#      api-key: ${DEEPSEEK_API_KEY}
-#      chat:
-#        base-url: "https://api.deepseek.com/"
-#        options:
-#          model: "deepseek-reasoner"
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY}
+      chat:
+        base-url: "https://api.deepseek.com/"
+        options:
+          model: "deepseek-reasoner"
 
   datasource:
-    # 1. ??????
+    # 1. 基本连接信息
     type: com.alibaba.druid.pool.DruidDataSource
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://117.72.159.146:3306/qihui_db?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&useSSL=false
+    url: jdbc:mysql://117.72.222.3:3306/smart_order_db?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&useSSL=false&allowPublicKeyRetrieval=true
     username: ${mysql_username}
     password: ${mysql_password}
 
+    # 2. Druid 核心配置
+    druid:
+      # 数据源基础配置
+      initial-size: 5
+      min-idle: 5
+      max-active: 20
+      # 监控页面配置（核心）
+      stat-view-servlet:
+        enabled: true
+        url-pattern: /druid/*
+        login-username: xgx
+        login-password: xgx123
+        reset-enable: false
+      # web统计过滤器
+      web-stat-filter:
+        enabled: true
+        url-pattern: /*
+        exclusions: "*.js,*.gif,*.jpg,*.png,*.css,*.ico,/druid/*"
+      # 开启监控过滤器
+      filters: stat,wall,slf4j
+      filter:
+        stat:
+          log-slow-sql: true
+          slow-sql-millis: 2000
 
-#    # 2. Druid ????
-#    druid:
-#      # ???????
-#      initial-size: 5
-#      min-idle: 5
-#      max-active: 20
-#      # ??????????
-#      stat-view-servlet:
-#        enabled: true
-#        url-pattern: /druid/*
-#        login-username: xgx
-#        login-password: xgx123
-#        reset-enable: false
-#      # web?????
-#      web-stat-filter:
-#        enabled: true
-#        url-pattern: /*
-#        exclusions: "*.js,*.gif,*.jpg,*.png,*.css,*.ico,/druid/*"
-#      # ???????
-#      filters: stat,wall,slf4j
-#      filter:
-#        stat:
-#          log-slow-sql: true
-#          slow-sql-millis: 2000
-
-  #    # 2. Druid?????????????????????
+  #    # 2. Druid专有配置（核心：开启监控、配置连接池参数）
   #    druid:
-  #      # 2.1 ??????????????
-  #      initial-size: 5                # ??????
-  #      min-idle: 5                    # ???????
-  #      max-active: 20                 # ???????
-  #      max-wait: 60000                # ????????????????
-  #      time-between-eviction-runs-millis: 60000  # ??60?????????
-  #      min-evictable-idle-time-millis: 300000    # ????300?????
-  #      validation-query: SELECT 1 FROM DUAL      # ???????SQL
-  #      test-while-idle: true          # ??????????
-  #      test-on-borrow: false          # ??????????????
-  #      test-on-return: false          # ??????????????
-  #      pool-prepared-statements: true # ????????
-  #      max-pool-prepared-statement-per-connection-size: 20 # ??????????????
+  #      # 2.1 连接池配置（优化连接池性能）
+  #      initial-size: 5                # 初始化连接数
+  #      min-idle: 5                    # 最小空闲连接数
+  #      max-active: 20                 # 最大活跃连接数
+  #      max-wait: 60000                # 获取连接时的最大等待时间（毫秒）
+  #      time-between-eviction-runs-millis: 60000  # 每隔60秒检查一次空闲连接
+  #      min-evictable-idle-time-millis: 300000    # 连接空闲300秒后被驱逐
+  #      validation-query: SELECT 1 FROM DUAL      # 连接有效性检查SQL
+  #      test-while-idle: true          # 空闲时检查连接有效性
+  #      test-on-borrow: false          # 借用连接时不检查（提高性能）
+  #      test-on-return: false          # 返回连接时不检查（提高性能）
+  #      pool-prepared-statements: true # 开启预编译语句池
+  #      max-pool-prepared-statement-per-connection-size: 20 # 每个连接的预编译语句最大数量
   #
-  #      # 2.2 ??????????stat???????????
-  #      filters: stat,wall,log4j2      # ???????stat?????wall?SQL?????log4j2????
+  #      # 2.2 监控配置（核心：开启stat过滤器、配置监控页面）
+  #      filters: stat,wall,log4j2      # 启用的过滤器：stat（统计）、wall（SQL防火墙）、log4j2（日志）
   #      filter:
   #        stat:
-  #          slow-sql-millis: 5000      # ????????5??SQL??????
-  #          log-slow-sql: true         # ???????
-  #          merge-sql: true            # ????SQL?????
+  #          slow-sql-millis: 5000      # 慢查询阈值（超过5秒的SQL视为慢查询）
+  #          log-slow-sql: true         # 记录慢查询日志
+  #          merge-sql: true            # 合并相同SQL的统计结果
   #        wall:
   #          config:
-  #            multi-statement-allow: true # ???????SQL??url??allowMultiQueries=true???
+  #            multi-statement-allow: true # 允许执行多语句SQL（与url中的allowMultiQueries=true对应）
   #
-  #      # 2.3 Web??????????Druid?????
+  #      # 2.3 Web监控配置（可选：开启Druid监控页面）
   #      web-stat-filter:
-  #        enabled: true                # ??Web????
-  #        url-pattern: /*              # ????URL
-  #        exclusions: "*.js,*.gif,*.jpg,*.png,*.css,*.ico,/druid/*" # ???????Druid????
+  #        enabled: true                # 开启Web应用监控
+  #        url-pattern: /*              # 监控所有URL
+  #        exclusions: "*.js,*.gif,*.jpg,*.png,*.css,*.ico,/druid/*" # 排除静态资源和Druid自身页面
   #      stat-view-servlet:
-  #        enabled: true                # ??Druid????
-  #        url-pattern: /druid/*        # ???????????http://localhost:??/druid?????
-  #        reset-enable: false          # ?????????????????
-  #        login-username: admin        # ??????????????
-  #        login-password: admin        # ?????????????
-  #        allow: 127.0.0.1             # ?????IP?????????
-  #        deny: 192.168.1.100          # ?????IP????
+  #        enabled: true                # 开启Druid监控页面
+  #        url-pattern: /druid/*        # 监控页面访问路径（访问http://localhost:端口/druid即可进入）
+  #        reset-enable: false          # 禁用“重置统计”功能（防止误操作）
+  #        login-username: admin        # 监控页面登录用户名（自定义）
+  #        login-password: admin        # 监控页面登录密码（自定义）
+  #        allow: 127.0.0.1             # 允许访问的IP（默认只允许本地）
+  #        deny: 192.168.1.100          # 禁止访问的IP（可选）
 
-  # Redis??
+  # Redis配置
   data:
     redis:
       database: 1
@@ -102,8 +101,8 @@ spring:
           max-active: 8
           max-idle: 8
           min-idle: 0
-          max-wait: 100 # ??????????
-  # RabbitMQ??
+          max-wait: 100 # 连接等待时间（毫秒）
+  # RabbitMQ配置
   rabbitmq:
     host: 117.72.159.146
     port: 5672
@@ -113,123 +112,123 @@ spring:
     connection-timeout: 1s
     template:
       retry:
-        enabled: true # ???????
-        initial-interval: 1000ms # ???????????????????????
-        max-attempts: 1  # ??????
-        multiplier: 3 # ???????????? 5s * 2 = 10s?
-    publisher-confirm-type: correlated # ????????????????
-    publisher-returns: true # ????????????????????????
+        enabled: true # 开启消费者重试
+        initial-interval: 1000ms # 首次重试间隔（可视为首次“回滚”后的等待时间）
+        max-attempts: 1  # 最大重试次数
+        multiplier: 3 # 重试间隔乘数（第二次等待 5s * 2 = 10s）
+    publisher-confirm-type: correlated # 发布确认类型（确保消息可靠投递）
+    publisher-returns: true # 开启发布失败返回（确保消息投递失败时能得到通知）
 
-    # ???????
+    # 消息监听器配置
     listener:
       simple:
-        acknowledge-mode: auto # Spring ???????ack
-        prefetch: 1 # ???????????????????
+        acknowledge-mode: auto # Spring 自动帮我们手动ack
+        prefetch: 1 # 每次只处理一条消息，处理完再接收下一条
         concurrency: 2
         max-concurrency: 5
         retry:
-          enabled: true # ???????????????
-          initial-interval: 5000ms # ?????5?????
+          enabled: true # 这才是真正的开启【消费者】重试
+          initial-interval: 5000ms # 失败后每隔5秒重试一次
           max-attempts: 3
-          multiplier: 2 # ?????????????????5s?????????10s?????????20s?
+          multiplier: 2 # 每次重试间隔乘数（第一次失败后等待5s，第二次失败后等待10s，第三次失败后等待20s）
 
-#llm:
-#  deepSeek:
-#    url: https://api.deepseek.com/
-#    api-key: ${DEEPSEEK_API_KEY}
-#  glm:
-#    url: https://open.bigmodel.cn/api/paas/
-#    completions-path: /v4/chat/completions
-#    api-key: ${ZAI_API_KEY}
+llm:
+  deepSeek:
+    url: https://api.deepseek.com/
+    api-key: ${DEEPSEEK_API_KEY}
+  glm:
+    url: https://open.bigmodel.cn/api/paas/
+    completions-path: /v4/chat/completions
+    api-key: ${ZAI_API_KEY}
 
-# ???OSS??
+# 阿里云OSS配置
 aliyun:
-  #oss???
+  #oss云服务
   oss:
     endpoint: https://oss-cn-beijing.aliyuncs.com
     accessKeyId: ${aliyun_oss_id}
     accessKeySecret: ${aliyun_oss_key}
     bucketName: qihui-duomo
-#  #tts
-#  tts:
-#    appKey: ${aliyun_tts_app_key}
-#    url: https://nls-gateway-cn-shanghai.aliyuncs.com/rest/v1/tts/async
-#  asr:
-#    appKey: ${aliyun_asr_app_key}
-#    accessKeyId: ${aliyun_asr_id}
-#    accessKeySecret: ${aliyun_asr_key}
+  #tts
+  tts:
+    appKey: ${aliyun_tts_app_key}
+    url: https://nls-gateway-cn-shanghai.aliyuncs.com/rest/v1/tts/async
+  asr:
+    appKey: ${aliyun_asr_app_key}
+    accessKeyId: ${aliyun_asr_id}
+    accessKeySecret: ${aliyun_asr_key}
 
-#baidu:
-#  ocr:
-#    appId: ${baidu_ocr_appId}
-#    apiKey: ${baidu_ocr_apiKey}
-#    secretKey: ${baidu_ocr_secretKey}
-# ????
+baidu:
+  ocr:
+    appId: ${baidu_ocr_appId}
+    apiKey: ${baidu_ocr_apiKey}
+    secretKey: ${baidu_ocr_secretKey}
+# 邮箱配置
 email:
   host: smtp.qq.com
   port: 465
   username: ${email_username}
-  password: ${email_key}  # SMTP???
+  password: ${email_key}  # SMTP授权码
 
-## Milvus ???????
-#milvus:
-#  host: 117.72.159.146
-#  port: 19530
-#  collection-name: teacher_semantic_memory  # ????
-#  dimension: 512                            # BGE-small-zh ?????? 512
-#
-## Python ??????
-#python:
-#  parse:
-#    service:
-#      base-url: http://117.72.159.146:8088/api/v1/execute
-#      connect-timeout: 10
-#      read-timeout: 30
-#
-#  rag:
-#    service:
-#      base-url: http://117.72.159.146:8088/api/v1/execute
-#
-## =======================================================
-## LangChain4j ??????? (?? Agent ? Tool Calling)
-## =======================================================
-#langchain4j:
-#  open-ai:
-#    streaming-chat-model:
-#      api-key: ${DEEPSEEK_API_KEY}
-#      # DeepSeek ??????? OpenAI ??????????? URL ??? /v1
-#      base-url: https://api.deepseek.com/v1
-#      model-name: deepseek-reasoner
-#      # ??????????????????
-#      # ??????????????????? JSON Schema ??????
-#      # ???????????????????????????
-#      log-requests: true
-#      log-responses: true
-#
-## ?????????
-#xfyun:
-#  avatar:
-#    app-id: ${xfyun_avatar_app_id}
-#    api-key: ${xfyun_avatar_api_key}
-#    api-secret: ${xfyun_avatar_api_secret}
-#    # ?????????/??ID (???????????????)
-#    scene-id: ${xfyun_avatar_scene_id}
-#    # ??????? WebSocket ????
-#    host-url: wss://avatar.cn-huadong-1.xf-yun.com/v1/interact
-#
-## ?????
-#tencent:
-#  trtc:
-#    # ?????????? TRTC ???????? AppId
-#    sdk-app-id: ${tencent_trtc_appid}
-#    # ???????????? UserSig ???
-#    secret-key: ${tencent_trtc_secret}
-#    # ????????????? 86400 (1?) 60?
-#    expire-time: 5184000
-#
-#tavily:
-#  api:
-#    api-key: ${TAVILY_API_KEY}
+# Milvus 向量数据库配置
+milvus:
+  host: 117.72.159.146
+  port: 19530
+  collection-name: teacher_semantic_memory  # 集合名称
+  dimension: 512                            # BGE-small-zh 模型的维度是 512
+
+# Python 解析服务配置
+python:
+  parse:
+    service:
+      base-url: http://117.72.159.146:8088/api/v1/execute
+      connect-timeout: 10
+      read-timeout: 30
+
+  rag:
+    service:
+      base-url: http://117.72.159.146:8088/api/v1/execute
+
+# =======================================================
+# LangChain4j 核心大模型配置 (用于 Agent 和 Tool Calling)
+# =======================================================
+langchain4j:
+  open-ai:
+    streaming-chat-model:
+      api-key: ${DEEPSEEK_API_KEY}
+      # DeepSeek 提供了完全兼容 OpenAI 格式的接口，通常需要在 URL 后加上 /v1
+      base-url: https://api.deepseek.com/v1
+      model-name: deepseek-reasoner
+      # 强烈建议在开发阶段开启以下两项日志！
+      # 这能让你在控制台清楚地看到发给大模型的 JSON Schema 是什么样的，
+      # 以及大模型返回的工具调用指令长什么样，非常有助于排障。
+      log-requests: true
+      log-responses: true
+
+# 讯飞虚拟人交互配置
+xfyun:
+  avatar:
+    app-id: ${xfyun_avatar_app_id}
+    api-key: ${xfyun_avatar_api_key}
+    api-secret: ${xfyun_avatar_api_secret}
+    # 交互平台分配的场景/服务ID (如果是在前端写死，这里可以不配)
+    scene-id: ${xfyun_avatar_scene_id}
+    # 官方提供的基础 WebSocket 接口地址
+    host-url: wss://avatar.cn-huadong-1.xf-yun.com/v1/interact
+
+# 腾讯云配置
+tencent:
+  trtc:
+    # 替换为你自己在腾讯云 TRTC 控制台创建的应用 AppId
+    sdk-app-id: ${tencent_trtc_appid}
+    # 替换为控制台中对应的生成 UserSig 的秘钥
+    secret-key: ${tencent_trtc_secret}
+    # 票据过期时间，单位秒，默认 86400 (1天) 60天
+    expire-time: 5184000
+
+tavily:
+  api:
+    api-key: ${TAVILY_API_KEY}
 
 
 springdoc:
@@ -244,5 +243,5 @@ logging:
   level:
     org.springframework.web.client.RestTemplate: DEBUG
     org.springframework.web.client.DefaultRestClient: DEBUG
-    # ??????? WebClient?
+    # 如果底层用的是 WebClient：
     org.springframework.web.reactive.function.client.ExchangeFunctions: TRACE

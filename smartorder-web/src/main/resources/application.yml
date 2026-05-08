@@ -1,7 +1,7 @@
 spring:
   profiles:
-    active: common, interactive
-    include: common, interactive
+    active: common
+    include: common
 
   main:
     allow-bean-definition-overriding: true
