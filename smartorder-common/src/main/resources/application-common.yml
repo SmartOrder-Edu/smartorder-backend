@@ -148,7 +148,7 @@ aliyun:
     endpoint: https://oss-cn-beijing.aliyuncs.com
     accessKeyId: ${aliyun_oss_id}
     accessKeySecret: ${aliyun_oss_key}
-    bucketName: qihui-duomo
+    bucketName: smart-order
   #tts
   tts:
     appKey: ${aliyun_tts_app_key}
