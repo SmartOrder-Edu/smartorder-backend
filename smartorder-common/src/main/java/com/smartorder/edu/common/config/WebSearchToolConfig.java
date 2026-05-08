@@ -13,7 +13,7 @@ public class WebSearchToolConfig {
 
     // 初始化 Tavily 引擎，正确读取配置文件中的 API Key
     @Bean
-    public WebSearchEngine tavilySearchEngine(@Value("${tavily.api.key}") String apiKey) {
+    public WebSearchEngine tavilySearchEngine(@Value("${tavily.api.api-key}") String apiKey) {
         return TavilyWebSearchEngine.builder()
                 .apiKey(apiKey)
                 .searchDepth("advanced")
