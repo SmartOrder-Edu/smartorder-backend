@@ -2,6 +2,9 @@ package com.smartorder.edu.common.domain.vo;
 
 import lombok.Data;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
 /**
  * 用户视图对象
  * @author 谢光湘
@@ -14,7 +17,7 @@ public class UserVO {
      */
     private Long id;
     /**
-     * 用户名
+     * 用户名/昵称
      */
     private String username;
     /**
@@ -30,36 +33,35 @@ public class UserVO {
      */
     private String avatarUrl;
     /**
-     * 性别
+     * 性别：0=未设置，1=男，2=女
      */
     private Integer gender;
     /**
      * 生日
      */
-    private String birthday;
+    private LocalDate birthday;
     /**
      * 个人简介
      */
     private String bio;
-     /**
-     * 角色
+    /**
+     * 角色：0=学生，1=管理员
      */
     private Integer role;
     /**
-     * 教学领域，教师用户特有属性，表示教师的教学领域，如语文、数学、英语等
-     */
-    private String teachingField;
-    /**
-     * vip等级
+     * VIP等级：0=普通用户
      */
     private Integer vipLevel;
     /**
-     * vip开始时间
+     * VIP开始时间
      */
-    private String vipStartTime;
+    private LocalDateTime vipStartTime;
     /**
-     * vip到期时间
+     * VIP到期时间
      */
-    private String vipExpireTime;
+    private LocalDateTime vipExpireTime;
+    /**
+     * 账号状态：0=禁用，1=正常
+     */
+    private Integer status;
 }
-

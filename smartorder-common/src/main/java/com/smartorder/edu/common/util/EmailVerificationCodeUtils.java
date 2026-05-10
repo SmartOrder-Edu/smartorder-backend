@@ -45,7 +45,7 @@ public class EmailVerificationCodeUtils {
     /**
      * 发件人名称
      */
-    private static final String SENDER_NAME = "启慧多模";
+    private static final String SENDER_NAME = "知序智学";
 
 
     /**

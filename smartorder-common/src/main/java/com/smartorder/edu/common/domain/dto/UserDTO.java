@@ -3,6 +3,8 @@ package com.smartorder.edu.common.domain.dto;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
+
 /**
  * 用户数据传输对象
  * @author 谢光湘
@@ -16,7 +18,7 @@ public class UserDTO {
      */
     private Long id;
     /**
-     * 用户名
+     * 用户名/昵称
      */
     private String username;
     /**
@@ -32,19 +34,19 @@ public class UserDTO {
      */
     private String avatarUrl;
     /**
-     * 性别
+     * 性别：0=未设置，1=男，2=女
      */
     private Integer gender;
     /**
      * 生日
      */
-    private String birthday;
+    private LocalDate birthday;
     /**
      * 个人简介
      */
     private String bio;
     /**
-     * 教学领域
+     * 角色：0=学生，1=管理员
      */
-    private String teachingField;
+    private Integer role;
 }

@@ -52,8 +52,6 @@ public class LoginInterceptor implements HandlerInterceptor {
                 if (role == 0) {
                     authorities.add(new SimpleGrantedAuthority("ROLE_STUDENT"));
                 } else if (role == 1) {
-                    authorities.add(new SimpleGrantedAuthority("ROLE_TEACHER"));
-                } else if (role == 2) {
                     authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
                 }
             }
