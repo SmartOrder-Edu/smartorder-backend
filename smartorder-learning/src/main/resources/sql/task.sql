@@ -1,0 +1,28 @@
+-- 任务表
+CREATE TABLE IF NOT EXISTS `task` (
+    `id`                         BIGINT       NOT NULL AUTO_INCREMENT  COMMENT '任务ID',
+    `user_id`                    BIGINT       NOT NULL                 COMMENT '所属用户ID（冗余，支持跨空间查询）',
+    `space_id`                   BIGINT       NOT NULL                 COMMENT '所属空间ID',
+    `path_node_id`               BIGINT       DEFAULT NULL             COMMENT '关联的路径节点ID',
+    `title`                      VARCHAR(200) NOT NULL                 COMMENT '任务标题',
+    `description`                VARCHAR(2000) DEFAULT NULL            COMMENT '任务描述',
+    `task_type`                  VARCHAR(20)  NOT NULL DEFAULT 'daily' COMMENT '任务类型：daily/milestone/exam/review',
+    `priority`                   TINYINT      NOT NULL DEFAULT 3       COMMENT '优先级：1=最高，5=最低',
+    `status`                     VARCHAR(20)  NOT NULL DEFAULT 'pending' COMMENT '状态：pending/in_progress/completed/overdue/cancelled',
+    `due_date`                   DATE         DEFAULT NULL             COMMENT '截止日期',
+    `due_time`                   TIME         DEFAULT NULL             COMMENT '截止时间',
+    `estimated_duration_minutes` INT          DEFAULT NULL             COMMENT '预估耗时（分钟）',
+    `actual_duration_minutes`    INT          DEFAULT NULL             COMMENT '实际耗时（分钟）',
+    `completed_at`               DATETIME     DEFAULT NULL             COMMENT '完成时间',
+    `sort_order`                 INT          NOT NULL DEFAULT 0       COMMENT '排序',
+    `ai_suggestion`              TEXT         DEFAULT NULL             COMMENT 'AI学习建议/执行策略',
+    `metadata`                   JSON         DEFAULT NULL             COMMENT '扩展元数据',
+    `is_deleted`                 TINYINT      NOT NULL DEFAULT 0       COMMENT '逻辑删除',
+    `create_time`                DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`                DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_user_id_due_date_status` (`user_id`, `due_date`, `status`),
+    KEY `idx_space_id` (`space_id`),
+    KEY `idx_path_node_id` (`path_node_id`),
+    KEY `idx_user_id_status_priority` (`user_id`, `status`, `priority`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='任务表';

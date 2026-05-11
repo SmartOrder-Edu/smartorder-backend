@@ -1,0 +1,25 @@
+-- 学习记录/记忆表（每日日志）
+CREATE TABLE IF NOT EXISTS `learning_record` (
+    `id`                      BIGINT       NOT NULL AUTO_INCREMENT  COMMENT '记录ID',
+    `user_id`                 BIGINT       NOT NULL                 COMMENT '用户ID',
+    `space_id`                BIGINT       NOT NULL                 COMMENT '空间ID',
+    `record_date`             DATE         NOT NULL                 COMMENT '记录日期',
+    `study_duration_minutes`  INT          NOT NULL DEFAULT 0       COMMENT '当日学习时长（分钟）',
+    `tasks_completed`         INT          NOT NULL DEFAULT 0       COMMENT '完成任务数',
+    `tasks_planned`           INT          NOT NULL DEFAULT 0       COMMENT '计划任务数',
+    `focus_level`             TINYINT      DEFAULT NULL             COMMENT '专注度自评：1=很差，5=非常专注',
+    `mood`                    TINYINT      DEFAULT NULL             COMMENT '学习心情：1=很差，5=非常好',
+    `self_rating`             TINYINT      DEFAULT NULL             COMMENT '学习效果自评：1=很差，5=非常好',
+    `interruption_count`      INT          DEFAULT 0                COMMENT '中断次数',
+    `notes`                   TEXT         DEFAULT NULL             COMMENT '学生笔记/反思',
+    `ai_reflection`           TEXT         DEFAULT NULL             COMMENT 'AI分析反思',
+    `productive_time_slots`   JSON         DEFAULT NULL             COMMENT '高效时段记录',
+    `metadata`                JSON         DEFAULT NULL             COMMENT '扩展元数据',
+    `is_deleted`              TINYINT      NOT NULL DEFAULT 0       COMMENT '逻辑删除',
+    `create_time`             DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`             DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_space_date` (`user_id`, `space_id`, `record_date`, `is_deleted`),
+    KEY `idx_user_date` (`user_id`, `record_date`),
+    KEY `idx_space_date` (`space_id`, `record_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='学习记录/记忆表';
