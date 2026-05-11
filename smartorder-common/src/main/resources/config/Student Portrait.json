@@ -1,0 +1,173 @@
+{
+  "userId": "U10001",
+
+  "basicProfile": {
+    "name": "张三",
+    "gender": "男",
+    "age": 20,
+    "school": "XX大学",
+    "major": "计算机科学与技术",
+    "grade": "大二"
+  },
+
+  "learningGoal": {
+    "goalType": "就业",
+    "targetDirection": [
+      "Java后端",
+      "AI开发"
+    ],
+    "targetExam": null,
+    "targetCompany": [
+      "腾讯",
+      "字节"
+    ],
+    "expectedSkill": [
+      "SpringBoot",
+      "Redis",
+      "大模型开发"
+    ]
+  },
+
+  "knowledgeProfile": {
+    "knowledgeMap": {
+      "数据结构": 78,
+      "操作系统": 45,
+      "计算机网络": 60,
+      "数据库": 80,
+      "Java": 85,
+      "算法": 40
+    },
+
+    "weakKnowledgePoints": [
+      "红黑树",
+      "TCP拥塞控制",
+      "动态规划"
+    ],
+
+    "masteredKnowledgePoints": [
+      "SpringBoot",
+      "MySQL",
+      "Redis"
+    ]
+  },
+
+  "learningBehavior": {
+    "dailyStudyDuration": 3.5,
+    "activeStudyTime": "20:00-23:00",
+
+    "learningFrequency": "高频",
+
+    "focusDuration": 35,
+
+    "resourcePreference": [
+      "视频",
+      "图解",
+      "代码案例"
+    ],
+
+    "interactionPreference": [
+      "问答式",
+      "渐进式引导"
+    ]
+  },
+
+  "cognitiveProfile": {
+    "learningStyle": "实践型",
+
+    "understandingSpeed": "中等",
+
+    "memoryAbility": "较强",
+
+    "logicAbility": "强",
+
+    "problemSolvingAbility": "中等"
+  },
+
+  "mistakeProfile": {
+    "highFrequencyMistakes": [
+      {
+        "knowledgePoint": "动态规划",
+        "mistakeCount": 15
+      },
+      {
+        "knowledgePoint": "TCP三次握手",
+        "mistakeCount": 8
+      }
+    ],
+
+    "errorReasonAnalysis": [
+      "边界条件理解不足",
+      "抽象逻辑能力较弱"
+    ]
+  },
+
+  "codingAbilityProfile": {
+    "preferredLanguage": [
+      "Java",
+      "Python"
+    ],
+
+    "codingLevel": "中级",
+
+    "commonCodingProblems": [
+      "代码冗余",
+      "空指针异常"
+    ],
+
+    "projectExperience": [
+      "商城系统",
+      "AI学习平台"
+    ]
+  },
+
+  "emotionProfile": {
+    "learningEmotion": "焦虑",
+
+    "motivationLevel": 70,
+
+    "confidenceLevel": 55
+  },
+
+  "dynamicTags": [
+    "考研倾向",
+    "偏爱视频学习",
+    "夜间学习用户",
+    "算法薄弱",
+    "项目驱动型学习者"
+  ],
+
+  "aiInferenceProfile": {
+    "currentLearningStage": "基础提升阶段",
+
+    "recommendedLearningPath": [
+      "数据结构强化",
+      "算法训练",
+      "项目实战"
+    ],
+
+    "resourceGenerationStrategy": [
+      "增加图解",
+      "增加实操案例",
+      "降低理论密度"
+    ]
+  },
+
+  "systemInteractionGuide": {
+    "missingFields": [
+      "目标岗位",
+      "每日学习时间",
+      "薄弱知识点"
+    ],
+
+    "recommendedQuestions": [
+      "你未来更偏向考研还是就业？",
+      "你目前最难理解的课程是什么？",
+      "你更喜欢视频还是文字学习？",
+      "你每天能投入多少学习时间？"
+    ],
+
+    "profileCompletionRate": 72
+  },
+
+  "updateTime": "2026-05-11 10:00:00"
+}
