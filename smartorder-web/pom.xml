@@ -40,6 +40,31 @@
         </dependency>
         <dependency>
             <groupId>com.smartorder.edu</groupId>
+            <artifactId>smartorder-user</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>com.smartorder.edu</groupId>
+            <artifactId>smartorder-learning</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>com.smartorder.edu</groupId>
+            <artifactId>smartorder-assessment</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>com.smartorder.edu</groupId>
+            <artifactId>smartorder-knowledge</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>com.smartorder.edu</groupId>
+            <artifactId>smartorder-agent</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>com.smartorder.edu</groupId>
             <artifactId>smartorder-manage</artifactId>
             <version>0.0.1-SNAPSHOT</version>
         </dependency>
