@@ -93,7 +93,7 @@ spring:
   data:
     redis:
       database: 1
-      host: 117.72.159.146
+      host: 117.72.222.3
       port: 6379
       password: ${redis_password}
       lettuce:
@@ -104,11 +104,11 @@ spring:
           max-wait: 100 # 连接等待时间（毫秒）
   # RabbitMQ配置
   rabbitmq:
-    host: 117.72.159.146
+    host: 117.72.222.3
     port: 5672
     virtual-host: /qh
     username: qh
-    password: 123456
+    password: ${rabbitmq_password}
     connection-timeout: 1s
     template:
       retry:
