@@ -35,8 +35,8 @@ public class LoginDTO {
     private String ip;
 
     /**
-     * 身份（0：学生，1：教师，2：管理员）
+     * 角色：0=学生，1=管理员
      */
-    private String role;
+    private Integer role;
 
 }

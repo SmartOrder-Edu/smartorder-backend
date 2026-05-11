@@ -41,12 +41,18 @@ public class UserServiceImpl implements IUserService {
     public void insertUser(User user) {
         long userId = IdUtil.getSnowflakeNextId();
         user.setId(userId);
-        //查询此时用户总数
-        long count = userMapper.selectCount(null);
-        long index = count + 1;
-        user.setUsername("启慧"+index);
-        user.setRole(1);
-        user.setAvatarUrl(DEFAULT_AVATAR_URL);
+        // 如果用户未设置用户名，则生成默认随机名
+        if (user.getUsername() == null || user.getUsername().isBlank()) {
+            long count = userMapper.selectCount(null);
+            long index = count + 1;
+            user.setUsername("启慧" + index);
+        }
+        if (user.getRole() == null) {
+            user.setRole(0);
+        }
+        if (user.getAvatarUrl() == null || user.getAvatarUrl().isBlank()) {
+            user.setAvatarUrl(DEFAULT_AVATAR_URL);
+        }
         userMapper.insert(user);
     }
 

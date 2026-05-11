@@ -1,0 +1,3 @@
+# ai-ppt ??
+ppt:
+  api-key: ${PPT_API_KEY}

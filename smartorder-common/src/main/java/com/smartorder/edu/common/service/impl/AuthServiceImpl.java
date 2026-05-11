@@ -54,11 +54,20 @@ public class AuthServiceImpl implements IAuthService {
     @Override
     public void register(RegisterDTO registerDTO) {
         // 检验参数
+        String username = registerDTO.getUsername();
         String email = registerDTO.getEmail();
         String phone = registerDTO.getPhone();
         String rawPassword = registerDTO.getPassword();
         String confirmPassword = registerDTO.getConfirmPassword();
         String verificationCode = registerDTO.getVerificationCode();
+
+        // 昵称校验
+        if (!StringUtils.hasText(username)) {
+            throw new ValidationException("昵称不能为空");
+        }
+        if (username.length() < 2 || username.length() > 20) {
+            throw new ValidationException("昵称长度需在2-20个字符之间");
+        }
 
         boolean isEmailRegister = StringUtils.hasText(email);
         boolean isPhoneRegister = StringUtils.hasText(phone);
@@ -86,6 +95,7 @@ public class AuthServiceImpl implements IAuthService {
         // 密码加密
         String encodedPassword = encodePassword(rawPassword);
         User user = new User();
+        user.setUsername(username);
         user.setEmail(email);
         user.setPhone(phone);
         user.setPassword(encodedPassword);

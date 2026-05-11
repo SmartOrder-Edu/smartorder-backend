@@ -13,6 +13,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class RegisterDTO {
     /**
+     * 用户名/昵称
+     */
+    private String username;
+    /**
      * 邮箱
      */
     private String email;

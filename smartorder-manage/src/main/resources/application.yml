@@ -1,0 +1,9 @@
+server:
+  port: 9017
+
+spring:
+  profiles:
+    active: common
+    include: common
+  main:
+    allow-bean-definition-overriding: true

@@ -1,0 +1,26 @@
+# 用户表
+CREATE TABLE IF NOT EXISTS `user` (
+    `id`              BIGINT       NOT NULL AUTO_INCREMENT  COMMENT '用户ID',
+    `username`        VARCHAR(50)  NOT NULL                 COMMENT '用户名/昵称',
+    `email`           VARCHAR(100) DEFAULT NULL             COMMENT '邮箱',
+    `phone`           VARCHAR(20)  DEFAULT NULL             COMMENT '手机号',
+    `password`        VARCHAR(255) NOT NULL                 COMMENT '密码（BCrypt加密）',
+    `avatar_url`      VARCHAR(500) DEFAULT NULL             COMMENT '头像URL',
+    `gender`          TINYINT      DEFAULT 0                COMMENT '性别：0=未设置，1=男，2=女',
+    `birthday`        DATE         DEFAULT NULL             COMMENT '生日',
+    `bio`             VARCHAR(500) DEFAULT NULL             COMMENT '个人简介',
+    `role`            TINYINT      NOT NULL DEFAULT 0       COMMENT '角色：0=学生，1=管理员',
+    `vip_level`       TINYINT      NOT NULL DEFAULT 0       COMMENT 'VIP等级：0=普通用户',
+    `vip_start_time`  DATETIME     DEFAULT NULL             COMMENT 'VIP开始时间',
+    `vip_expire_time` DATETIME     DEFAULT NULL             COMMENT 'VIP到期时间',
+    `status`          TINYINT      NOT NULL DEFAULT 1       COMMENT '账号状态：0=禁用，1=正常',
+    `is_deleted`      TINYINT      NOT NULL DEFAULT 0       COMMENT '逻辑删除：0=正常，1=已删除',
+    `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_email` (`email`),
+    UNIQUE KEY `uk_phone` (`phone`),
+    KEY `idx_username` (`username`),
+    KEY `idx_role` (`role`),
+    KEY `idx_vip_expire_time` (`vip_expire_time`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
