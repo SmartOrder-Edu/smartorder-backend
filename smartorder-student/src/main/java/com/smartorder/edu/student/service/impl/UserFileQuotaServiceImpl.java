@@ -1,6 +1,5 @@
 package com.smartorder.edu.student.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.student.domain.entity.UserFileQuota;
