@@ -1,0 +1,20 @@
+关系型数据库 MySQL/PostgreSQL：
+负责管理“结构化信息”
+- 知识库基本信息
+- 文件基本信息
+- 文件解析状态
+- 文档信息
+- chunk 元数据
+- 用户权限
+- RAG 引用记录
+- 任务状态
+
+向量数据库 Qdrant/Milvus/pgvector：
+负责管理“语义检索信息”
+- chunk 文本
+- chunk 向量 embedding
+- chunk 的检索 payload
+- 相似度搜索
+
+数据库：管业务关系、状态、展示、权限、溯源
+向量数据库：管文本块召回
