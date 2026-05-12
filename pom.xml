@@ -152,24 +152,6 @@
             <artifactId>junit-platform-launcher</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- JUnit Platform Launcher 依赖 -->
-        <dependency>
-            <groupId>org.junit.platform</groupId>
-            <artifactId>junit-platform-launcher</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <!-- JUnit Platform Launcher 依赖 -->
-        <dependency>
-            <groupId>org.junit.platform</groupId>
-            <artifactId>junit-platform-launcher</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <!-- JUnit Platform Launcher 依赖 -->
-        <dependency>
-            <groupId>org.junit.platform</groupId>
-            <artifactId>junit-platform-launcher</artifactId>
-            <scope>test</scope>
-        </dependency>
 
         <!--  邮箱服务  -->
         <dependency>
@@ -371,17 +353,6 @@
             <version>4.37.0</version>
         </dependency>
 
-        <!--Apache POI 处理 Office 文件的核心库-->
-        <dependency>
-            <groupId>org.apache.poi</groupId>
-            <artifactId>poi-ooxml</artifactId>
-            <version>5.2.3</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.poi</groupId>
-            <artifactId>poi-scratchpad</artifactId>
-            <version>5.2.3</version>
-        </dependency>
         <!-- fastjson依赖（解析JSON响应） -->
         <dependency>
             <groupId>com.alibaba</groupId>
