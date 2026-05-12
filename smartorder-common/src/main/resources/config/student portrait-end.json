@@ -1,0 +1,93 @@
+{
+  "user_id": "u_10001",
+  "profile_version": 4,
+  "basic_profile": {
+    "identity_type": "undergraduate",
+    "major": "软件工程",
+    "grade": "大二",
+    "learning_domain": "计算机基础",
+    "target_course": "操作系统"
+  },
+  "goal_profile": {
+    "primary_goal": "pass_exam",
+    "secondary_goal": "build_project",
+    "deadline": "2026-06-20",
+    "expected_outputs": ["复习讲义", "专项题库", "课程实验"]
+  },
+  "knowledge_profile": {
+    "current_level": "basic",
+    "known_topics": ["进程基本概念", "线程基本概念"],
+    "unknown_topics": ["死锁", "内存管理", "文件系统"],
+    "prerequisite_gaps": ["队列结构", "C语言指针"]
+  },
+  "weakness_profile": {
+    "weak_points": [
+      {
+        "topic": "进程调度",
+        "weakness_type": "calculation_error",
+        "evidence": "平均等待时间计算题错误率较高",
+        "confidence": 0.82
+      },
+      {
+        "topic": "死锁",
+        "weakness_type": "concept_confusion",
+        "evidence": "用户无法准确区分死锁产生的四个必要条件",
+        "confidence": 0.76
+      }
+    ]
+  },
+  "cognitive_profile": {
+    "preferred_explanation": "case_based",
+    "visual_need": "high",
+    "practice_orientation": "high",
+    "abstraction_tolerance": "medium"
+  },
+  "resource_preference": {
+    "preferred_formats": ["mind_map", "quiz", "code_demo"],
+    "disliked_formats": ["long_text"],
+    "content_density": "medium",
+    "language_style": "plain"
+  },
+  "learning_constraints": {
+    "daily_available_time_minutes": 45,
+    "weekly_available_days": 5,
+    "preferred_study_time": "evening",
+    "deadline_pressure": "medium"
+  },
+  "behavior_profile": {
+    "question_frequency": "medium",
+    "quiz_completion_rate": 0.0,
+    "resource_completion_rate": 0.0,
+    "review_frequency": "unknown"
+  },
+  "mastery_profile": {
+    "topics": [
+      {
+        "topic": "进程与线程",
+        "mastery": 0.78,
+        "status": "learning",
+        "last_assessed_at": "2026-04-03",
+        "evidence": ["完成讲义", "测试正确率80%"]
+      }
+    ]
+  },
+  "confidence": {
+    "basic_profile": 0.9,
+    "goal_profile": 0.75,
+    "knowledge_profile": 0.45,
+    "weakness_profile": 0.6,
+    "cognitive_profile": 0.4
+  },
+  "update_log": [
+    {
+      "time": "2026-04-01 15:32:46",
+      "source": "onboarding_form",
+      "updated_fields": [
+        "identity_type",
+        "learning_domain",
+        "current_level",
+        "primary_goal"
+      ]
+    }
+  ]
+}
