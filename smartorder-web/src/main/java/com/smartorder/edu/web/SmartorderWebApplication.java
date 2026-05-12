@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication(
         scanBasePackages = {"com.smartorder.edu","com.smartorder.edu.common","com.smartorder.edu.student","com.smartorder.edu.manage"}
 )
-@MapperScan({"com.smartorder.edu.common.mapper"})
+@MapperScan({"com.smartorder.edu.common.mapper", "com.smartorder.edu.student.mapper"})
 public class SmartorderWebApplication {
 
     public static void main(String[] args) {
