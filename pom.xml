@@ -17,6 +17,11 @@
 
     <modules>
         <module>smartorder-common</module>
+        <module>smartorder-user</module>
+        <module>smartorder-learning</module>
+        <module>smartorder-assessment</module>
+        <module>smartorder-knowledge</module>
+        <module>smartorder-agent</module>
         <module>smartorder-web</module>
         <module>smartorder-student</module>
         <module>smartorder-manage</module>
