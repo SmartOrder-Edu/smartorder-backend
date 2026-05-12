@@ -6,6 +6,20 @@ target/
 .claude
 .agents
 
+### 编译产物 ###
+*.class
+*.jar
+*.war
+*.ear
+
+### 日志 ###
+logs/
+*.log
+
+### 系统文件 ###
+.DS_Store
+Thumbs.db
+
 ### STS ###
 .apt_generated
 .classpath
@@ -16,7 +30,7 @@ target/
 .sts4-cache
 
 ### IntelliJ IDEA ###
-.idea
+.idea/
 *.iws
 *.iml
 *.ipr
