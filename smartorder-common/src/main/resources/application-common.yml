@@ -172,7 +172,7 @@ email:
 
 # Milvus 向量数据库配置
 milvus:
-  host: 117.72.159.146
+  host: 117.72.222.3
   port: 19530
   collection-name: teacher_semantic_memory  # 集合名称
   dimension: 512                            # BGE-small-zh 模型的维度是 512
