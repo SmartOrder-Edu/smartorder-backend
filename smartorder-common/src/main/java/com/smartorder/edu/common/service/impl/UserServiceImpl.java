@@ -1,6 +1,7 @@
 package com.smartorder.edu.common.service.impl;
 
 import cn.hutool.core.util.IdUtil;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 
@@ -255,10 +256,16 @@ public class UserServiceImpl implements IUserService {
     @Override
     public boolean isTeacherId(Long userId) {
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("id", userId).eq("role", 1);
+        queryWrapper.eq("id", userId).eq("role", 2);
         return userMapper.selectCount(queryWrapper) > 0;
     }
 
+    @Override
+    public boolean isStudentId(Long userId) {
+        LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(User::getId, userId).eq(User::getRole, 0);
+        return userMapper.selectCount(queryWrapper) > 0;
+    }
 
 
     @Override

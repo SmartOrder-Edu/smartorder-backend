@@ -87,6 +87,11 @@ public interface IUserService {
      */
     boolean isTeacherId(Long userId);
 
+    /**
+     * 检查是否为学生ID
+     */
+    boolean isStudentId(Long userId);
+
 
     /**
      * 根据关键词搜索用户（支持用户名模糊搜索，手机号/邮箱精确搜索）
