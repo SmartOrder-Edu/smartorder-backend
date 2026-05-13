@@ -3,9 +3,9 @@ package com.smartorder.edu.student.service.impl;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.smartorder.edu.common.exception.BusinessException;
-import com.smartorder.edu.common.mapper.UserMapper;
 import com.smartorder.edu.common.service.IUserService;
 import com.smartorder.edu.common.util.AliOSSUtils;
 import com.smartorder.edu.student.domain.dto.FileFolderDTO;
@@ -25,6 +25,8 @@ import org.springframework.stereotype.Service;
 import javax.validation.constraints.NotNull;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -35,7 +37,6 @@ public class FileFolderServiceImpl implements IFileFolderService {
     private final FileFolderMapper fileFolderMapper;
     private final FileResourceMapper fileResourceMapper;
 
-    private final UserMapper userMapper;
     private final IUserService userService;
     private final AliOSSUtils aliOSSUtils;
 
@@ -259,7 +260,18 @@ public class FileFolderServiceImpl implements IFileFolderService {
         return fileFolderMapper.selectCount(wrapper) > 0;
     }
 
-
+    /**
+     * 移动文件到目标文件夹
+     * 步骤：
+     * 1. 校验文件是否存在且归属当前用户
+     * 2. 校验目标文件夹（根目录跳过）
+     * 3. 校验目标文件夹不是当前文件夹
+     * 4. 校验目标文件夹下同名文件冲突（如果冲突，生成新文件名）
+     * 5. 更新文件的 folderId
+     * @param fileId
+     * @param targetFolderId
+     * @param userId
+     */
     @Override
     public void moveFile(Long fileId, Long targetFolderId, Long userId) {
         // 1. 校验文件是否存在且归属当前用户
@@ -287,12 +299,85 @@ public class FileFolderServiceImpl implements IFileFolderService {
             throw new BusinessException("文件已在目标文件夹中");
         }
 
+        // 4. 校验目标文件夹下同名文件冲突
+        if (checkFileNameInFolderConflict(file.getFileName(), targetFolderId, userId)) {
+            // 生成新文件名
+            String newName = generateUniqueFileName(file.getFileName(), targetFolderId, userId);
+            file.setFileName(newName);
+        }
+
         // 4. 更新文件的 folderId
-        UpdateWrapper<FileResource> wrapper = new UpdateWrapper<>();
-        wrapper.eq("id", fileId)
-                .set("folder_id", targetFolderId)
-                .set("update_time", LocalDateTime.now());
+//        UpdateWrapper<FileResource> wrapper = new UpdateWrapper<>();
+//        wrapper.eq("id", fileId)
+//                .set("folder_id", targetFolderId)
+//                .set("update_time", LocalDateTime.now());
+        LambdaUpdateWrapper<FileResource> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(FileResource::getId, fileId)
+                .set(FileResource::getFolderId, targetFolderId)
+                .set(FileResource::getUpdateTime, LocalDateTime.now());
         fileResourceMapper.update(null, wrapper);
+    }
+
+    private boolean checkFileNameInFolderConflict(String fileName, Long targetFolderId, Long userId) {
+        LambdaQueryWrapper<FileResource> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(FileResource::getUserId, userId);
+        wrapper.eq(FileResource::getFolderId, targetFolderId);
+        wrapper.eq(FileResource::getFileName, fileName);
+        return fileResourceMapper.selectCount(wrapper) > 0;
+    }
+
+    /**
+     * 生成唯一文件名，避免文件覆盖（如果文件名已存在，则在文件名后添加数字后缀）
+     * @param originalFileName 原始文件名
+     * @param targetFolderId 目标文件夹ID
+     * @param teacherId 教师ID
+     * @return String 唯一文件名
+     */
+    private String generateUniqueFileName(String originalFileName, Long targetFolderId, Long teacherId) {
+        if (originalFileName == null) {
+            throw new IllegalArgumentException("文件名不能为空");
+        }
+        String nameMain;
+        String extension = "";
+        int lastDotIndex = originalFileName.lastIndexOf(".");
+        if (lastDotIndex > 0) {
+            nameMain = originalFileName.substring(0, lastDotIndex);
+            extension = originalFileName.substring(lastDotIndex);
+        } else {
+            nameMain = originalFileName;
+        }
+
+        // 构造查询条件：匹配 "名称主体" 或 "名称主体(数字)" 开头的文件
+        String prefix = nameMain + "(";
+        QueryWrapper<FileResource> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("folder_id", targetFolderId)
+                .eq("teacher_id", teacherId)
+                .and(w -> w.likeRight("file_name", nameMain)
+                        .or()
+                        .likeRight("file_name", prefix));
+
+        List<FileResource> list = fileResourceMapper.selectList(queryWrapper);
+        if (list.isEmpty()) {
+            return originalFileName;
+        }
+
+        // 提取最大后缀数字
+        int maxNum = 0;
+        for (FileResource res : list) {
+            String fileName = res.getFileName();
+            // 匹配 "名称主体(数字)扩展名" 格式
+            // 使用 Pattern.quote() 转义文件名中的特殊字符，防止正则表达式错误
+            String regex = Pattern.quote(nameMain) + "\\((\\d+)\\)" + Pattern.quote(extension);
+            Pattern pattern = Pattern.compile(regex);
+            Matcher matcher = pattern.matcher(fileName);
+            if (matcher.matches()) {
+                int num = Integer.parseInt(matcher.group(1));
+                if (num > maxNum) {
+                    maxNum = num;
+                }
+            }
+        }
+        return String.format("%s(%d)%s", nameMain, maxNum + 1, extension);
     }
 
     @Override
@@ -334,10 +419,15 @@ public class FileFolderServiceImpl implements IFileFolderService {
         }
 
         // 6. 更新文件夹的 parentId
-        UpdateWrapper<FileFolder> wrapper = new UpdateWrapper<>();
+        /*UpdateWrapper<FileFolder> wrapper = new UpdateWrapper<>();
         wrapper.eq("id", id)
                 .set("parent_id", targetParentId)
                 .set("update_time", LocalDateTime.now());
+        fileFolderMapper.update(null, wrapper);*/
+        LambdaUpdateWrapper<FileFolder>wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(FileFolder::getId, id)
+                .set(FileFolder::getParentId, targetParentId)
+                .set(FileFolder::getUpdateTime, LocalDateTime.now());
         fileFolderMapper.update(null, wrapper);
     }
 }
