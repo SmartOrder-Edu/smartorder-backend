@@ -12,7 +12,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
     "com.smartorder.edu.learning.mapper",
     "com.smartorder.edu.assessment.mapper",
     "com.smartorder.edu.knowledge.mapper",
-    "com.smartorder.edu.agent.mapper"
+    "com.smartorder.edu.agent.mapper",
+        "com.smartorder.edu.student.mapper"
 })
 public class SmartorderWebApplication {
 

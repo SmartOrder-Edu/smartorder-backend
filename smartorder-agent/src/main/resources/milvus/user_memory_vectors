@@ -1,0 +1,13 @@
+{
+  "vector_id": "mem_1001_20260512_001",
+  "user_id": 1001,
+  "subject_id": 10,
+  "memory_layer": "long_term",
+  "memory_type": "long_weakness",
+  "source_table": "ai_long_term_memory",
+  "source_id": 88,
+  "content": "用户在操作系统课程中长期容易混淆死锁预防和死锁避免。",
+  "importance_score": 86.5,
+  "confidence_score": 78.2,
+  "created_at": "2026-05-12 22:00:00"
+}
