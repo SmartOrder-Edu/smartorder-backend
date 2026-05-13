@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AgentChatRequest {
+    private Long userId;
     private String message;
     private String conversationId;
 }

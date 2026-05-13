@@ -26,12 +26,17 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 主 Agent 服务实现
+ * 主 Agent 服务实现（已废弃）
+ *
+ * @deprecated 请使用 {@link com.smartorder.edu.agent.orchestrator.AgentOrchestrator} 替代。
+ *             新架构采用 AgentOrchestrator + SelfManagedReActEngine + ToolRegistry 模式，
+ *             不再使用手写 JSON 解析 + 两阶段调用。
  *
  * 架构：两阶段调用
  * - Phase 1（非流式）：检测意图 → 执行工具调用 → 获取中间结果
  * - Phase 2（流式）：将工具结果注入上下文，流式生成最终回复
  */
+@Deprecated
 @Slf4j
 @Service
 @RequiredArgsConstructor
