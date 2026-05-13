@@ -201,16 +201,16 @@ python:
 langchain4j:
   open-ai:
     chat-model:
-      api-key: ${DEEPSEEK_API_KEY}
-      base-url: https://api.deepseek.com/v1
-      model-name: deepseek-v4-flash
+      api-key: ${MIMO_API_KEY}
+      base-url: https://api.xiaomimimo.com/v1
+      model-name: mimo-v2.5-pro
       log-requests: true
       log-responses: true
     streaming-chat-model:
-      api-key: ${DEEPSEEK_API_KEY}
+      api-key: ${MIMO_API_KEY}
       # DeepSeek 提供了完全兼容 OpenAI 格式的接口，通常需要在 URL 后加上 /v1
-      base-url: https://api.deepseek.com/v1
-      model-name: deepseek-v4-flash
+      base-url: https://api.xiaomimimo.com/v1
+      model-name: mimo-v2.5-pro
       # 强烈建议在开发阶段开启以下两项日志！
       # 这能让你在控制台清楚地看到发给大模型的 JSON Schema 是什么样的，
       # 以及大模型返回的工具调用指令长什么样，非常有助于排障。
