@@ -1,5 +1,11 @@
 server:
   port: 9015
+  servlet:
+    encoding:
+      charset: UTF-8
+      force: true
+      enabled: true
+
 
 spring:
   servlet:
@@ -251,3 +257,6 @@ logging:
     org.springframework.web.client.DefaultRestClient: DEBUG
     # 如果底层用的是 WebClient：
     org.springframework.web.reactive.function.client.ExchangeFunctions: TRACE
+  charset:
+    console: UTF-8
+    file: UTF-8
