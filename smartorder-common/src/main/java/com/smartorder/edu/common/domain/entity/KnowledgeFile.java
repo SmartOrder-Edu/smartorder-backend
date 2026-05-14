@@ -51,7 +51,7 @@ public class KnowledgeFile {
     private String fileUrl;
 
     /**
-     * 文件扩展名，例如：pdf、docx、pptx、txt、md
+     * 文件扩展名，例如：pdf、docx、pptx、txt、md等
      */
     @TableField("file_extension")
     private String fileExtension;

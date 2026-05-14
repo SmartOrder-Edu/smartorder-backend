@@ -51,17 +51,6 @@ public class KnowledgeBase {
     @TableField("cover_url")
     private String coverUrl;
 
-    /**
-     * 知识库图标标识，用于前端展示
-     */
-    @TableField("icon")
-    private String icon;
-
-    /**
-     * 知识库主题色，用于前端展示
-     */
-    @TableField("color")
-    private String color;
 
     /**
      * 该知识库默认使用的向量模型名称，例如：bge-m3、text-embedding-3-small

@@ -8,8 +8,6 @@ CREATE TABLE knowledge_bases (
 
      category VARCHAR(100) COMMENT '知识库分类，例如：课程学习、项目资料、论文阅读、个人笔记',
      cover_url VARCHAR(500) COMMENT '知识库封面图地址，用于前端展示',
-     icon VARCHAR(100) COMMENT '知识库图标标识，用于前端展示',
-     color VARCHAR(50) COMMENT '知识库主题色，用于前端展示',
 
      embedding_model VARCHAR(100) COMMENT '该知识库默认使用的向量模型名称，例如：bge-m3、text-embedding-3-small',
      chunk_strategy VARCHAR(50) DEFAULT 'recursive' COMMENT '默认分块策略：recursive=递归分块，markdown=按标题分块，sentence=按句子分块',

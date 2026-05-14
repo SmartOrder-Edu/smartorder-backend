@@ -112,8 +112,8 @@ spring:
   rabbitmq:
     host: 117.72.222.3
     port: 5672
-    virtual-host: /qh
-    username: qh
+    virtual-host: /so
+    username: so
     password: ${rabbitmq_password}
     connection-timeout: 1s
     template:
@@ -178,7 +178,7 @@ email:
 
 # Milvus 向量数据库配置
 milvus:
-  host: 117.72.159.146
+  host: 117.72.222.3
   port: 19530
   collection-name: teacher_semantic_memory  # 集合名称
   dimension: 512                            # BGE-small-zh 模型的维度是 512
