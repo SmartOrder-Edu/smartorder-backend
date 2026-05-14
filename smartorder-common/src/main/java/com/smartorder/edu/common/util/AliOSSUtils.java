@@ -419,4 +419,20 @@ public class AliOSSUtils {
         return getSignedUrlWithExpiry(objectKey, expiryTime);
     }
 
+    /**
+     * 从 OSS 获取该 uploadId 下所有已经上传成功的 PartETag
+     */
+    public List<PartETag> listAllPartETags(String objectKey, String uploadId) {
+        // 创建 ListPartsRequest 请求
+        ListPartsRequest request = new ListPartsRequest(bucketName, objectKey, uploadId);
+        PartListing partListing = ossClient.listParts(request);
+
+        // 遍历所有已上传的 part，组装成 PartETag 列表
+        List<PartETag> partETags = new ArrayList<>();
+        for (PartSummary part : partListing.getParts()) {
+            partETags.add(new PartETag(part.getPartNumber(), part.getETag()));
+        }
+        return partETags;
+    }
+
 }
