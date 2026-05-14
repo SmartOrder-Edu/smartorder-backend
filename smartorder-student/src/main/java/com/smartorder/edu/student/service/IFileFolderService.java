@@ -8,8 +8,8 @@ import java.util.List;
 public interface IFileFolderService {
     List<FileFolderContentVO> getFolderTree(Long userId);
     FileFolderContentVO getFolderById(Long id, Long userId);
-    FileFolderContentVO createFolder(FileFolderDTO dto, Long userId);
-    FileFolderContentVO updateFolder(Long id, String folderName, Long userId);
+    void createFolder(FileFolderDTO dto, Long userId);
+    void updateFolder(Long id, String folderName, Long userId);
     void deleteFolder(Long id, Long userId);
 
     void moveFile(Long id, Long targetFolderId, Long userId);

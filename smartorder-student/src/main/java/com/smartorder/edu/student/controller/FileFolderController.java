@@ -55,8 +55,8 @@ public class FileFolderController {
     public Result<FileFolderContentVO> createFolder(@Validated @RequestBody FileFolderDTO dto) {
         Claims claims = ThreadLocalUtils.get();
         Long userId = claims.get("userId", Long.class);
-        FileFolderContentVO vo = fileFolderService.createFolder(dto, userId);
-        return Result.success(vo);
+        fileFolderService.createFolder(dto, userId);
+        return Result.success("文件夹创建成功");
     }
 
     @PutMapping("/folders/{id}")
@@ -64,8 +64,8 @@ public class FileFolderController {
     public Result<FileFolderContentVO> updateFolder(@PathVariable Long id, @NotNull(message = "文件夹名称不能为空") @RequestParam String folderName) {
         Claims claims = ThreadLocalUtils.get();
         Long userId = claims.get("userId", Long.class);
-        FileFolderContentVO vo = fileFolderService.updateFolder(id, folderName, userId);
-        return Result.success(vo);
+        fileFolderService.updateFolder(id, folderName, userId);
+        return Result.success("文件夹重命名成功");
     }
 
     @DeleteMapping("/folders/{id}")
@@ -93,8 +93,8 @@ public class FileFolderController {
     public Result<FileResourceVO> createFile(@RequestBody FileResourceDTO dto) {
         Claims claims = ThreadLocalUtils.get();
         Long userId = claims.get("userId", Long.class);
-        FileResourceVO vo = fileResourceService.createFile(dto, userId);
-        return Result.success(vo);
+        fileResourceService.createFile(dto, userId);
+        return Result.success("文件记录创建成功");
     }
 
     @DeleteMapping("/file/{id}")

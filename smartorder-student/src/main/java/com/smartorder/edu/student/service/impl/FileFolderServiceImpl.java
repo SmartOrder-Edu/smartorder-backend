@@ -121,7 +121,7 @@ public class FileFolderServiceImpl implements IFileFolderService {
     }
 
     @Override
-    public FileFolderContentVO createFolder(FileFolderDTO dto, @NotNull(message = "用户ID不能为空") Long userId) {
+    public void createFolder(FileFolderDTO dto, @NotNull(message = "用户ID不能为空") Long userId) {
         // 验证用户是否为学生
         if (!userService.isStudentId(userId)) {
             throw new IllegalArgumentException("只有学生用户才能创建文件夹");
@@ -144,14 +144,10 @@ public class FileFolderServiceImpl implements IFileFolderService {
         folder.setFolderName(dto.getFolderName());
         folder.setUserId(userId);
         fileFolderMapper.insert(folder);
-
-        FileFolderContentVO vo = new FileFolderContentVO();
-        BeanUtils.copyProperties(folder, vo);
-        return vo;
     }
 
     @Override
-    public FileFolderContentVO updateFolder(Long id, String folderName, Long userId) {
+    public void updateFolder(Long id, String folderName, Long userId) {
         FileFolder folder = fileFolderMapper.selectById(id);
         if (folder == null) {
             throw new BusinessException("文件夹不存在");
@@ -162,10 +158,6 @@ public class FileFolderServiceImpl implements IFileFolderService {
         folder.setFolderName(folderName);
         folder.setUpdateTime(LocalDateTime.now());
         fileFolderMapper.updateById(folder);
-
-        FileFolderContentVO vo = new FileFolderContentVO();
-        BeanUtils.copyProperties(folder, vo);
-        return vo;
     }
 
     @Override
