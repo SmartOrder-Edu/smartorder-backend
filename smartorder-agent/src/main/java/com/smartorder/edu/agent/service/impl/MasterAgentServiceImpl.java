@@ -3,7 +3,7 @@ package com.smartorder.edu.agent.service.impl;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.smartorder.edu.agent.config.AgentConfiguration;
-import com.smartorder.edu.agent.dto.PlanCreationResult;
+import com.smartorder.edu.agent.model.dto.PlanCreationResult;
 import com.smartorder.edu.agent.service.MasterAgentService;
 import com.smartorder.edu.agent.tool.LearningPlanCreationTool;
 import com.smartorder.edu.agent.tool.ProfileTool;

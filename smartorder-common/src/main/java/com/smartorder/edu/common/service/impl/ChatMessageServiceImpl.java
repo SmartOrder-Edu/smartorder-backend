@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 
-import com.smartorder.edu.common.domain.entity.ChatMessage;
+import com.smartorder.edu.common.model.entity.ChatMessage;
 import com.smartorder.edu.common.mapper.ChatMessageMapper;
 import com.smartorder.edu.common.service.IChatMessageService;
 import org.springframework.stereotype.Service;

@@ -1,8 +1,7 @@
 package com.smartorder.edu.agent.orchestrator;
 
-import com.smartorder.edu.agent.dto.AgentChatRequest;
+import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.plan.PlanExecuteEngine;
-import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentRouteService;
 import com.smartorder.edu.agent.trace.AgentEventType;

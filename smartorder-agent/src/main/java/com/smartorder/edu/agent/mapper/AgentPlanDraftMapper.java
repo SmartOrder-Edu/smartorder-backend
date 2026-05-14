@@ -1,7 +1,7 @@
 package com.smartorder.edu.agent.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.smartorder.edu.agent.domain.entity.AgentPlanDraft;
+import com.smartorder.edu.agent.model.entity.AgentPlanDraft;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;

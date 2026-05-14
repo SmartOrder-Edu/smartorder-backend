@@ -1,6 +1,6 @@
 package com.smartorder.edu.agent.controller;
 
-import com.smartorder.edu.agent.dto.PlanConfirmRequest;
+import com.smartorder.edu.agent.model.dto.PlanConfirmRequest;
 import com.smartorder.edu.agent.plan.PlanConfirmService;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import io.jsonwebtoken.Claims;

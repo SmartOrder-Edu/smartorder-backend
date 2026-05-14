@@ -1,6 +1,6 @@
 package com.smartorder.edu.agent.orchestrator;
 
-import com.smartorder.edu.agent.dto.AgentChatRequest;
+import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.memory.ConversationCompressService;
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.route.IntentRouteResult;

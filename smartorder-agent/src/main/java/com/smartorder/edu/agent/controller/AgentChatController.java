@@ -1,6 +1,6 @@
 package com.smartorder.edu.agent.controller;
 
-import com.smartorder.edu.agent.dto.AgentChatRequest;
+import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.orchestrator.AgentOrchestrator;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import io.jsonwebtoken.Claims;

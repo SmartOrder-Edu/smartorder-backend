@@ -1,7 +1,7 @@
 package com.smartorder.edu.agent.memory;
 
-import com.smartorder.edu.agent.domain.entity.ConversationMessage;
-import com.smartorder.edu.agent.domain.entity.ConversationSummary;
+import com.smartorder.edu.agent.model.entity.ConversationMessage;
+import com.smartorder.edu.agent.model.entity.ConversationSummary;
 import com.smartorder.edu.agent.mapper.ConversationMessageMapper;
 import com.smartorder.edu.agent.mapper.ConversationSummaryMapper;
 import dev.langchain4j.data.message.AiMessage;

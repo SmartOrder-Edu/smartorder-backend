@@ -1,7 +1,7 @@
 package com.smartorder.edu.agent.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.smartorder.edu.agent.domain.entity.ConversationSummary;
+import com.smartorder.edu.agent.model.entity.ConversationSummary;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;

@@ -1,9 +1,9 @@
 package com.smartorder.edu.common.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
-import com.smartorder.edu.common.domain.entity.FriendRequest;
-import com.smartorder.edu.common.domain.entity.UserFriend;
-import com.smartorder.edu.common.domain.vo.FriendVO;
+import com.smartorder.edu.common.model.entity.FriendRequest;
+import com.smartorder.edu.common.model.entity.UserFriend;
+import com.smartorder.edu.common.model.vo.FriendVO;
 
 
 import java.util.List;

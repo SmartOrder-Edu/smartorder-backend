@@ -1,6 +1,6 @@
 package com.smartorder.edu.agent.orchestrator;
 
-import com.smartorder.edu.agent.dto.AgentChatRequest;
+import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.subagent.*;
 import com.smartorder.edu.agent.trace.AgentEventType;
@@ -14,12 +14,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
 
 /**
  * 多智能体协调器——复杂资源生成任务拆给多个子智能体并行执行

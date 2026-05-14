@@ -1,7 +1,7 @@
 package com.smartorder.edu.agent.plan;
 
 import com.alibaba.fastjson.JSONObject;
-import com.smartorder.edu.agent.domain.entity.AgentPlanDraft;
+import com.smartorder.edu.agent.model.entity.AgentPlanDraft;
 import com.smartorder.edu.agent.mapper.AgentPlanDraftMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

@@ -1,6 +1,6 @@
 package com.smartorder.edu.agent.orchestrator;
 
-import com.smartorder.edu.agent.dto.AgentChatRequest;
+import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**

@@ -2,7 +2,7 @@ package com.smartorder.edu.agent.plan;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import com.smartorder.edu.agent.domain.entity.AgentResourceLog;
+import com.smartorder.edu.agent.model.entity.AgentResourceLog;
 import com.smartorder.edu.agent.mapper.AgentResourceLogMapper;
 import com.smartorder.edu.agent.trace.AgentEventType;
 import com.smartorder.edu.agent.trace.AgentRuntimeContext;
@@ -18,7 +18,6 @@ import com.smartorder.edu.learning.domain.vo.LearningSpaceVO;
 import com.smartorder.edu.learning.service.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;

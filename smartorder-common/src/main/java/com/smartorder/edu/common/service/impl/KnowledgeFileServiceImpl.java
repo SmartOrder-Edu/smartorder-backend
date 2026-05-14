@@ -3,9 +3,9 @@ package com.smartorder.edu.common.service.impl;
 import com.aliyun.oss.model.PartETag;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.smartorder.edu.common.config.RabbitMQConfig;
-import com.smartorder.edu.common.domain.dto.ChunkUploadDTO;
-import com.smartorder.edu.common.domain.dto.KnowledgeFileDTO;
-import com.smartorder.edu.common.domain.entity.KnowledgeFile;
+import com.smartorder.edu.common.model.dto.ChunkUploadDTO;
+import com.smartorder.edu.common.model.dto.KnowledgeFileDTO;
+import com.smartorder.edu.common.model.entity.KnowledgeFile;
 import com.smartorder.edu.common.mapper.KnowledgeFileMapper;
 import com.smartorder.edu.common.service.IKnowledgeFileService;
 import com.smartorder.edu.common.util.AliOSSUtils;
@@ -17,13 +17,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 import static com.smartorder.edu.common.common.Constants.*;
 

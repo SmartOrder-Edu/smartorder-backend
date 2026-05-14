@@ -1,7 +1,7 @@
 package com.smartorder.edu.agent.plan;
 
 import com.alibaba.fastjson.JSONObject;
-import com.smartorder.edu.agent.dto.AgentChatRequest;
+import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.tool.LangChain4jToolAdapter;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;

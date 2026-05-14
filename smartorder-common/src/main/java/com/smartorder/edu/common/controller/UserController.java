@@ -1,9 +1,9 @@
 package com.smartorder.edu.common.controller;
 
 
-import com.smartorder.edu.common.dto.UserDTO;
-import com.smartorder.edu.common.domain.vo.Result;
-import com.smartorder.edu.common.domain.vo.UserVO;
+import com.smartorder.edu.common.model.dto.UserDTO;
+import com.smartorder.edu.common.model.vo.Result;
+import com.smartorder.edu.common.model.vo.UserVO;
 import com.smartorder.edu.common.service.impl.UserServiceImpl;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import io.jsonwebtoken.Claims;

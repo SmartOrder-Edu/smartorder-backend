@@ -2,8 +2,8 @@ package com.smartorder.edu.common.util;
 
 import com.baidu.aip.ocr.AipOcr;
 import com.smartorder.edu.common.constant.ResultCode;
-import com.smartorder.edu.common.domain.entity.FileParseRecord;
-import com.smartorder.edu.common.domain.vo.Result;
+import com.smartorder.edu.common.model.entity.FileParseRecord;
+import com.smartorder.edu.common.model.vo.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;

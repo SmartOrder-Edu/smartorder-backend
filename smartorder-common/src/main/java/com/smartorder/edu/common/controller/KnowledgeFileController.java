@@ -1,6 +1,6 @@
 package com.smartorder.edu.common.controller;
 
-import com.smartorder.edu.common.domain.dto.ChunkUploadDTO;
+import com.smartorder.edu.common.model.dto.ChunkUploadDTO;
 import com.smartorder.edu.common.service.IKnowledgeFileService;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import io.jsonwebtoken.Claims;

@@ -1,10 +1,9 @@
 package com.smartorder.edu.common.listener;
 
 import com.smartorder.edu.common.config.RabbitMQConfig;
-import com.smartorder.edu.common.domain.dto.KnowledgeFileDTO;
-import com.smartorder.edu.common.domain.entity.KnowledgeFile;
+import com.smartorder.edu.common.model.dto.KnowledgeFileDTO;
+import com.smartorder.edu.common.model.entity.KnowledgeFile;
 import com.smartorder.edu.common.mapper.KnowledgeFileMapper;
-import com.smartorder.edu.common.service.IKnowledgeFileService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;

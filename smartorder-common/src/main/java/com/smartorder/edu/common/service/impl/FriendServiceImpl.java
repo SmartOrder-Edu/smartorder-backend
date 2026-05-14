@@ -3,10 +3,10 @@ package com.smartorder.edu.common.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 
-import com.smartorder.edu.common.domain.entity.FriendRequest;
-import com.smartorder.edu.common.domain.entity.User;
-import com.smartorder.edu.common.domain.entity.UserFriend;
-import com.smartorder.edu.common.domain.vo.FriendVO;
+import com.smartorder.edu.common.model.entity.FriendRequest;
+import com.smartorder.edu.common.model.entity.User;
+import com.smartorder.edu.common.model.entity.UserFriend;
+import com.smartorder.edu.common.model.vo.FriendVO;
 import com.smartorder.edu.common.mapper.FriendRequestMapper;
 import com.smartorder.edu.common.mapper.UserFriendMapper;
 import com.smartorder.edu.common.mapper.UserMapper;
