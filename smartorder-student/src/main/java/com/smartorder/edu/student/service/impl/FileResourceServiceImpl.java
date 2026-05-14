@@ -3,7 +3,7 @@ package com.smartorder.edu.student.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.smartorder.edu.common.exception.BusinessException;
-import com.smartorder.edu.student.domain.dto.FileResourceDTO;
+import com.smartorder.edu.student.dto.FileResourceDTO;
 import com.smartorder.edu.student.domain.entity.FileResource;
 import com.smartorder.edu.student.domain.vo.FileResourceVO;
 import com.smartorder.edu.student.mapper.FileResourceMapper;

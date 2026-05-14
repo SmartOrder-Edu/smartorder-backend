@@ -2,7 +2,7 @@ package com.smartorder.edu.student.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.smartorder.edu.common.exception.BusinessException;
-import com.smartorder.edu.student.domain.dto.FileFolderDTO;
+import com.smartorder.edu.student.dto.FileFolderDTO;
 import com.smartorder.edu.student.domain.entity.FileFolder;
 import com.smartorder.edu.student.domain.vo.FileFolderVO;
 import com.smartorder.edu.student.mapper.FileFolderMapper;

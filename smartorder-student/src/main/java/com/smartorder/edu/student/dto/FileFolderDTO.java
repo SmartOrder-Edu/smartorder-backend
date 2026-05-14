@@ -1,4 +1,4 @@
-package com.smartorder.edu.student.domain.dto;
+package com.smartorder.edu.student.dto;
 
 import lombok.Data;
 

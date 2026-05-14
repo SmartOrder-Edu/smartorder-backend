@@ -1,4 +1,4 @@
-package com.smartorder.edu.common.domain.dto;
+package com.smartorder.edu.common.dto;
 
 
 import lombok.Data;
@@ -37,4 +37,3 @@ public class RegisterDTO {
      */
     private String verificationCode;
 }
-

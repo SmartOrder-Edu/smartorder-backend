@@ -1,4 +1,4 @@
-package com.smartorder.edu.learning.domain.dto;
+package com.smartorder.edu.learning.dto;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;

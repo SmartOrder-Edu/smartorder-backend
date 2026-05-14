@@ -4,7 +4,7 @@ import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 
-import com.smartorder.edu.common.domain.dto.UserDTO;
+import com.smartorder.edu.common.dto.UserDTO;
 import com.smartorder.edu.common.domain.entity.User;
 import com.smartorder.edu.common.domain.vo.UserVO;
 import com.smartorder.edu.common.exception.BusinessException;

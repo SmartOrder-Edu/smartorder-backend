@@ -1,9 +1,9 @@
 package com.smartorder.edu.common.service;
 
 
-import com.smartorder.edu.common.domain.dto.ChangePasswordDTO;
-import com.smartorder.edu.common.domain.dto.LoginDTO;
-import com.smartorder.edu.common.domain.dto.RegisterDTO;
+import com.smartorder.edu.common.dto.ChangePasswordDTO;
+import com.smartorder.edu.common.dto.LoginDTO;
+import com.smartorder.edu.common.dto.RegisterDTO;
 
 import java.util.Map;
 

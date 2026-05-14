@@ -1,6 +1,5 @@
 package com.smartorder.edu.agent.tool;
 
-import com.alibaba.fastjson.JSON;
 import com.smartorder.edu.agent.trace.AgentEventType;
 import com.smartorder.edu.agent.trace.TraceEventDispatcher;
 import lombok.RequiredArgsConstructor;

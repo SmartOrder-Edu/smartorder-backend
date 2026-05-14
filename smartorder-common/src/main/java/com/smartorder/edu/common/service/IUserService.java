@@ -1,7 +1,7 @@
 package com.smartorder.edu.common.service;
 
 
-import com.smartorder.edu.common.domain.dto.UserDTO;
+import com.smartorder.edu.common.dto.UserDTO;
 import com.smartorder.edu.common.domain.entity.User;
 import com.smartorder.edu.common.domain.vo.UserVO;
 import org.springframework.web.multipart.MultipartFile;

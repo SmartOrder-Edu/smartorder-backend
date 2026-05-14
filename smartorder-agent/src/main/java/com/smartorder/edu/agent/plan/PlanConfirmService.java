@@ -10,7 +10,7 @@ import com.smartorder.edu.agent.trace.TraceEventDispatcher;
 import com.smartorder.edu.knowledge.domain.entity.KnowledgeGraphEdge;
 import com.smartorder.edu.knowledge.domain.entity.KnowledgeGraphNode;
 import com.smartorder.edu.knowledge.service.IKnowledgeGraphService;
-import com.smartorder.edu.learning.domain.dto.LearningSpaceDTO;
+import com.smartorder.edu.learning.dto.LearningSpaceDTO;
 import com.smartorder.edu.learning.domain.entity.LearningPathEdge;
 import com.smartorder.edu.learning.domain.entity.LearningPathNode;
 import com.smartorder.edu.learning.domain.entity.Task;
