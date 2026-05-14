@@ -1,7 +1,7 @@
 package com.smartorder.edu.common.service;
 
-import com.smartorder.edu.common.domain.dto.KnowledgeBaseReqDTO;
-import com.smartorder.edu.common.domain.vo.KnowledgeBaseListRespVO;
+import com.smartorder.edu.common.model.dto.KnowledgeBaseReqDTO;
+import com.smartorder.edu.common.model.vo.KnowledgeBaseListRespVO;
 
 import java.util.List;
 

@@ -2,11 +2,11 @@ package com.smartorder.edu.common.controller;
 
 
 import com.smartorder.edu.common.constant.ResultCode;
-import com.smartorder.edu.common.domain.dto.ChangePasswordDTO;
-import com.smartorder.edu.common.domain.dto.LoginDTO;
-import com.smartorder.edu.common.domain.dto.RegisterDTO;
-import com.smartorder.edu.common.domain.vo.Result;
-import com.smartorder.edu.common.domain.vo.UserVO;
+import com.smartorder.edu.common.model.dto.ChangePasswordDTO;
+import com.smartorder.edu.common.model.dto.LoginDTO;
+import com.smartorder.edu.common.model.dto.RegisterDTO;
+import com.smartorder.edu.common.model.vo.Result;
+import com.smartorder.edu.common.model.vo.UserVO;
 import com.smartorder.edu.common.service.IAuthService;
 import com.smartorder.edu.common.service.IUserService;
 import com.smartorder.edu.common.util.JwtTokenUtils;

@@ -1,10 +1,10 @@
 package com.smartorder.edu.common.service.impl;
 
 
-import com.smartorder.edu.common.domain.dto.ChangePasswordDTO;
-import com.smartorder.edu.common.domain.dto.LoginDTO;
-import com.smartorder.edu.common.domain.dto.RegisterDTO;
-import com.smartorder.edu.common.domain.entity.User;
+import com.smartorder.edu.common.model.dto.ChangePasswordDTO;
+import com.smartorder.edu.common.model.dto.LoginDTO;
+import com.smartorder.edu.common.model.dto.RegisterDTO;
+import com.smartorder.edu.common.model.entity.User;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.common.exception.ValidationException;
 import com.smartorder.edu.common.service.IAuthService;

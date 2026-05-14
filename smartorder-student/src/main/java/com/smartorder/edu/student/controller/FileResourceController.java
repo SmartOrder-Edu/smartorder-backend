@@ -1,9 +1,9 @@
 package com.smartorder.edu.student.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.smartorder.edu.common.domain.vo.Result;
+import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
-import com.smartorder.edu.student.domain.dto.FileResourceDTO;
+import com.smartorder.edu.student.dto.FileResourceDTO;
 import com.smartorder.edu.student.domain.vo.FileResourceVO;
 import com.smartorder.edu.student.service.IFileResourceService;
 import io.jsonwebtoken.Claims;

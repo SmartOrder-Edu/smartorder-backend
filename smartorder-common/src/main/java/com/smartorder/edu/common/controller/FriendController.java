@@ -2,10 +2,10 @@ package com.smartorder.edu.common.controller;
 
 
 import com.smartorder.edu.common.constant.ResultCode;
-import com.smartorder.edu.common.domain.entity.FriendRequest;
-import com.smartorder.edu.common.domain.vo.FriendVO;
-import com.smartorder.edu.common.domain.vo.Result;
-import com.smartorder.edu.common.domain.vo.UserVO;
+import com.smartorder.edu.common.model.entity.FriendRequest;
+import com.smartorder.edu.common.model.vo.FriendVO;
+import com.smartorder.edu.common.model.vo.Result;
+import com.smartorder.edu.common.model.vo.UserVO;
 import com.smartorder.edu.common.service.FriendService;
 import com.smartorder.edu.common.service.IUserService;
 import com.smartorder.edu.common.util.ThreadLocalUtils;

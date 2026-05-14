@@ -1,8 +1,8 @@
 package com.smartorder.edu.student.controller;
 
-import com.smartorder.edu.common.domain.vo.Result;
+import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
-import com.smartorder.edu.student.domain.dto.FileFolderDTO;
+import com.smartorder.edu.student.dto.FileFolderDTO;
 import com.smartorder.edu.student.domain.vo.FileFolderVO;
 import com.smartorder.edu.student.service.IFileFolderService;
 import io.jsonwebtoken.Claims;

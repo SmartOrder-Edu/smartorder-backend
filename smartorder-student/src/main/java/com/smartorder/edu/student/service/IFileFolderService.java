@@ -1,6 +1,6 @@
 package com.smartorder.edu.student.service;
 
-import com.smartorder.edu.student.domain.dto.FileFolderDTO;
+import com.smartorder.edu.student.dto.FileFolderDTO;
 import com.smartorder.edu.student.domain.vo.FileFolderVO;
 
 import java.util.List;

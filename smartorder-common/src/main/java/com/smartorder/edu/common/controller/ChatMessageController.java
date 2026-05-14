@@ -2,8 +2,8 @@ package com.smartorder.edu.common.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
-import com.smartorder.edu.common.domain.entity.ChatMessage;
-import com.smartorder.edu.common.domain.vo.Result;
+import com.smartorder.edu.common.model.entity.ChatMessage;
+import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.service.IChatMessageService;
 import com.smartorder.edu.common.util.AliOSSUtils;
 import com.smartorder.edu.common.util.ThreadLocalUtils;

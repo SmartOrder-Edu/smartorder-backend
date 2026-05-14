@@ -1,6 +1,6 @@
 package com.smartorder.edu.learning.service;
 
-import com.smartorder.edu.learning.domain.dto.LearningSpaceDTO;
+import com.smartorder.edu.learning.dto.LearningSpaceDTO;
 import com.smartorder.edu.learning.domain.vo.LearningSpaceVO;
 
 import java.util.List;

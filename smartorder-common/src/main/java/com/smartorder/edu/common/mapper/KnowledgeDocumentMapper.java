@@ -1,7 +1,7 @@
 package com.smartorder.edu.common.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.smartorder.edu.common.domain.entity.KnowledgeDocument;
+import com.smartorder.edu.common.model.entity.KnowledgeDocument;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
