@@ -106,8 +106,8 @@ spring:
   rabbitmq:
     host: 117.72.222.3
     port: 5672
-    virtual-host: /qh
-    username: qh
+    virtual-host: /so
+    username: so
     password: ${rabbitmq_password}
     connection-timeout: 1s
     template:
