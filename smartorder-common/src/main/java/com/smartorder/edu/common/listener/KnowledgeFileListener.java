@@ -54,18 +54,70 @@ public class KnowledgeFileListener {
         kFile.setFileHash(msg.getFileHash());
 
         String originalName = msg.getOriginalName();
-        if (originalName != null && originalName.contains(".")) {
+        if (originalName != null && originalName.lastIndexOf(".") > 0) {
             String extension = originalName.substring(originalName.lastIndexOf(".") + 1).toLowerCase();
             kFile.setFileExtension(extension);
 
             switch (extension) {
-                case "pdf": kFile.setMimeType("application/pdf"); break;
+                // 文档类
+                case "txt":
+                    kFile.setMimeType("text/plain");
+                    break;
+                case "pdf":
+                    kFile.setMimeType("application/pdf");
+                    break;
                 case "doc":
-                case "docx": kFile.setMimeType("application/msword"); break;
-                case "png": kFile.setMimeType("image/png"); break;
+                    kFile.setMimeType("application/msword");
+                    break;
+                case "docx":
+                    kFile.setMimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+                    break;
+                case "xls":
+                    kFile.setMimeType("application/vnd.ms-excel");
+                    break;
+                case "xlsx":
+                    kFile.setMimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+                    break;
+                case "ppt":
+                    kFile.setMimeType("application/vnd.ms-powerpoint");
+                    break;
+                case "pptx":
+                    kFile.setMimeType("application/vnd.openxmlformats-officedocument.presentationml.presentation");
+                    break;
+
+                // 图片类
+                case "png":
+                    kFile.setMimeType("image/png");
+                    break;
                 case "jpg":
-                case "jpeg": kFile.setMimeType("image/jpeg"); break;
-                default: kFile.setMimeType("application/octet-stream");
+                case "jpeg":
+                    kFile.setMimeType("image/jpeg");
+                    break;
+                case "bmp":
+                    kFile.setMimeType("image/bmp");
+                    break;
+                case "gif":
+                    kFile.setMimeType("image/gif");
+                    break;
+
+                // 音视频类
+                case "mp3":
+                    kFile.setMimeType("audio/mpeg");
+                    break;
+                case "mp4":
+                    kFile.setMimeType("video/mp4");
+                    break;
+                case "mkv":
+                    kFile.setMimeType("video/x-matroska");
+                    break;
+                case "webm":
+                    kFile.setMimeType("video/webm");
+                    break;
+
+                // 未知类型降级处理
+                default:
+                    kFile.setMimeType("application/octet-stream");
+                    break;
             }
         }
 
