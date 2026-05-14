@@ -1,0 +1,21 @@
+CREATE TABLE rag_references (
+      id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT 'RAG引用记录ID',
+      user_id BIGINT NOT NULL COMMENT '所属用户ID',
+      query_log_id BIGINT COMMENT '关联的RAG检索日志ID',
+      conversation_id BIGINT COMMENT '所属会话ID',
+      answer_message_id BIGINT COMMENT '助手回答消息ID',
+      knowledge_base_id BIGINT NOT NULL COMMENT '被引用的知识库ID',
+      file_id BIGINT COMMENT '被引用的文件ID',
+      document_id BIGINT COMMENT '被引用的文档ID',
+      chunk_id BIGINT NOT NULL COMMENT '被引用的chunk ID，对应knowledge_chunks表',
+      vector_id VARCHAR(100) COMMENT '被引用chunk在向量数据库中的vector ID',
+      retrieval_score DECIMAL(8,5) COMMENT '向量检索相似度分数',
+      rerank_score DECIMAL(8,5) COMMENT '重排序分数',
+      final_rank INT COMMENT '最终引用排序，数值越小优先级越高',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+      INDEX idx_rr_user_id (user_id),
+      INDEX idx_rr_query_log_id (query_log_id),
+      INDEX idx_rr_answer_message_id (answer_message_id),
+      INDEX idx_rr_chunk_id (chunk_id),
+      INDEX idx_rr_vector_id (vector_id)
+) COMMENT='RAG引用记录表，用于记录回答引用了哪些知识库chunk';
