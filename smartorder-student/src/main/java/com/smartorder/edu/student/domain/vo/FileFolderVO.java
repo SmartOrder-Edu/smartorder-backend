@@ -6,8 +6,8 @@ import java.time.LocalDateTime;
 
 @Data
 public class FileFolderVO {
-    private Long id;
-    private Long parentId; // 有无都行
+    private Long folderId;
+    private Long folderParentId; // 有无都行
     private String folderName;
 
     private Integer sort;

@@ -9,7 +9,7 @@ public class FileResourceVO {
     /**
      * 文件ID
      */
-    private String fileId;
+    private Long fileId;
     /**
      * 文件名称
      */

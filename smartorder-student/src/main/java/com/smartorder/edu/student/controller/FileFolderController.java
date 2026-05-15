@@ -22,7 +22,7 @@ import java.util.List;
 @Slf4j
 @RequiredArgsConstructor
 @RestController
-@RequestMapping("/yun")
+@RequestMapping("/yun-resource")
 @Tag(name = "文件夹管理", description = "文件夹的增删改查接口")
 public class FileFolderController {
 
@@ -89,7 +89,7 @@ public class FileFolderController {
 
     // 文件资源
     @PostMapping("file")
-    @Operation(summary = "创建文件记录", description = "创建文件资源记录")
+    @Operation(summary = "上传文件", description = "创建文件资源记录")
     public Result<FileResourceVO> createFile(@RequestBody FileResourceDTO dto) {
         Claims claims = ThreadLocalUtils.get();
         Long userId = claims.get("userId", Long.class);
@@ -98,7 +98,7 @@ public class FileFolderController {
     }
 
     @DeleteMapping("/file/{id}")
-    @Operation(summary = "删除文件资源", description = "删除文件资源")
+    @Operation(summary = "删除文件", description = "删除文件资源")
     public Result<String> deleteFile(@PathVariable Long id) {
         Claims claims = ThreadLocalUtils.get();
         Long userId = claims.get("userId", Long.class);
@@ -128,5 +128,20 @@ public class FileFolderController {
     public Result<String> updateFileParseStatus(@PathVariable Long id, @RequestParam Integer parseStatus) {
         fileResourceService.updateParseStatus(id, parseStatus);
         return Result.success("解析状态更新成功");
+    }
+
+    // 阿里云oss文件分片
+
+
+
+
+    @GetMapping("download/{id}")
+    @Operation(summary = "下载文件", description = "根据文件ID下载文件")
+    public Result<String> downloadFile(@PathVariable Long id) {
+        Claims claims = ThreadLocalUtils.get();
+        Long userId = claims.get("userId", Long.class);
+//        String fileUrl = fileResourceService.downloadFile(id, userId);
+//        return Result.success(fileUrl);
+        return Result.success("下载功能暂未实现");
     }
 }

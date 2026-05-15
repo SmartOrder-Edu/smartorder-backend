@@ -40,7 +40,7 @@ public class FileResource {
     private Integer source;
 
     /** AI解析后的摘要内容 */
-    private String summarycontent;
+    private String summaryContent;
 
     /** 上传状态：0-上传中，1-上传成功，2-上传失败 */
     private String uploadStatus;

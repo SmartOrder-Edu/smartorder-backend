@@ -54,19 +54,19 @@ public class FileFolderServiceImpl implements IFileFolderService {
         }).collect(Collectors.toList());
 
         Map<Long, List<FileFolderVO>> parentMap = folderVOs.stream()
-                .filter(f -> f.getParentId() != null)
-                .collect(Collectors.groupingBy(FileFolderVO::getParentId));
+                .filter(f -> f.getFolderParentId() != null)
+                .collect(Collectors.groupingBy(FileFolderVO::getFolderParentId));
 
         // 构建 FileFolderContentVO 列表并设置子文件夹
         List<FileFolderContentVO> vos = folders.stream().map(f -> {
             FileFolderContentVO vo = new FileFolderContentVO();
             BeanUtils.copyProperties(f, vo);
-            vo.setChildrenFolders(parentMap.getOrDefault(f.getId(), new ArrayList<>()));
+            vo.setFolders(parentMap.getOrDefault(f.getId(), new ArrayList<>()));
             return vo;
         }).collect(Collectors.toList());
 
         return vos.stream()
-                .filter(f -> f.getParentId() == null || f.getParentId() == 0)
+                .filter(f -> f.getFolderParentId() == null || f.getFolderParentId() == 0)
                 .collect(Collectors.toList());
     }
 
@@ -74,7 +74,7 @@ public class FileFolderServiceImpl implements IFileFolderService {
     public FileFolderContentVO getFolderById(Long folderId, Long userId) {
         // 1-获取文件夹信息-folderId+folderName
         FileFolderContentVO fileFolderContentVO = new FileFolderContentVO();
-        fileFolderContentVO.setId(folderId);
+        fileFolderContentVO.setFolderId(folderId);
         if (folderId == 0) {
             fileFolderContentVO.setFolderName("根目录");
         } else {
@@ -95,14 +95,14 @@ public class FileFolderServiceImpl implements IFileFolderService {
         List<FileFolder> childFolders = fileFolderMapper.selectList(wrapper);
         List<FileFolderVO> fileFolderVOList = childFolders.stream().map(folder -> {
             FileFolderVO vo = new FileFolderVO();
-            vo.setId(folder.getId());
+            vo.setFolderId(folder.getId());
             vo.setFolderName(folder.getFolderName());
-            vo.setParentId(folder.getParentId());
+            vo.setFolderParentId(folder.getParentId());
             vo.setSort(folder.getSort());
             vo.setUpdateTime(folder.getUpdateTime());
             return vo;
         }).toList();
-        fileFolderContentVO.setChildrenFolders(fileFolderVOList);
+        fileFolderContentVO.setFolders(fileFolderVOList);
 
         // 3-获取子文件夹文件列表-file+fileName信息列表
         LambdaQueryWrapper<FileResource> lambdaQueryWrapper = new LambdaQueryWrapper<>();
@@ -115,7 +115,7 @@ public class FileFolderServiceImpl implements IFileFolderService {
             BeanUtils.copyProperties(fileResource, vo);
             return vo;
         }).toList();
-        fileFolderContentVO.setChildrenFiles(fileResourceVOS);
+        fileFolderContentVO.setFiles(fileResourceVOS);
 
         return fileFolderContentVO;
     }
@@ -128,12 +128,13 @@ public class FileFolderServiceImpl implements IFileFolderService {
         }
 
         // 验证父文件夹是否存在且属于当前用户
+        if(dto.getParentId()!=0){
         if (!checkFolderBelongsToUser(dto.getParentId(), userId)) {
             throw new IllegalArgumentException("父文件夹不存在或不属于当前用户");
         }
-
+}
         // 验证同级文件夹名称是否重复
-        if (!checkSameFolderNameExists(dto.getParentId(), dto.getFolderName(), userId)) {
+        if (checkSameFolderNameExists(dto.getParentId(), dto.getFolderName(), userId)) {
             throw new IllegalArgumentException("同级文件夹名称已存在");
         }
 
