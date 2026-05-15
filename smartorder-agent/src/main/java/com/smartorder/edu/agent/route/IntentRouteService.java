@@ -58,7 +58,7 @@ public class IntentRouteService {
                     .intentType("资源生成")
                     .complexity("复杂")
                     .runMode(AgentRunMode.MULTI_AGENT)
-                    .requiredTools(List.of("getStudentProfile", "manageLearningTask"))
+                    .requiredTools(List.of("getStudentProfile", "queryKnowledge", "generateResource", "generateQuiz"))
                     .reason("用户需要复杂资源生成")
                     .build();
         }
@@ -69,7 +69,7 @@ public class IntentRouteService {
                     .intentType("习题答疑")
                     .complexity("复杂")
                     .runMode(AgentRunMode.REACT)
-                    .requiredTools(List.of("getStudentProfile"))
+                    .requiredTools(List.of("getStudentProfile", "queryKnowledge", "queryTasks"))
                     .reason("用户需要个性化学习辅导")
                     .build();
         }
