@@ -33,3 +33,32 @@ MySQL：
 | 历史对话记忆 Conversation History     | MySQL         | 所有用户与 Agent 的原始对话记录           | 长期保存     |
 | Agent 过程记忆 Agent Process Memory | MySQL + Redis | 多 Agent 协作过程、任务状态、工具调用结果      | 按任务保存    |
 | 学习行为记忆 Learning Behavior Memory | MySQL         | 学习行为、练习、资源使用、反馈               | 长期保存     |
+
+
+
+DocumentParseAgent
+负责文件解析、Markdown 转换、结构化文档构建
+
+KnowledgeExtractAgent
+负责从 chunk 中抽取知识点、概念、公式、关系
+
+GraphBuildAgent
+负责图谱清洗、归并、Neo4j 入库
+
+QueryAnalysisAgent
+负责识别用户意图、实体、查询类型
+
+GraphRetrievalAgent
+负责图谱多跳推理和子图提取
+
+VectorRetrievalAgent
+负责向量召回和 rerank
+
+TeachingAgent
+负责生成教学解释、学习路径、资源推荐
+
+EvaluationAgent
+负责根据答题/反馈更新学生掌握状态
+
+SafetyAgent
+负责事实校验、防幻觉、引用检查

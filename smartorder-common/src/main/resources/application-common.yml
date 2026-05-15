@@ -138,6 +138,13 @@ spring:
           max-attempts: 3
           multiplier: 2 # 每次重试间隔乘数（第一次失败后等待5s，第二次失败后等待10s，第三次失败后等待20s）
 
+  # Neo4j 图数据库配置
+  neo4j:
+    uri: ${NEO4J_URI:neo4j://117.72.222.3:7687}
+    authentication:
+      username: ${NEO4J_USERNAME}
+      password: ${NEO4J_PASSWORD}
+
 llm:
   deepSeek:
     url: https://api.deepseek.com/
@@ -182,6 +189,8 @@ milvus:
   port: 19530
   collection-name: teacher_semantic_memory  # 集合名称
   dimension: 512                            # BGE-small-zh 模型的维度是 512
+
+
 
 # Python 解析服务配置
 python:
