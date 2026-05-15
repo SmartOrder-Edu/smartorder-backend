@@ -1,7 +1,7 @@
 package com.smartorder.edu.student.service;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.smartorder.edu.student.domain.dto.FileResourceDTO;
+import com.smartorder.edu.student.dto.FileResourceDTO;
 import com.smartorder.edu.student.domain.vo.FileResourceVO;
 
 import java.util.List;

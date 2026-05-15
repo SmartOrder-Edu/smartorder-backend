@@ -1,9 +1,8 @@
 package com.smartorder.edu.agent.tool;
 
 import com.alibaba.fastjson.JSON;
-import com.smartorder.edu.agent.dto.GeneratedPlan;
-import com.smartorder.edu.agent.dto.PlanCreationResult;
-import com.smartorder.edu.knowledge.domain.entity.KnowledgeGraphEdge;
+import com.smartorder.edu.agent.model.dto.GeneratedPlan;
+import com.smartorder.edu.agent.model.dto.PlanCreationResult;
 import com.smartorder.edu.knowledge.domain.entity.KnowledgeGraphNode;
 import com.smartorder.edu.knowledge.service.IKnowledgeGraphService;
 import com.smartorder.edu.learning.domain.entity.*;

@@ -3,7 +3,7 @@ package com.smartorder.edu.learning.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.smartorder.edu.common.exception.BusinessException;
-import com.smartorder.edu.learning.domain.dto.LearningSpaceDTO;
+import com.smartorder.edu.learning.dto.LearningSpaceDTO;
 import com.smartorder.edu.learning.domain.entity.LearningSpace;
 import com.smartorder.edu.learning.domain.vo.LearningSpaceVO;
 import com.smartorder.edu.learning.mapper.LearningSpaceMapper;

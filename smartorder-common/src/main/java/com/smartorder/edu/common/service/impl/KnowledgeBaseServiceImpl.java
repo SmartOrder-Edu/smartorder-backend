@@ -1,9 +1,9 @@
 package com.smartorder.edu.common.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.smartorder.edu.common.domain.dto.KnowledgeBaseReqDTO;
-import com.smartorder.edu.common.domain.entity.KnowledgeBase;
-import com.smartorder.edu.common.domain.vo.KnowledgeBaseListRespVO;
+import com.smartorder.edu.common.model.dto.KnowledgeBaseReqDTO;
+import com.smartorder.edu.common.model.entity.KnowledgeBase;
+import com.smartorder.edu.common.model.vo.KnowledgeBaseListRespVO;
 import com.smartorder.edu.common.mapper.KnowledgeBaseMapper;
 import com.smartorder.edu.common.service.IKnowledgeBaseService;
 import com.smartorder.edu.common.util.IdGenerator;

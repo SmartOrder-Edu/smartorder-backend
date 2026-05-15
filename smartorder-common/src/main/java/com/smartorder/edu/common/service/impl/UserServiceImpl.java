@@ -5,9 +5,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 
-import com.smartorder.edu.common.domain.dto.UserDTO;
-import com.smartorder.edu.common.domain.entity.User;
-import com.smartorder.edu.common.domain.vo.UserVO;
+import com.smartorder.edu.common.model.dto.UserDTO;
+import com.smartorder.edu.common.model.entity.User;
+import com.smartorder.edu.common.model.vo.UserVO;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.common.mapper.UserMapper;
 import com.smartorder.edu.common.service.IUserService;
