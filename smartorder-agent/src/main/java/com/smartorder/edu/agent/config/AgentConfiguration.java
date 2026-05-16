@@ -1,5 +1,6 @@
 package com.smartorder.edu.agent.config;
 
+import com.smartorder.edu.agent.http.MimoHttpClientBuilder;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatLanguageModel;
@@ -31,6 +32,8 @@ public class AgentConfiguration {
 
     @Bean
     public ChatLanguageModel chatLanguageModel() {
+        // 使用 MimoHttpClientBuilder 禁用 MIMO thinking mode，
+        // 解决 LangChain4j 1.0.0-beta3 AiMessage 不支持 reasoningContent 导致的多轮对话 400 错误
         return OpenAiChatModel.builder()
                 .apiKey(apiKey)
                 .baseUrl(baseUrl)
@@ -38,6 +41,7 @@ public class AgentConfiguration {
                 .timeout(Duration.ofSeconds(120))
                 .logRequests(true)
                 .logResponses(true)
+                .httpClientBuilder(new MimoHttpClientBuilder())
                 .build();
     }
 
@@ -50,6 +54,7 @@ public class AgentConfiguration {
                 .timeout(Duration.ofSeconds(120))
                 .logRequests(true)
                 .logResponses(true)
+                .httpClientBuilder(new MimoHttpClientBuilder())
                 .build();
     }
 
