@@ -95,6 +95,20 @@ public class LearningSpaceController {
     }
 
     /**
+     * 变更学习空间状态
+     * @param id 空间ID
+     * @param status 目标状态：active/archived/completed
+     * @return 更新后的学习空间
+     */
+    @PatchMapping("/{id}/status")
+    @Operation(summary = "变更学习空间状态", description = "变更学习空间的状态（active/archived/completed）")
+    public Result<LearningSpaceVO> changeStatus(@PathVariable Long id, @RequestParam String status) {
+        Long userId = getCurrentUserId();
+        LearningSpaceVO vo = learningSpaceService.changeStatus(userId, id, status);
+        return Result.success(vo);
+    }
+
+    /**
      * 从ThreadLocal中获取当前用户ID
      */
     private Long getCurrentUserId() {
