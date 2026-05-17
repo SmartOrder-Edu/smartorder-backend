@@ -39,6 +39,8 @@ public class AgentConfiguration {
                 .apiKey(apiKey)
                 .baseUrl(baseUrl)
                 .modelName(modelName)
+                .returnThinking(true)
+                .sendThinking(true, "reasoning_content")
                 .build();
     }
 
@@ -49,6 +51,8 @@ public class AgentConfiguration {
                 .apiKey(apiKey)
                 .baseUrl(baseUrl)
                 .modelName(modelName)
+                .returnThinking(true)
+                .sendThinking(true, "reasoning_content")
                 .build();
     }
 

@@ -74,6 +74,7 @@ public class SelfManagedReActEngine {
 
         // 4. ReAct 循环 — 每轮非流式 LLM 返回的 AiMessage.thinking() 即为真实思考过程
         String finalAnswer = null;
+        String finalThinking = null;
 
         for (int round = 1; round <= MAX_TOOL_ROUNDS; round++) {
             log.info("[ReAct] 第{}轮开始, traceId={}, tools={}",
@@ -140,7 +141,9 @@ public class SelfManagedReActEngine {
             }
 
             // 6. 无工具调用 → 使用流式模型逐 token 输出最终回答
-            finalAnswer = streamFinalAnswer(messages, tools, emitter, runtimeContext);
+            String[] result = streamFinalAnswer(messages, tools, emitter, runtimeContext);
+            finalAnswer = result[0];
+            finalThinking = result[1];
 
             log.info("[ReAct] 完成, traceId={}, rounds={}", runtimeContext.getTraceId(), round);
             break;
@@ -155,9 +158,9 @@ public class SelfManagedReActEngine {
             ));
         }
 
-        // 8. 保存助手回复（含 thinking 内容）
+        // 8. 保存助手回复（含 reasoning_content，thinking mode 要求回传）
         memoryService.saveAssistantMessage(
-                runtimeContext.getConversationId(), request.getUserId(), finalAnswer);
+                runtimeContext.getConversationId(), request.getUserId(), finalAnswer, finalThinking);
 
         // 9. 异步检查是否需要压缩
         compressService.checkAndCompress(runtimeContext.getConversationId(), request.getUserId());
@@ -166,14 +169,17 @@ public class SelfManagedReActEngine {
     /**
      * 使用流式模型输出最终回答，逐 token 推送 agent.text.delta 事件，
      * 同时通过 onPartialThinking 推送真实推理过程。
+     *
+     * @return String[2]: [0]=回答文本, [1]=reasoning_content (可能为 null)
      */
-    private String streamFinalAnswer(
+    private String[] streamFinalAnswer(
             List<ChatMessage> messages,
             List<ToolSpecification> tools,
             SseEmitter emitter,
             AgentRuntimeContext runtimeContext
     ) {
         StringBuilder answerBuilder = new StringBuilder();
+        StringBuilder thinkingBuilder = new StringBuilder();
         CountDownLatch latch = new CountDownLatch(1);
 
         ChatRequest chatRequest = ChatRequest.builder()
@@ -185,6 +191,7 @@ public class SelfManagedReActEngine {
             @Override
             public void onPartialThinking(PartialThinking partialThinking) {
                 if (partialThinking != null && partialThinking.text() != null) {
+                    thinkingBuilder.append(partialThinking.text());
                     dispatcher.emit(emitter, runtimeContext, AgentEventType.THINK_DELTA, Map.of(
                             "text", partialThinking.text()
                     ));
@@ -229,6 +236,9 @@ public class SelfManagedReActEngine {
             log.warn("[ReAct] 流式输出被中断, traceId={}", runtimeContext.getTraceId());
         }
 
-        return answerBuilder.toString();
+        return new String[]{
+                answerBuilder.toString(),
+                thinkingBuilder.length() > 0 ? thinkingBuilder.toString() : null
+        };
     }
 }

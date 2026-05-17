@@ -104,21 +104,21 @@ public class ConversationMemoryService {
      * 保存用户消息
      */
     public void saveUserMessage(String conversationId, Long userId, String content) {
-        save(conversationId, userId, "user", content, null);
+        save(conversationId, userId, "user", content, null, null);
     }
 
     /**
-     * 保存助手消息
+     * 保存助手消息（含 reasoning_content，thinking mode 必须回传给 API）
      */
-    public void saveAssistantMessage(String conversationId, Long userId, String content) {
-        save(conversationId, userId, "assistant", content, null);
+    public void saveAssistantMessage(String conversationId, Long userId, String content, String reasoningContent) {
+        save(conversationId, userId, "assistant", content, null, reasoningContent);
     }
 
     /**
      * 保存工具消息
      */
     public void saveToolMessage(String conversationId, Long userId, String toolName, String content) {
-        save(conversationId, userId, "tool", content, toolName);
+        save(conversationId, userId, "tool", content, toolName, null);
     }
 
     /**
@@ -130,13 +130,14 @@ public class ConversationMemoryService {
 
     // ============ Private ============
 
-    private void save(String conversationId, Long userId, String role, String content, String toolName) {
+    private void save(String conversationId, Long userId, String role, String content, String toolName, String reasoningContent) {
         ConversationMessage entity = new ConversationMessage();
         entity.setConversationId(conversationId);
         entity.setUserId(userId);
         entity.setRole(role);
         entity.setContent(content);
         entity.setToolName(toolName);
+        entity.setReasoningContent(reasoningContent);
         entity.setIsCompressed(0);
         entity.setIsDeleted(0);
         messageMapper.insert(entity);
@@ -148,6 +149,14 @@ public class ConversationMemoryService {
             case "user":
                 return UserMessage.from(msg.getContent());
             case "assistant":
+                // 重建 AiMessage 时，如果有 reasoning_content 则带上 thinking，
+                // 否则 MIMO thinking mode 会报 400 错误
+                if (msg.getReasoningContent() != null && !msg.getReasoningContent().isBlank()) {
+                    return AiMessage.builder()
+                            .text(msg.getContent())
+                            .thinking(msg.getReasoningContent())
+                            .build();
+                }
                 return AiMessage.from(msg.getContent());
             case "system":
                 return SystemMessage.from(msg.getContent());
