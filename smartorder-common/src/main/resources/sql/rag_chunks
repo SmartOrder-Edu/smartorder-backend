@@ -1,27 +1,205 @@
 {
-  "vector_id": "chunk_10001",
-  "chunk_id": 10001,
+  "collectionName": "rag_chunks",
+  "description": "RAG知识块混合向量集合，支持SigLIP密集向量和TF-IDF稀疏向量",
 
-  "user_id": 1,
-  "knowledge_base_id": 10,
-  "file_id": 88,
-  "document_id": 120,
+  "primaryField": {
+    "name": "vector_id",
+    "dataType": "VarChar",
+    "maxLength": 128,
+    "autoId": false,
+    "description": "Milvus向量主键，对应KnowledgeChunk.vectorId"
+  },
 
-  "chunk_index": 3,
-  "chunk_type": "text",
+  "enableDynamicField": false,
 
-  "content": "这里是完整的chunk文本内容，用于RAG检索后注入大模型上下文。",
-  "content_hash": "a8c7f894....",
+  "fields": [
+    {
+      "name": "vector_id",
+      "dataType": "VarChar",
+      "maxLength": 128,
+      "isPrimaryKey": true,
+      "description": "向量主键ID"
+    },
+    {
+      "name": "content",
+      "dataType": "VarChar",
+      "maxLength": 65535,
+      "description": "用于检索和RAG上下文注入的文本内容"
+    },
+    {
+      "name": "siglip_dense_vector",
+      "dataType": "FloatVector",
+      "dimension": 768,
+      "description": "SigLIP生成的密集向量，用于语义检索和图文检索"
+    },
+    {
+      "name": "tfidf_sparse_vector",
+      "dataType": "SparseFloatVector",
+      "description": "TF-IDF生成的稀疏向量，用于关键词、术语、精确匹配检索"
+    },
 
-  "file_name": "操作系统课件.pdf",
-  "document_title": "操作系统进程管理",
-  "section_title": "进程调度",
-  "title_path": "第三章/进程管理/进程调度",
-  "page_number": 12,
+    {
+      "name": "chunk_id",
+      "dataType": "Int64",
+      "description": "MySQL中的知识块ID"
+    },
+    {
+      "name": "user_id",
+      "dataType": "Int64",
+      "description": "用户ID，用于数据隔离"
+    },
+    {
+      "name": "knowledge_base_id",
+      "dataType": "Int64",
+      "description": "知识库ID，用于知识库范围过滤"
+    },
+    {
+      "name": "file_id",
+      "dataType": "Int64",
+      "description": "文件ID，用于文件范围过滤和溯源"
+    },
+    {
+      "name": "document_id",
+      "dataType": "Int64",
+      "description": "文档ID，用于文档范围过滤"
+    },
 
-  "token_count": 420,
-  "char_count": 860,
+    {
+      "name": "chunk_index",
+      "dataType": "Int64",
+      "description": "chunk在文档中的顺序"
+    },
+    {
+      "name": "chunk_type",
+      "dataType": "VarChar",
+      "maxLength": 64,
+      "description": "chunk类型，例如text、table、image_ocr"
+    },
+    {
+      "name": "section_title",
+      "dataType": "VarChar",
+      "maxLength": 512,
+      "description": "当前chunk所属章节标题"
+    },
+    {
+      "name": "title_path",
+      "dataType": "VarChar",
+      "maxLength": 1024,
+      "description": "Markdown标题路径，例如第一章/进程管理/进程调度"
+    },
+    {
+      "name": "page_number",
+      "dataType": "Int64",
+      "description": "页码，PDF、Word、PPT等文件可使用"
+    },
 
-  "embedding_model": "bge-m3",
-  "created_at": "2026-05-12T10:00:00"
+    {
+      "name": "file_name",
+      "dataType": "VarChar",
+      "maxLength": 512,
+      "description": "源文件名称"
+    },
+    {
+      "name": "document_title",
+      "dataType": "VarChar",
+      "maxLength": 512,
+      "description": "文档标题"
+    },
+    {
+      "name": "content_hash",
+      "dataType": "VarChar",
+      "maxLength": 128,
+      "description": "chunk内容hash，用于判断是否需要重新向量化"
+    },
+
+    {
+      "name": "dense_model",
+      "dataType": "VarChar",
+      "maxLength": 128,
+      "description": "密集向量模型名称，例如siglip-base-patch16-224"
+    },
+    {
+      "name": "sparse_model",
+      "dataType": "VarChar",
+      "maxLength": 128,
+      "description": "稀疏向量模型名称，例如tfidf"
+    },
+    {
+      "name": "created_at",
+      "dataType": "VarChar",
+      "maxLength": 64,
+      "description": "向量记录创建时间"
+    }
+  ],
+
+  "indexes": [
+    {
+      "fieldName": "siglip_dense_vector",
+      "indexName": "idx_siglip_dense_vector",
+      "indexType": "HNSW",
+      "metricType": "COSINE",
+      "params": {
+        "M": 16,
+        "efConstruction": 200
+      },
+      "description": "SigLIP密集向量索引"
+    },
+    {
+      "fieldName": "tfidf_sparse_vector",
+      "indexName": "idx_tfidf_sparse_vector",
+      "indexType": "SPARSE_INVERTED_INDEX",
+      "metricType": "IP",
+      "params": {
+        "drop_ratio_build": 0.2
+      },
+      "description": "TF-IDF稀疏向量倒排索引"
+    }
+  ],
+
+  "searchParams": {
+    "denseSearch": {
+      "fieldName": "siglip_dense_vector",
+      "metricType": "COSINE",
+      "params": {
+        "ef": 64
+      },
+      "topK": 20
+    },
+    "sparseSearch": {
+      "fieldName": "tfidf_sparse_vector",
+      "metricType": "IP",
+      "params": {
+        "drop_ratio_search": 0.2
+      },
+      "topK": 20
+    },
+    "hybridSearch": {
+      "topK": 10,
+      "denseWeight": 0.6,
+      "sparseWeight": 0.4,
+      "rerankType": "weighted"
+    }
+  },
+
+  "filterFields": [
+    "user_id",
+    "knowledge_base_id",
+    "file_id",
+    "document_id",
+    "chunk_type"
+  ],
+
+  "models": {
+    "dense": {
+      "name": "siglip-base-patch16-224",
+      "type": "siglip",
+      "dimension": 768,
+      "fieldName": "siglip_dense_vector"
+    },
+    "sparse": {
+      "name": "tfidf",
+      "type": "tfidf",
+      "fieldName": "tfidf_sparse_vector"
+    }
+  }
 }
