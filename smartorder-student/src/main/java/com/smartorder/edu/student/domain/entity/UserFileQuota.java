@@ -7,6 +7,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class UserFileQuota {
     private Long userId;
-    private Long usedSpace;
+    private Long userSpace;
     private Integer version;
 }

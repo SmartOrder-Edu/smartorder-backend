@@ -9,12 +9,12 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.common.util.AliOSSUtils;
-import com.smartorder.edu.student.domain.dto.FileResourceDTO;
 import com.smartorder.edu.student.domain.dto.InitFileUploadDTO;
 import com.smartorder.edu.student.domain.entity.FileResource;
 import com.smartorder.edu.student.domain.vo.FileResourceVO;
 import com.smartorder.edu.student.mapper.FileResourceMapper;
 import com.smartorder.edu.student.service.IFileResourceService;
+import com.smartorder.edu.student.service.IUserFileQuotaService;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -43,6 +43,7 @@ public class FileResourceServiceImpl implements IFileResourceService {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final RabbitTemplate rabbitTemplate;
+    private final IUserFileQuotaService userFileQuotaService;
 
     @Override
     public Page<FileResourceVO> getFilesByFolder(Long folderId, Long userId, Integer pageNum, Integer pageSize) {
@@ -98,6 +99,11 @@ public class FileResourceServiceImpl implements IFileResourceService {
 
         // 删除数据库记录
         fileResourceMapper.deleteById(id);
+
+        // 释放已用空间
+        if (file.getFileSize() != null && file.getFileSize() > 0) {
+            userFileQuotaService.reduceUserSpace(userId, file.getFileSize());
+        }
     }
 
     @Override
@@ -227,6 +233,13 @@ public class FileResourceServiceImpl implements IFileResourceService {
             String completeMultipartUploadURL = aliOSSUtils.completeMultipartUpload(uploadTask.objectKey, uploadTask.uploadId, partETags);
 
             redisTemplate.delete(uploadKey);
+
+            // 查询文件大小，更新用户已用空间
+            FileResource file = fileResourceMapper.selectById(fileId);
+            if (file != null && file.getFileSize() != null) {
+                userFileQuotaService.addUserSpace(userId, file.getFileSize());
+            }
+
             LambdaUpdateWrapper<FileResource> wrapper = new LambdaUpdateWrapper<>();
             wrapper.eq(FileResource::getId,fileId)
                     .set(FileResource::getUploadStatus,1)
