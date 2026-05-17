@@ -230,6 +230,10 @@ langchain4j:
       # 以及大模型返回的工具调用指令长什么样，非常有助于排障。
       log-requests: true
       log-responses: true
+    embedding-model:
+      api-key: ${MIMO_API_KEY}
+      base-url: https://token-plan-cn.xiaomimimo.com/v1
+      model-name: bge-m3
 
 # 讯飞虚拟人交互配置
 xfyun:
