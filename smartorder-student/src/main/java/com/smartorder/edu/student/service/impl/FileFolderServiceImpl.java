@@ -22,7 +22,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
+import org.springframework.transaction.annotation.Transactional;
+
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -162,6 +164,7 @@ public class FileFolderServiceImpl implements IFileFolderService {
     }
 
     @Override
+    @Transactional
     public void deleteFolder(Long folderId, Long userId) {
         // 1-验证文件夹是否存在且属于当前用户
         FileFolder folder = fileFolderMapper.selectById(folderId);
@@ -175,19 +178,7 @@ public class FileFolderServiceImpl implements IFileFolderService {
         // 3-查询文件夹下面所有的文件资源
         List<FileResource> fileList = findAllChildFileIds(folderList, userId);
 
-        // 4-删除文件夹下的所有文件资源
-        if (!fileList.isEmpty()) {
-            List<Long> fileLongList = fileList.stream().map(FileResource::getId).toList();
-            /*LambdaQueryWrapper<FileResource> wrapper = new LambdaQueryWrapper<>();
-            wrapper.in(FileResource::getId, fileLongList);
-            fileResourceMapper.delete(wrapper);*/
-            fileResourceMapper.deleteByIds(fileLongList);
-        }
-
-        // 5-删除文件夹下的所有文件夹
-        fileFolderMapper.deleteByIds(folderList);
-
-        // 6- TODO 删除OSS上的文件资源
+        // 4-先删除OSS上的文件资源（失败不影响DB，可重试）
         fileList.forEach(file -> {
             try {
                 if (file.getFileUrl() != null && !file.getFileUrl().isEmpty()) {
@@ -197,7 +188,13 @@ public class FileFolderServiceImpl implements IFileFolderService {
                 log.error("删除OSS上的文件资源失败: {}", e.getMessage());
             }
         });
-
+        // 5-再删除DB文件资源
+        if (!fileList.isEmpty()) {
+            List<Long> fileLongList = fileList.stream().map(FileResource::getId).toList();
+            fileResourceMapper.deleteByIds(fileLongList);
+        }
+        // 6-删除DB文件夹
+        fileFolderMapper.deleteByIds(folderList);
     }
 
     private List<Long> findAllChildFolderIds(Long parentFolderId, Long userId) {
@@ -207,7 +204,6 @@ public class FileFolderServiceImpl implements IFileFolderService {
 
         while (!queue.isEmpty()) {
             Long folderId = queue.poll();
-            folderIds.add(folderId);
 
             LambdaQueryWrapper<FileFolder> wrapper = new LambdaQueryWrapper<>();
             wrapper.eq(FileFolder::getParentId, folderId);
@@ -326,7 +322,7 @@ public class FileFolderServiceImpl implements IFileFolderService {
      * @param teacherId 教师ID
      * @return String 唯一文件名
      */
-    private String generateUniqueFileName(String originalFileName, Long targetFolderId, Long teacherId) {
+    private String generateUniqueFileName(String originalFileName, Long targetFolderId, Long userId) {
         if (originalFileName == null) {
             throw new IllegalArgumentException("文件名不能为空");
         }
@@ -342,14 +338,14 @@ public class FileFolderServiceImpl implements IFileFolderService {
 
         // 构造查询条件：匹配 "名称主体" 或 "名称主体(数字)" 开头的文件
         String prefix = nameMain + "(";
-        QueryWrapper<FileResource> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("folder_id", targetFolderId)
-                .eq("teacher_id", teacherId)
-                .and(w -> w.likeRight("file_name", nameMain)
+        LambdaQueryWrapper<FileResource> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(FileResource::getFolderId, targetFolderId)
+                .eq(FileResource::getUserId, userId)
+                .and(w -> w.likeRight(FileResource::getFileName, nameMain)
                         .or()
-                        .likeRight("file_name", prefix));
+                        .likeRight(FileResource::getFileName, prefix));
 
-        List<FileResource> list = fileResourceMapper.selectList(queryWrapper);
+        List<FileResource> list = fileResourceMapper.selectList(wrapper);
         if (list.isEmpty()) {
             return originalFileName;
         }

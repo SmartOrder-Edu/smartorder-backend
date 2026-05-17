@@ -1,4 +1,4 @@
-package com.smartorder.edu.student.dto;
+package com.smartorder.edu.student.domain.dto;
 
 import lombok.Data;
 
@@ -11,6 +11,6 @@ public class FileResourceDTO {
     private String fileType;
     private Long fileSize;
     private Integer source;
-    private String summarycontent;
-    private String uploadStatus;
+    private String summaryContent;
+    private Integer uploadStatus;
 }

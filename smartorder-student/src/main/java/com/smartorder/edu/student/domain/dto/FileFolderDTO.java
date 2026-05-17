@@ -1,8 +1,7 @@
-package com.smartorder.edu.student.dto;
+package com.smartorder.edu.student.domain.dto;
 
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
-
-import javax.validation.constraints.NotNull;
 
 @Data
 public class FileFolderDTO {

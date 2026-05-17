@@ -43,7 +43,7 @@ public class FileResource {
     private String summaryContent;
 
     /** 上传状态：0-上传中，1-上传成功，2-上传失败 */
-    private String uploadStatus;
+    private Integer uploadStatus;
 
     /** 解析状态：0-未解析，1-解析中，2-向量化完成，3-解析失败 */
     private Integer parseStatus;
