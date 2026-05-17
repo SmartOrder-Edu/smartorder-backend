@@ -51,4 +51,13 @@ public interface ILearningSpaceService {
      * @param spaceId 空间ID
      */
     void deleteSpace(Long userId, Long spaceId);
+
+    /**
+     * 变更学习空间状态
+     * @param userId 用户ID
+     * @param spaceId 空间ID
+     * @param status 目标状态：active/archived/completed
+     * @return 更新后的学习空间视图对象
+     */
+    LearningSpaceVO changeStatus(Long userId, Long spaceId, String status);
 }

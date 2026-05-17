@@ -36,19 +36,43 @@ public class IntentRouteService {
                 .build();
     }
 
+    // 确认创建计划的关键词
+    private static final List<String> CONFIRM_KEYWORDS = List.of(
+            "好的", "可以", "是的", "行", "确认", "需要", "嗯", "对", "好",
+            "创建吧", "开始吧", "没问题", "ok", "yes", "OK", "Yes", "搞吧", "做吧", "弄吧"
+    );
+
+    // 学习目标相关关键词
+    private static final List<String> GOAL_KEYWORDS = List.of(
+            "制定", "计划", "规划", "备考", "学习路径",
+            "想学", "学习", "准备", "考研", "成为", "提升", "达到", "目标"
+    );
+
     private IntentRouteResult routeByRule(String message) {
         if (message == null || message.isBlank()) {
             return null;
         }
 
-        // 目标规划类
-        if (containsAny(message, "制定", "计划", "规划", "备考", "学习路径")) {
+        // 用户确认创建计划 → 直接进入 PLAN_EXECUTE 模式
+        // 只匹配整句基本为确认词的短消息，避免误匹配
+        if (isConfirmMessage(message)) {
             return IntentRouteResult.builder()
-                    .intentType("目标规划")
+                    .intentType("确认创建计划")
                     .complexity("复杂")
                     .runMode(AgentRunMode.PLAN_EXECUTE)
+                    .requiredTools(List.of("getStudentProfile"))
+                    .reason("用户确认创建学习计划，进入规划生成流程")
+                    .build();
+        }
+
+        // 学习目标表达 → REACT 模式，让 AI 了解学生后主动询问是否需要创建计划
+        if (containsAny(message, GOAL_KEYWORDS.toArray(new String[0]))) {
+            return IntentRouteResult.builder()
+                    .intentType("学习目标讨论")
+                    .complexity("复杂")
+                    .runMode(AgentRunMode.REACT)
                     .requiredTools(List.of("getStudentProfile", "manageLearningTask"))
-                    .reason("用户表达了明确的学习目标，需要生成规划")
+                    .reason("用户表达了学习相关意图，AI 应了解学生情况后主动询问是否需要创建学习计划")
                     .build();
         }
 
@@ -58,7 +82,7 @@ public class IntentRouteService {
                     .intentType("资源生成")
                     .complexity("复杂")
                     .runMode(AgentRunMode.MULTI_AGENT)
-                    .requiredTools(List.of("getStudentProfile", "manageLearningTask"))
+                    .requiredTools(List.of("getStudentProfile", "queryKnowledge", "generateResource", "generateQuiz"))
                     .reason("用户需要复杂资源生成")
                     .build();
         }
@@ -69,7 +93,7 @@ public class IntentRouteService {
                     .intentType("习题答疑")
                     .complexity("复杂")
                     .runMode(AgentRunMode.REACT)
-                    .requiredTools(List.of("getStudentProfile"))
+                    .requiredTools(List.of("getStudentProfile", "queryKnowledge", "queryTasks"))
                     .reason("用户需要个性化学习辅导")
                     .build();
         }
@@ -86,6 +110,16 @@ public class IntentRouteService {
         }
 
         return null;
+    }
+
+    /**
+     * 判断消息是否为确认创建计划的短消息
+     * 只匹配消息体基本由确认词构成的短消息（<=10字符），避免长消息误匹配
+     */
+    private boolean isConfirmMessage(String message) {
+        if (message.length() > 10) return false;
+        String trimmed = message.trim();
+        return CONFIRM_KEYWORDS.contains(trimmed);
     }
 
     private boolean containsAny(String text, String... keywords) {

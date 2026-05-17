@@ -51,7 +51,10 @@
         <jjwt.version>0.9.1</jjwt.version>
         <jaxb-api.version>2.3.1</jaxb-api.version>
         <ali-oss.version>3.17.4</ali-oss.version>
-        <langchain4j.version>1.0.0-beta3</langchain4j.version>
+        <langchain4j.version>1.13.0</langchain4j.version>
+        <!-- LangChain4j 内部属性映射：
+             langchain4j.stable.version=1.13.0（核心模块）
+             langchain4j.beta.version=1.13.0-beta23（starter/集成模块） -->
         <swagger.version>4.5.0</swagger.version>
     </properties>
 
@@ -75,6 +78,14 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <!-- LangChain4j BOM：统一管理核心模块(1.13.0)和 starter/集成模块(1.13.0-beta23)的版本 -->
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-bom</artifactId>
+                <version>${langchain4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -83,7 +94,6 @@
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-web-search-engine-tavily</artifactId>
-            <version>0.35.0</version>
         </dependency>
         <!-- Spring AOP 依赖 -->
         <dependency>
@@ -235,13 +245,11 @@
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-open-ai-spring-boot-starter</artifactId>
-            <version>${langchain4j.version}</version>
         </dependency>
 
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-spring-boot-starter</artifactId>
-            <version>${langchain4j.version}</version>
         </dependency>
         <!--redis依赖-->
         <dependency>
@@ -377,25 +385,21 @@
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-easy-rag</artifactId>
-            <version>${langchain4j.version}</version>
         </dependency>
 
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j</artifactId>
-            <version>${langchain4j.version}</version>
         </dependency>
 
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-core</artifactId>
-            <version>${langchain4j.version}</version>
         </dependency>
 
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-milvus</artifactId>
-            <version>${langchain4j.version}</version>
         </dependency>
 
         <!-- Neo4j 图数据库依赖 -->
@@ -407,7 +411,6 @@
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-embeddings-bge-small-zh-v15-q</artifactId>
-            <version>${langchain4j.version}</version>
         </dependency>
 
         <!-- HTML转Word核心依赖 -->

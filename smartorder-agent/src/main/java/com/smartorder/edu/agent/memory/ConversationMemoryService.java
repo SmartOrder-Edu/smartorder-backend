@@ -39,12 +39,25 @@ public class ConversationMemoryService {
             2. **答疑解惑**：用清晰、易懂的方式解释知识点
             3. **制定计划**：根据学生情况，制定结构化的学习路径
 
+            ## 核心能力（工具）
+            你拥有以下工具，可以直接在系统中执行操作：
+            - **getStudentProfile**：获取学生的学习画像
+            - **manageLearningTask**：在系统中创建学习空间、学习路径和任务（这是真实可执行的工具，不是模拟）
+            - **queryKnowledge**：查询知识图谱
+            - **queryTasks**：查询学习任务
+            - **queryLearningProgress**：查询学习进度
+            - **generateQuiz**：生成练习题和测试
+            - **generateResource**：生成学习资料
+
             ## 行为准则
             - 在回答前，如果需要了解学生情况，先调用工具获取学生画像
             - 用热情、鼓励的语气交流
             - 回答尽量简洁，避免长篇大论
             - 对重要操作（如创建学习空间），必须明确告知用户
             - 不要编造学生档案信息，需要时必须调用工具
+            - **你有能力通过 manageLearningTask 工具在系统中真实创建学习空间和任务，不要说自己做不到**
+            - **当用户表达学习目标或想学习某个领域时（如"我想学XX"、"帮我准备XX考试"），先调用 getStudentProfile 了解学生情况，然后主动询问是否需要立即创建学习空间和任务**
+            - 当用户明确要求制定计划时，先确认用户的具体需求（目标、时间、偏好），然后直接调用 manageLearningTask 为用户创建学习空间
             """;
 
     /**
@@ -91,21 +104,21 @@ public class ConversationMemoryService {
      * 保存用户消息
      */
     public void saveUserMessage(String conversationId, Long userId, String content) {
-        save(conversationId, userId, "user", content, null);
+        save(conversationId, userId, "user", content, null, null);
     }
 
     /**
-     * 保存助手消息
+     * 保存助手消息（含 reasoning_content，thinking mode 必须回传给 API）
      */
-    public void saveAssistantMessage(String conversationId, Long userId, String content) {
-        save(conversationId, userId, "assistant", content, null);
+    public void saveAssistantMessage(String conversationId, Long userId, String content, String reasoningContent) {
+        save(conversationId, userId, "assistant", content, null, reasoningContent);
     }
 
     /**
      * 保存工具消息
      */
     public void saveToolMessage(String conversationId, Long userId, String toolName, String content) {
-        save(conversationId, userId, "tool", content, toolName);
+        save(conversationId, userId, "tool", content, toolName, null);
     }
 
     /**
@@ -117,13 +130,14 @@ public class ConversationMemoryService {
 
     // ============ Private ============
 
-    private void save(String conversationId, Long userId, String role, String content, String toolName) {
+    private void save(String conversationId, Long userId, String role, String content, String toolName, String reasoningContent) {
         ConversationMessage entity = new ConversationMessage();
         entity.setConversationId(conversationId);
         entity.setUserId(userId);
         entity.setRole(role);
         entity.setContent(content);
         entity.setToolName(toolName);
+        entity.setReasoningContent(reasoningContent);
         entity.setIsCompressed(0);
         entity.setIsDeleted(0);
         messageMapper.insert(entity);
@@ -135,6 +149,14 @@ public class ConversationMemoryService {
             case "user":
                 return UserMessage.from(msg.getContent());
             case "assistant":
+                // 重建 AiMessage 时，如果有 reasoning_content 则带上 thinking，
+                // 否则 MIMO thinking mode 会报 400 错误
+                if (msg.getReasoningContent() != null && !msg.getReasoningContent().isBlank()) {
+                    return AiMessage.builder()
+                            .text(msg.getContent())
+                            .thinking(msg.getReasoningContent())
+                            .build();
+                }
                 return AiMessage.from(msg.getContent());
             case "system":
                 return SystemMessage.from(msg.getContent());
@@ -156,5 +178,49 @@ public class ConversationMemoryService {
             sb.append("[").append(msg.getRole()).append("]: ").append(msg.getContent()).append("\n\n");
         }
         return sb.toString();
+    }
+
+    /**
+     * 从对话历史中提取用户最近表达的学习目标
+     * 向上追溯最近的用户消息，排除简单确认词（如"好的"/"可以"等）
+     *
+     * @param conversationId 会话 ID
+     * @return 最近的非确认用户消息；如果没有找到则返回 null
+     */
+    public String extractRecentGoal(String conversationId) {
+        List<ConversationMessage> recentMessages = messageMapper.selectRecentMessages(conversationId, 20);
+
+        // selectRecentMessages 按 create_time DESC 返回，从最近开始遍历
+        for (ConversationMessage msg : recentMessages) {
+            if (!"user".equals(msg.getRole())) continue;
+            String content = msg.getContent();
+            if (content == null || content.isBlank()) continue;
+
+            // 跳过确认类短消息
+            if (isConfirmationOnly(content)) continue;
+
+            log.info("[MemoryService] 提取到用户原始学习目标: conversationId={}, goal={}",
+                    conversationId, content.substring(0, Math.min(50, content.length())));
+            return content;
+        }
+
+        log.warn("[MemoryService] 未从对话历史中找到学习目标: conversationId={}", conversationId);
+        return null;
+    }
+
+    /**
+     * 判断消息是否为仅包含确认表达的短消息
+     */
+    private boolean isConfirmationOnly(String content) {
+        String trimmed = content.trim();
+        // 短确认词精确匹配
+        return trimmed.length() <= 10 && (
+                trimmed.equals("好的") || trimmed.equals("可以") || trimmed.equals("是的") ||
+                trimmed.equals("行") || trimmed.equals("确认") || trimmed.equals("需要") ||
+                trimmed.equals("嗯") || trimmed.equals("对") || trimmed.equals("好") ||
+                trimmed.equals("创建吧") || trimmed.equals("开始吧") || trimmed.equals("没问题") ||
+                trimmed.equals("搞吧") || trimmed.equals("做吧") || trimmed.equals("弄吧") ||
+                trimmed.equalsIgnoreCase("ok") || trimmed.equalsIgnoreCase("yes")
+        );
     }
 }

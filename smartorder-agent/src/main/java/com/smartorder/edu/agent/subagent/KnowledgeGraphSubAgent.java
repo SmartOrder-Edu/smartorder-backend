@@ -1,7 +1,7 @@
 package com.smartorder.edu.agent.subagent;
 
 import com.smartorder.edu.agent.trace.AgentRuntimeContext;
-import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.ChatModel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -15,7 +15,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RequiredArgsConstructor
 public class KnowledgeGraphSubAgent implements SubAgent {
 
-    private final ChatLanguageModel chatLanguageModel;
+    private final ChatModel chatLanguageModel;
 
     @Override
     public String name() {

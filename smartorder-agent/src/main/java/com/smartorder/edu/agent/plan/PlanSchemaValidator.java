@@ -30,6 +30,7 @@ public class PlanSchemaValidator {
         // 必填字段校验
         require(json, "spaceName", "学习空间名称");
         require(json, "type", "学习空间类型");
+        require(json, "goals", "学习目标");
 
         // phases 校验
         JSONArray phases = json.getJSONArray("phases");
