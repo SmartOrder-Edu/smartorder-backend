@@ -91,4 +91,18 @@ public class KnowledgeFileJob {
      */
     @TableField("updated_at")
     private LocalDateTime updatedAt;
+
+
+    private Integer retryCount;
+
+    private Integer maxRetryCount;
+
+    private LocalDateTime nextRetryAt;
+
+    private String workerId;
+
+    private LocalDateTime lockedAt;
+
+    private String jobKey;
+
 }

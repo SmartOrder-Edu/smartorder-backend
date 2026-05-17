@@ -115,4 +115,10 @@ public class KnowledgeDocument {
      */
     @TableField("updated_at")
     private LocalDateTime updatedAt;
+
+
+    private String markdownPath;
+
+    private Integer parseVersion;
+
 }

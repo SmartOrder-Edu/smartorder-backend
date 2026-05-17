@@ -40,7 +40,7 @@
         <url/>
     </scm>
     <properties>
-        <java.version>21</java.version>
+        <java.version>17</java.version>
         <commons-codec.version>1.16.0</commons-codec.version>
         <spring-ai.version>1.1.2</spring-ai.version>
         <hutool.version>5.8.40</hutool.version>
@@ -381,6 +381,15 @@
             <scope>compile</scope> <!-- 非测试环境需改为compile，默认test -->
         </dependency>
 
+        <dependency>
+            <groupId>io.milvus</groupId>
+            <artifactId>milvus-sdk-java</artifactId>
+            <version>2.4.0</version> </dependency>
+
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+        </dependency>
         <!-- langchain4j 的 MyBatis 存储支持 -->
         <dependency>
             <groupId>dev.langchain4j</groupId>

@@ -5,10 +5,15 @@ import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  *  RabbitMQ 配置类
@@ -25,6 +30,12 @@ public class RabbitMQConfig {
     // 路由键
     public static final String ROUTING_KEY_FILE_DB_SAVE = "knowledge.file.db.save.key";
 
+    public static final String QUEUE_FILE_PROCESS = "knowledge.file.process.queue";
+    public static final String ROUTING_KEY_FILE_PROCESS = "knowledge.file.process.key";
+
+    public static final String QUEUE_FILE_PROCESS_DLQ = "knowledge.file.process.dlq";
+    public static final String ROUTING_KEY_FILE_PROCESS_DLQ = "knowledge.file.process.dlq.key";
+
     /**
      * 配置 JSON 转换器，确保消息以 JSON 格式序列化/反序列化
      */
@@ -38,6 +49,8 @@ public class RabbitMQConfig {
         return new DirectExchange(KNOWLEDGE_EXCHANGE);
     }
 
+
+
     @Bean
     public Queue fileDbSaveQueue() {
         // durable = true 持久化队列
@@ -49,4 +62,48 @@ public class RabbitMQConfig {
                                      @Qualifier("knowledgeExchange") DirectExchange knowledgeExchange) {
         return BindingBuilder.bind(fileDbSaveQueue).to(knowledgeExchange).with(ROUTING_KEY_FILE_DB_SAVE);
     }
+
+    @Bean
+    public Queue fileProcessQueue() {
+        Map<String, Object> args = new HashMap<>();
+        args.put("x-dead-letter-exchange", KNOWLEDGE_EXCHANGE);
+        args.put("x-dead-letter-routing-key", ROUTING_KEY_FILE_PROCESS_DLQ);
+        return new Queue(QUEUE_FILE_PROCESS, true, false, false, args);
+    }
+
+
+    @Bean
+    public Binding bindingFileProcess(
+            @Qualifier("fileProcessQueue") Queue fileProcessQueue,
+            @Qualifier("knowledgeExchange") DirectExchange knowledgeExchange
+    ) {
+        return BindingBuilder.bind(fileProcessQueue).to(knowledgeExchange).with(ROUTING_KEY_FILE_PROCESS);
+    }
+
+
+    @Bean
+    public Queue fileProcessDlq() {
+        return new Queue(QUEUE_FILE_PROCESS_DLQ, true);
+    }
+
+
+    @Bean
+    public Binding bindingFileProcessDlq(
+            @Qualifier("fileProcessDlq") Queue fileProcessDlq,
+            @Qualifier("knowledgeExchange") DirectExchange knowledgeExchange
+    ) {
+        return BindingBuilder.bind(fileProcessDlq).to(knowledgeExchange).with(ROUTING_KEY_FILE_PROCESS_DLQ);
+    }
+
+    @Bean
+    public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
+            ConnectionFactory connectionFactory) {
+        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+        factory.setConnectionFactory(connectionFactory);
+        factory.setMessageConverter(jsonMessageConverter());
+        factory.setDefaultRequeueRejected(false);
+        factory.setPrefetchCount(1);
+        return factory;
+    }
+
 }
