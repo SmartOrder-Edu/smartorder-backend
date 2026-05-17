@@ -9,8 +9,8 @@ import com.smartorder.edu.agent.tool.LearningPlanCreationTool;
 import com.smartorder.edu.agent.tool.ProfileTool;
 import dev.langchain4j.data.message.*;
 import dev.langchain4j.memory.ChatMemory;
-import dev.langchain4j.model.chat.ChatLanguageModel;
-import dev.langchain4j.model.chat.StreamingChatLanguageModel;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import lombok.RequiredArgsConstructor;
@@ -42,8 +42,8 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class MasterAgentServiceImpl implements MasterAgentService {
 
-    private final ChatLanguageModel chatLanguageModel;
-    private final StreamingChatLanguageModel streamingChatLanguageModel;
+    private final ChatModel chatLanguageModel;
+    private final StreamingChatModel streamingChatModel;
     private final AgentConfiguration agentConfiguration;
     private final ProfileTool profileTool;
     private final LearningPlanCreationTool planCreationTool;
@@ -213,7 +213,7 @@ public class MasterAgentServiceImpl implements MasterAgentService {
 
         CompletableFuture<Void> future = new CompletableFuture<>();
 
-        streamingChatLanguageModel.chat(messages,
+        streamingChatModel.chat(messages,
                 new StreamingChatResponseHandler() {
                     @Override
                     public void onPartialResponse(String partialResponse) {

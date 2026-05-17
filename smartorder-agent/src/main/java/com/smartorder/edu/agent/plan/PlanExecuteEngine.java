@@ -12,7 +12,7 @@ import com.smartorder.edu.agent.trace.AgentEventType;
 import com.smartorder.edu.agent.trace.AgentRuntimeContext;
 import com.smartorder.edu.agent.trace.TraceEventDispatcher;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
-import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.AiServices;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,7 +33,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PlanExecuteEngine {
 
-    private final ChatLanguageModel chatLanguageModel;
+    private final ChatModel chatLanguageModel;
     private final ToolRegistry toolRegistry;
     private final LangChain4jToolAdapter toolAdapter;
     private final PlanSchemaValidator schemaValidator;
@@ -58,9 +58,6 @@ public class PlanExecuteEngine {
         ));
 
         // 2. 获取学生画像
-        dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
-                "message", "正在了解你的学习情况..."
-        ));
 
         String profileJson = "{}";
         if (toolRegistry.contains("getStudentProfile")) {
@@ -89,14 +86,10 @@ public class PlanExecuteEngine {
         String userGoal = resolveUserGoal(request);
 
         // 4. 调用 PlanAgent 生成规划
-        dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
-                "message", "正在为你量身定制学习规划..."
-        ));
-
         String planJson;
         try {
             PlanAgent planAgent = AiServices.builder(PlanAgent.class)
-                    .chatLanguageModel(chatLanguageModel)
+                    .chatModel(chatLanguageModel)
                     .build();
 
             String prompt = buildPlanPrompt(userGoal, profileJson);

@@ -7,7 +7,7 @@ import com.smartorder.edu.assessment.domain.entity.Assessment;
 import com.smartorder.edu.assessment.domain.entity.AssessmentQuestion;
 import com.smartorder.edu.assessment.mapper.AssessmentMapper;
 import com.smartorder.edu.assessment.mapper.AssessmentQuestionMapper;
-import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.ChatModel;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +25,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class GenerateQuizTool implements ToolHandler {
 
-    private final ChatLanguageModel chatLanguageModel;
+    private final ChatModel chatLanguageModel;
     private final AssessmentMapper assessmentMapper;
     private final AssessmentQuestionMapper assessmentQuestionMapper;
 

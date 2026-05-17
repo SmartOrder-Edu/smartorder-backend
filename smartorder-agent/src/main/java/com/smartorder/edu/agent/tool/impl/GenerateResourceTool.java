@@ -5,7 +5,7 @@ import com.smartorder.edu.agent.model.entity.AgentResourceLog;
 import com.smartorder.edu.agent.tool.ToolCategory;
 import com.smartorder.edu.agent.tool.ToolHandler;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
-import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.ChatModel;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,7 +22,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class GenerateResourceTool implements ToolHandler {
 
-    private final ChatLanguageModel chatLanguageModel;
+    private final ChatModel chatLanguageModel;
     private final AgentResourceLogMapper resourceLogMapper;
 
     @Override
