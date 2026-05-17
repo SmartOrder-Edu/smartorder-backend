@@ -20,6 +20,11 @@ spring:
         base-url: "https://api.deepseek.com/"
         options:
           model: "deepseek-reasoner"
+  rag:
+    ai:
+      enabled: true
+      api-key: ${DEEPSEEK_API_KEY}
+      model: deepseek-chat
 
   datasource:
     # 1. 基本连接信息
@@ -187,7 +192,7 @@ email:
 milvus:
   host: 117.72.222.3
   port: 19530
-  collection-name: teacher_semantic_memory  # 集合名称
+  collection-name: smart_order_db  # 集合名称
   dimension: 512                            # BGE-small-zh 模型的维度是 512
 
 

@@ -169,4 +169,9 @@ public class KnowledgeChunk {
      */
     @TableField("updated_at")
     private LocalDateTime updatedAt;
+
+
+
+    private String content;
+
 }
