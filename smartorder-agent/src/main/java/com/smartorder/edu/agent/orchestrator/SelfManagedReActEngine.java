@@ -15,8 +15,10 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -24,12 +26,14 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 自实现 ReAct 循环引擎
  *
  * 不使用 AiServices 自动工具循环，手动控制每一步：
- * LLM 调用 → 检测工具请求 → 执行工具 → 推送事件 → 继续循环 → 输出最终回答
+ * LLM 调用 → 检测工具请求 → 执行工具 → 推送事件 → 继续循环 → 流式输出最终回答
  *
  * 最大工具调用轮数：5
  */
@@ -41,6 +45,7 @@ public class SelfManagedReActEngine {
     private static final int MAX_TOOL_ROUNDS = 5;
 
     private final ChatLanguageModel chatLanguageModel;
+    private final StreamingChatLanguageModel streamingChatLanguageModel;
     private final LangChain4jToolAdapter toolAdapter;
     private final TraceEventDispatcher dispatcher;
     private final ConversationMemoryService memoryService;
@@ -94,19 +99,12 @@ public class SelfManagedReActEngine {
             }
 
             AiMessage aiMessage = response.aiMessage();
-            messages.add(aiMessage);
 
             // 6. 检查是否有工具调用
             if (aiMessage.hasToolExecutionRequests()) {
-                for (ToolExecutionRequest toolRequest : aiMessage.toolExecutionRequests()) {
-                    if (round > MAX_TOOL_ROUNDS) {
-                        log.warn("[ReAct] 工具调用轮数超过上限 {}", MAX_TOOL_ROUNDS);
-                        dispatcher.emit(emitter, runtimeContext, AgentEventType.TEXT_DELTA, Map.of(
-                                "text", "工具调用已达上限，我将基于已有信息继续回答。"
-                        ));
-                        break;
-                    }
+                messages.add(aiMessage);
 
+                for (ToolExecutionRequest toolRequest : aiMessage.toolExecutionRequests()) {
                     ToolInvokeContext toolContext = ToolInvokeContext.builder()
                             .userId(request.getUserId())
                             .conversationId(runtimeContext.getConversationId())
@@ -141,14 +139,8 @@ public class SelfManagedReActEngine {
                 continue;
             }
 
-            // 7. 无工具调用 → 输出最终回答
-            String answer = aiMessage.text();
-            if (answer != null && !answer.isBlank()) {
-                dispatcher.emit(emitter, runtimeContext, AgentEventType.TEXT_DELTA, Map.of(
-                        "text", answer
-                ));
-                finalAnswer = answer;
-            }
+            // 7. 无工具调用 → 使用流式模型逐 token 输出最终回答
+            finalAnswer = streamFinalAnswer(messages, tools, emitter, runtimeContext);
 
             log.info("[ReAct] 完成, traceId={}, rounds={}", runtimeContext.getTraceId(), round);
             break;
@@ -169,6 +161,65 @@ public class SelfManagedReActEngine {
 
         // 10. 异步检查是否需要压缩
         compressService.checkAndCompress(runtimeContext.getConversationId(), request.getUserId());
+    }
+
+    /**
+     * 使用流式模型输出最终回答，逐 token 推送 agent.text.delta 事件
+     */
+    private String streamFinalAnswer(
+            List<ChatMessage> messages,
+            List<ToolSpecification> tools,
+            SseEmitter emitter,
+            AgentRuntimeContext runtimeContext
+    ) {
+        StringBuilder answerBuilder = new StringBuilder();
+        CountDownLatch latch = new CountDownLatch(1);
+
+        ChatRequest chatRequest = ChatRequest.builder()
+                .messages(messages)
+                .toolSpecifications(tools.isEmpty() ? null : tools)
+                .build();
+
+        streamingChatLanguageModel.chat(chatRequest, new StreamingChatResponseHandler() {
+            @Override
+            public void onPartialResponse(String partialResponse) {
+                if (partialResponse != null && !partialResponse.isEmpty()) {
+                    answerBuilder.append(partialResponse);
+                    dispatcher.emit(emitter, runtimeContext, AgentEventType.TEXT_DELTA, Map.of(
+                            "text", partialResponse
+                    ));
+                }
+            }
+
+            @Override
+            public void onCompleteResponse(ChatResponse completeResponse) {
+                latch.countDown();
+            }
+
+            @Override
+            public void onError(Throwable error) {
+                log.error("[ReAct] 流式输出失败, traceId={}", runtimeContext.getTraceId(), error);
+                dispatcher.emit(emitter, runtimeContext, AgentEventType.ERROR, Map.of(
+                        "message", "流式输出失败: " + error.getMessage()
+                ));
+                latch.countDown();
+            }
+        });
+
+        try {
+            boolean completed = latch.await(120, TimeUnit.SECONDS);
+            if (!completed) {
+                log.warn("[ReAct] 流式输出超时, traceId={}", runtimeContext.getTraceId());
+                dispatcher.emit(emitter, runtimeContext, AgentEventType.ERROR, Map.of(
+                        "message", "响应超时，请重试"
+                ));
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[ReAct] 流式输出被中断, traceId={}", runtimeContext.getTraceId());
+        }
+
+        return answerBuilder.toString();
     }
 
     // ============ Private Methods ============
