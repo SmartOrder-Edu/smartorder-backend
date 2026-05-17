@@ -402,6 +402,12 @@
             <artifactId>langchain4j-milvus</artifactId>
         </dependency>
 
+        <!-- Neo4j 图数据库依赖 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-neo4j</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-embeddings-bge-small-zh-v15-q</artifactId>
@@ -465,6 +471,19 @@
             <artifactId>tls-sig-api-v2</artifactId>
             <version>1.1</version>
         </dependency>
+        <!--validation-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-all</artifactId>
+            <version>5.8.40</version>
+        </dependency>
+
+
     </dependencies>
 
     <build>

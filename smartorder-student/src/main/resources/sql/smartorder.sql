@@ -1,31 +1,34 @@
-DROP TABLE IF EXISTS `file_resource`;
 CREATE TABLE `file_resource` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '文件资源ID',
-  `folder_id` bigint NULL DEFAULT NULL COMMENT '所属文件夹ID',
-  `user_id` bigint NULL DEFAULT NULL COMMENT '上传用户ID',
-  `file_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '文件名称',
-  `original_file_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '原始文件名',
-  `file_url` varchar(1000) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT 'OSS文件地址',
-  `file_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '文件类型',
-  `file_size` bigint NULL DEFAULT NULL COMMENT '文件大小',
-  `source` int NULL DEFAULT NULL COMMENT '资源来源',
-  `summarycontent_` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '摘要内容',
-  `upload_status` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '上传状态',
-  `parse_status` int NULL DEFAULT NULL COMMENT '解析状态，0-未解析，1-解析中，2-向量化完成，3-解析失败',
-  `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `update_time` datetime NULL DEFAULT CURRENT_TIMESTAMP COMMENT '更新时间',
-  PRIMARY KEY (`id`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '文件资源表' ROW_FORMAT = Dynamic;
-DROP TABLE IF EXISTS `file_folder`;
+  `folder_id` bigint DEFAULT NULL COMMENT '所属文件夹ID（0=根目录）',
+  `user_id` bigint DEFAULT NULL COMMENT '上传用户ID',
+  `file_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '文件名称--uuid',
+  `original_file_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '原始文件名（可能被重命名）',
+  `file_url` varchar(1000) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT 'OSS文件URL',
+  `file_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '文件类型（pdf/docx/ppt/mp4/jpg/png等）',
+  `file_size` bigint DEFAULT NULL COMMENT '文件大小（字节）',
+  `source` bigint DEFAULT NULL COMMENT '来源：1-本地上传，2-AI生成归档，3-广场转存',
+  `summarycontent_` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT 'AI解析后的摘要内容',
+  `upload_status` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '上传状态：0-上传中，1-上传成功，2-上传失败',
+  `parse_status` int DEFAULT NULL COMMENT '解析状态，0-未解析，1-解析中，2-向量化完成，3-解析失败',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_user_status` (`user_id`,`upload_status`),
+  KEY `idx_folder_id` (`folder_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文件资源表';
+
 CREATE TABLE `file_folder` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '文件夹ID',
-  `parent_id` bigint NULL DEFAULT NULL COMMENT '父文件夹ID',
-  `folder_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '文件夹名称',
-  `user_id` bigint NULL DEFAULT NULL COMMENT '所属用户ID',
-  `created_time` datetime NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `update_time` datetime NULL DEFAULT NULL COMMENT '更新时间',
-  PRIMARY KEY (`id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '文件夹表' ROW_FORMAT = Dynamic;
+  `parent_id` bigint DEFAULT NULL COMMENT '父文件夹ID（0=根目录）',
+  `folder_name` varchar(255) NOT NULL COMMENT '文件夹名称',
+  `user_id` bigint DEFAULT NULL COMMENT '所属用户ID',
+  `sort_order` int DEFAULT NULL COMMENT '排序权重（越大越靠前，默认0）',
+  `created_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_user_parent` (`user_id`,`parent_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文件夹表';
 
 CREATE TABLE `user_file_quota` (
   `user_id` bigint NOT NULL COMMENT '用户ID',

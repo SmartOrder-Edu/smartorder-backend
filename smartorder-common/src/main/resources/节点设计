@@ -1,0 +1,195 @@
+(:Student {
+  userId: 1,
+  name: "张三",
+  major: "计算机科学与技术",
+  grade: "大二",
+  learningGoal: "掌握操作系统核心知识"
+})
+
+
+(:KnowledgeBase {
+  kbId: 10,
+  userId: 1,
+  name: "操作系统知识库",
+  category: "课程学习"
+})
+
+
+(:Document {
+  documentId: 120,
+  fileId: 88,
+  kbId: 10,
+  title: "操作系统进程管理",
+  sourceType: "file"
+})
+
+(:Chunk {
+  chunkId: 10001,
+  vectorId: "chunk_10001",
+  kbId: 10,
+  documentId: 120,
+  fileId: 88,
+  chunkIndex: 3,
+  sectionTitle: "进程调度",
+  pageNumber: 12
+})
+
+
+(:Course {
+  courseId: "os",
+  name: "操作系统",
+  subject: "计算机"
+})
+
+
+(:Chapter {
+  chapterId: "os_chapter_3",
+  name: "进程管理",
+  orderNo: 3
+})
+
+
+(:KnowledgePoint {
+  kpId: "os_process_scheduling",
+  name: "进程调度",
+  course: "操作系统",
+  difficulty: 3,
+  importance: 5,
+  description: "理解操作系统如何选择下一个运行进程"
+})
+
+(:Resource {
+  resourceId: 501,
+  type: "mindmap",
+  title: "进程调度知识点思维导图",
+  url: "/resources/501",
+  difficulty: 3
+})
+
+
+(:Question {
+  questionId: 9001,
+  type: "calculation",
+  title: "计算 FCFS 平均等待时间",
+  difficulty: 3
+})
+
+
+(:Student)-[:WEAK_AT {
+  weaknessType: "calculation_error",
+  evidence: "平均等待时间计算题错误率较高",
+  confidence: 0.82,
+  updatedAt: "2026-05-15"
+}]->(:KnowledgePoint)
+
+
+
+
+五、关系设计
+
+图数据库的核心不是节点，而是关系。
+
+你应该重点设计这些关系。
+
+1. 用户拥有知识库
+(:Student)-[:OWNS]->(:KnowledgeBase)
+
+表示：
+
+用户拥有某个个人知识库
+2. 知识库包含文档
+(:KnowledgeBase)-[:HAS_DOCUMENT]->(:Document)
+3. 文档切分为 chunk
+(:Document)-[:HAS_CHUNK]->(:Chunk)
+4. 文档 / chunk 讲解知识点
+(:Chunk)-[:EXPLAINS {
+  confidence: 0.86
+}]->(:KnowledgePoint)
+
+这是图数据库和 RAG 结合的关键。
+
+含义：
+
+某个 chunk 讲解了某个知识点
+
+例如：
+
+chunk_10001 讲解了 进程调度
+chunk_10002 讲解了 FCFS 算法
+chunk_10003 讲解了 SJF 算法
+5. 课程包含章节
+(:Course)-[:HAS_CHAPTER]->(:Chapter)
+6. 章节包含知识点
+(:Chapter)-[:HAS_KNOWLEDGE_POINT]->(:KnowledgePoint)
+7. 知识点前置关系
+(:KnowledgePoint)-[:PREREQUISITE_OF]->(:KnowledgePoint)
+
+例如：
+
+进程状态 PREREQUISITE_OF 进程调度
+进程调度 PREREQUISITE_OF 调度算法
+调度算法 PREREQUISITE_OF 平均等待时间计算
+
+这是学习路径规划最关键的关系。
+
+8. 知识点相关关系
+(:KnowledgePoint)-[:RELATED_TO {
+  relationType: "similar"
+}]->(:KnowledgePoint)
+
+例如：
+
+FCFS RELATED_TO SJF
+SJF RELATED_TO 优先级调度
+时间片轮转 RELATED_TO 抢占式调度
+9. 知识点对比关系
+(:KnowledgePoint)-[:COMPARE_WITH]->(:KnowledgePoint)
+
+例如：
+
+FCFS COMPARE_WITH SJF
+抢占式调度 COMPARE_WITH 非抢占式调度
+
+这个关系对生成“对比讲解”“表格总结”很有用。
+
+10. 学生掌握知识点
+(:Student)-[:MASTERED {
+  score: 0.85,
+  source: "quiz",
+  updatedAt: "2026-05-15"
+}]->(:KnowledgePoint)
+11. 学生薄弱于知识点
+(:Student)-[:WEAK_AT {
+  score: 0.35,
+  weaknessType: "calculation_error",
+  evidence: "平均等待时间计算题错误率较高",
+  confidence: 0.82,
+  updatedAt: "2026-05-15"
+}]->(:KnowledgePoint)
+
+这正好对应你之前设计的薄弱点画像：
+
+{
+  "topic": "进程调度",
+  "weakness_type": "calculation_error",
+  "evidence": "平均等待时间计算题错误率较高",
+  "confidence": 0.82
+}
+12. 题目考察知识点
+(:Question)-[:TESTS]->(:KnowledgePoint)
+13. 学生做错题目
+(:Student)-[:WRONG_ON {
+  wrongReason: "公式使用错误",
+  createdAt: "2026-05-15"
+}]->(:Question)
+
+然后可以推导：
+
+学生做错题目
+↓
+题目考察知识点
+↓
+学生薄弱于该知识点
+14. 资源补强知识点
+(:Resource)-[:SUPPORTS]->(:KnowledgePoint)
+

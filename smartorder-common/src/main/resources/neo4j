@@ -1,0 +1,105 @@
+知识点、章节、前置关系、相关关系、学生掌握状态、资源映射
+
+
+
+| 文件类型     | 处理方式             |
+| -------- | ---------------- |
+| PDF      | PDF parser / OCR |
+| DOCX     | docx parser      |
+| PPTX     | ppt parser       |
+| TXT      | 直接读取             |
+| Markdown | 直接读取             |
+| 图片       | OCR + 图像描述       |
+| 表格       | 转 Markdown 表格    |
+
+
+
+第一级：图 RAG 检索
+1. 查询分析
+2. 抽取查询实体
+3. 映射到图谱知识点
+4. 多跳扩展
+5. 子图提取
+6. 根据子图找 chunk / resource / question
+7. 取向量库完整内容
+8. 生成回答
+
+第二级：组合检索
+
+1. 图数据库找相关知识点和子图
+2. 向量数据库召回语义相似 chunk
+3. MySQL / ES / LIKE 做关键词召回
+4. 合并候选结果
+5. 去重
+6. rerank
+7. 生成回答
+
+第三级：混合检索
+1. query rewrite
+2. 向量召回 topK
+3. 关键词召回 topK
+4. 合并去重
+5. rerank
+6. 生成回答
+
+
+意图可以分为：
+
+concept_qa              概念问答
+how_to_learn            学习建议
+learning_path           学习路径
+weakness_diagnosis      薄弱点诊断
+resource_recommendation 资源推荐
+comparison              对比解释
+exercise_generation     题目生成
+summary                 总结
+multi_hop_reasoning     多跳推理
+
+
+
+
+
+
+KnowledgeFileService
+文件上传、文件状态管理
+
+DocumentParseService
+文档解析、Markdown转换
+
+ChunkService
+结构化切分、chunk入库
+
+EmbeddingService
+向量化、写入向量数据库
+
+KnowledgeGraphExtractionService
+调用 LLM 抽取实体和关系
+
+KnowledgeGraphMergeService
+知识点归并、关系清洗
+
+Neo4jGraphService
+Neo4j 节点和关系写入、查询
+
+QueryAnalysisService
+查询意图识别
+
+GraphRagRetrievalService
+图 RAG 检索
+
+CombinedRetrievalService
+组合检索
+
+HybridRetrievalService
+向量 + 关键词兜底
+
+AnswerGenerationService
+生成回答
+
+LearningStateService
+更新学生掌握、薄弱、兴趣状态
+
+RagLogService
+写入 rag_query_logs、rag_references、rag_retrieval_steps
+
+
