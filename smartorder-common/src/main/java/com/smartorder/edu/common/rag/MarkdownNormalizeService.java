@@ -1,6 +1,6 @@
 package com.smartorder.edu.common.rag;
 
-import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.input.Prompt;
 import dev.langchain4j.model.input.PromptTemplate;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -21,10 +21,10 @@ public class MarkdownNormalizeService {
     private static final int MAX_PART_LENGTH = 6000;
 
     // 注入我们刚才配置的 Bean
-    private final ChatLanguageModel chatLanguageModel;
+    private final ChatModel chatLanguageModel;
     private final String markdownNormalizePromptTemplate;
 
-    public MarkdownNormalizeService(ChatLanguageModel chatLanguageModel,
+    public MarkdownNormalizeService(ChatModel chatLanguageModel,
                                     @Qualifier("markdownNormalizePromptTemplate") String markdownNormalizePromptTemplate) {
         this.chatLanguageModel = chatLanguageModel;
         this.markdownNormalizePromptTemplate = markdownNormalizePromptTemplate;
