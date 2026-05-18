@@ -87,8 +87,8 @@ public class SelfManagedReActEngine {
             try {
                 ChatRequest chatRequest = ChatRequest.builder()
                         .messages(messages)
-                        .toolSpecifications(tools.isEmpty() ? null : tools)
                         .parameters(OpenAiChatRequestParameters.builder()
+                                .toolSpecifications(tools.isEmpty() ? null : tools)
                                 .customParameters(agentConfiguration.buildThinkingCustomParameters())
                                 .build())
                         .build();
@@ -190,8 +190,8 @@ public class SelfManagedReActEngine {
 
         ChatRequest chatRequest = ChatRequest.builder()
                 .messages(messages)
-                .toolSpecifications(tools.isEmpty() ? null : tools)
                 .parameters(OpenAiChatRequestParameters.builder()
+                        .toolSpecifications(tools.isEmpty() ? null : tools)
                         .customParameters(agentConfiguration.buildThinkingCustomParameters())
                         .build())
                 .build();
