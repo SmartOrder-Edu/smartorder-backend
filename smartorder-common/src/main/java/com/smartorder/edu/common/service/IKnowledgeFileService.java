@@ -10,4 +10,9 @@ public interface IKnowledgeFileService {
     void uploadPart(String uploadId, Integer partNumber, MultipartFile file);
 
     String completeMultipartUpload(ChunkUploadDTO.MergeReq req, Long userId);
+
+    /**
+     * 删除文件（级联删除所有相关数据）
+     */
+    void deleteKnowledgeFile(Long fileId, Long userId);
 }
