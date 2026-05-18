@@ -1,4 +1,4 @@
-CREATE TABLE ai_student_profile_memory (
+CREATE TABLE student_profile_memory (
                                            id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
 
                                            user_id BIGINT NOT NULL COMMENT '用户ID',

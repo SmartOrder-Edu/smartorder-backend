@@ -4,7 +4,6 @@ import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.common.service.IUserService;
 import com.smartorder.edu.common.util.AliOSSUtils;
@@ -17,6 +16,7 @@ import com.smartorder.edu.student.domain.vo.FileResourceVO;
 import com.smartorder.edu.student.mapper.FileFolderMapper;
 import com.smartorder.edu.student.mapper.FileResourceMapper;
 import com.smartorder.edu.student.service.IFileFolderService;
+import com.smartorder.edu.student.service.IUserFileQuotaService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -41,6 +41,7 @@ public class FileFolderServiceImpl implements IFileFolderService {
 
     private final IUserService userService;
     private final AliOSSUtils aliOSSUtils;
+    private final IUserFileQuotaService userFileQuotaService;
 
     @Override
     public List<FileFolderContentVO> getFolderTree(Long userId) {
@@ -192,6 +193,14 @@ public class FileFolderServiceImpl implements IFileFolderService {
         if (!fileList.isEmpty()) {
             List<Long> fileLongList = fileList.stream().map(FileResource::getId).toList();
             fileResourceMapper.deleteByIds(fileLongList);
+            // 释放已用空间
+            long totalSize = fileList.stream()
+                    .filter(f -> f.getFileSize() != null)
+                    .mapToLong(FileResource::getFileSize)
+                    .sum();
+            if (totalSize > 0) {
+                userFileQuotaService.reduceUserSpace(userId, totalSize);
+            }
         }
         // 6-删除DB文件夹
         fileFolderMapper.deleteByIds(folderList);

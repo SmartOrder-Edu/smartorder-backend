@@ -29,7 +29,7 @@
     {
       "name": "siglip_dense_vector",
       "dataType": "FloatVector",
-      "dimension": 768,
+      "dimension": 1024,
       "description": "SigLIP生成的密集向量，用于语义检索和图文检索"
     },
     {
@@ -193,7 +193,7 @@
     "dense": {
       "name": "siglip-base-patch16-224",
       "type": "siglip",
-      "dimension": 768,
+      "dimension": 1024,
       "fieldName": "siglip_dense_vector"
     },
     "sparse": {

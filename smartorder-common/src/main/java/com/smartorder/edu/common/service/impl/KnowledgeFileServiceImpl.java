@@ -1,22 +1,27 @@
 package com.smartorder.edu.common.service.impl;
 
 import com.aliyun.oss.model.PartETag;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.smartorder.edu.common.config.RabbitMQConfig;
+import com.smartorder.edu.common.mapper.*;
 import com.smartorder.edu.common.model.dto.ChunkUploadDTO;
 import com.smartorder.edu.common.model.dto.KnowledgeFileDTO;
-import com.smartorder.edu.common.model.entity.KnowledgeFile;
-import com.smartorder.edu.common.mapper.KnowledgeFileMapper;
+import com.smartorder.edu.common.model.entity.*;
+import com.smartorder.edu.common.rag.VectorIndexService;
 import com.smartorder.edu.common.service.IKnowledgeFileService;
+import com.smartorder.edu.common.service.INeo4jKnowledgeGraphService;
 import com.smartorder.edu.common.util.AliOSSUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -30,11 +35,14 @@ import static com.smartorder.edu.common.common.Constants.*;
 public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, KnowledgeFile> implements IKnowledgeFileService {
 
     private final AliOSSUtils aliOSSUtils;
-
     private final StringRedisTemplate redisTemplate;
-
-    // 引入 RabbitTemplate
     private final RabbitTemplate rabbitTemplate;
+    private final KnowledgeDocumentMapper knowledgeDocumentMapper;
+    private final KnowledgeChunkMapper knowledgeChunkMapper;
+    private final KnowledgeFileJobMapper knowledgeFileJobMapper;
+    private final RagReferenceMapper ragReferenceMapper;
+    private final INeo4jKnowledgeGraphService neo4jKnowledgeGraphService;
+    private final VectorIndexService vectorIndexService;
 
     private static final long REDIS_EXPIRE_HOURS = 24L;
 
@@ -141,5 +149,81 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
         log.info("异步文件入库消息已发送: fileHash={}", fileHash);
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteKnowledgeFile(Long fileId, Long userId) {
+        // 1. 校验文件是否存在，且该文件属于当前用户
+        KnowledgeFile existingFile = this.lambdaQuery()
+                .eq(KnowledgeFile::getId, fileId)
+                .eq(KnowledgeFile::getUserId, userId)
+                .one();
 
+        if (existingFile == null) {
+            throw new RuntimeException("文件不存在或您无权删除该文件");
+        }
+
+        log.info("开始删除文件，fileId={}, userId={}", fileId, userId);
+
+        try {
+            // 2. 删除 Neo4j 中的图节点
+            try {
+                neo4jKnowledgeGraphService.deleteNodesByFileId(fileId);
+            } catch (Exception e) {
+                log.warn("删除 Neo4j 节点失败，继续执行", e);
+            }
+
+            // 3. 删除 Milvus 中的向量
+            try {
+                vectorIndexService.deleteByFileId(fileId);
+            } catch (Exception e) {
+                log.warn("删除 Milvus 向量失败，继续执行", e);
+            }
+
+            // 4. 删除 OSS 中的文件
+            try {
+                if (existingFile.getFileUrl() != null && !existingFile.getFileUrl().isEmpty()) {
+                    aliOSSUtils.deleteFile(existingFile.getFileUrl());
+                    log.info("已删除 OSS 文件，fileId={}, url={}", fileId, existingFile.getFileUrl());
+                }
+            } catch (Exception e) {
+                log.warn("删除 OSS 文件失败，fileId={}", fileId, e);
+            }
+
+            // 5. 删除 MySQL 中的子表数据（按依赖顺序）
+            // 5.1 删除 rag_references
+            ragReferenceMapper.delete(
+                    new LambdaQueryWrapper<RagReference>()
+                            .eq(RagReference::getFileId, fileId)
+            );
+
+            // 5.2 删除 knowledge_chunks
+            knowledgeChunkMapper.delete(
+                    new LambdaQueryWrapper<KnowledgeChunk>()
+                            .eq(KnowledgeChunk::getFileId, fileId)
+            );
+
+            // 5.3 删除 knowledge_documents
+            knowledgeDocumentMapper.delete(
+                    new LambdaQueryWrapper<KnowledgeDocument>()
+                            .eq(KnowledgeDocument::getFileId, fileId)
+            );
+
+            // 5.4 删除 knowledge_file_jobs
+            knowledgeFileJobMapper.delete(
+                    new LambdaQueryWrapper<KnowledgeFileJob>()
+                            .eq(KnowledgeFileJob::getFileId, fileId)
+            );
+
+            // 6. 软删除 knowledge_files（更新状态为 deleted）
+            existingFile.setStatus("deleted");
+            existingFile.setUpdatedAt(LocalDateTime.now());
+            this.updateById(existingFile);
+
+            log.info("文件删除成功，fileId={}", fileId);
+
+        } catch (Exception e) {
+            log.error("删除文件失败，fileId={}", fileId, e);
+            throw new RuntimeException("删除文件失败: " + e.getMessage(), e);
+        }
+    }
 }

@@ -37,13 +37,6 @@
             <artifactId>smartorder-common</artifactId>
             <version>0.0.1-SNAPSHOT</version>
         </dependency>
-
-        <!-- Neo4j 图数据库依赖 -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-neo4j</artifactId>
-        </dependency>
-
     </dependencies>
 
 </project>

@@ -1,4 +1,4 @@
-package com.smartorder.edu.knowledge.domain.entity;
+package com.smartorder.edu.common.model.entity;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -26,7 +26,7 @@ public class Neo4jKnowledgeRelation {
 
     private Long spaceId;
 
-    public Neo4jKnowledgeRelation(String id, Neo4jKnowledgeNode targetNode, 
+    public Neo4jKnowledgeRelation(String id, Neo4jKnowledgeNode targetNode,
                                   String relationType, Double weight, Long spaceId) {
         this.id = id;
         this.targetNode = targetNode;
