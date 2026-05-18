@@ -1,7 +1,7 @@
 package com.smartorder.edu.common.rag;
 
 
-import com.alibaba.fastjson.JSONObject;
+import com.google.gson.JsonObject;
 import com.smartorder.edu.common.model.entity.KnowledgeChunk;
 import com.smartorder.edu.common.model.rag.VectorIndexDocument;
 import dev.langchain4j.data.embedding.Embedding;
@@ -88,25 +88,26 @@ public class VectorIndexService {
         List<Embedding> embeddings = embeddingModel.embedAll(textSegments).content();
 
         // 2. 将生成的向量装配到待插入的文档中
-        List<JSONObject> milvusData = new ArrayList<>();
+        com.google.gson.Gson gson = new com.google.gson.Gson();
+        List<JsonObject> milvusData = new ArrayList<>();
         for (int i = 0; i < docs.size(); i++) {
             VectorIndexDocument doc = docs.get(i);
             List<Float> vectorList = embeddings.get(i).vectorAsList();
 
-            // 组装 Milvus V2 SDK 需要的 JSONObject 格式
-            JSONObject row = new JSONObject();
+            // 组装 Milvus V2 SDK 需要的 JsonObject 格式
+            JsonObject row = new JsonObject();
             // 主键 (对应你的向量集合配置，必须叫 vector_id 或你建表时指定的 PK 名字)
-            row.put("vector_id", doc.getId());
+            row.addProperty("vector_id", doc.getId());
             // 向量字段 (对应你集合中 512 维的 float_vector 字段，假设叫 embedding)
-            row.put("embedding", vectorList);
+            row.add("embedding", gson.toJsonTree(vectorList));
             // 文本内容
-            row.put("content", doc.getText());
+            row.addProperty("content", doc.getText());
 
             // 将其它元数据铺平放入（或者放入一个 JSON 字段，取决于你的 Milvus Collection Schema 是否开启了 Dynamic Field）
             Map<String, Object> metadata = doc.getMetadata();
             for (Map.Entry<String, Object> entry : metadata.entrySet()) {
                 if (entry.getValue() != null) {
-                    row.put(entry.getKey(), entry.getValue());
+                    row.add(entry.getKey(), gson.toJsonTree(entry.getValue()));
                 }
             }
             milvusData.add(row);
@@ -145,7 +146,7 @@ public class VectorIndexService {
         return metadata;
     }
 
-    private void doUpsert(List<JSONObject> milvusData) {
+    private void doUpsert(List<JsonObject> milvusData) {
         try {
             UpsertReq upsertReq = UpsertReq.builder()
                     .collectionName(COLLECTION_NAME)
