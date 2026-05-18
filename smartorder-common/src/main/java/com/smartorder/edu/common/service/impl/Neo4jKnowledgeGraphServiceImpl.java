@@ -1,12 +1,8 @@
-package com.smartorder.edu.knowledge.service.impl;
+package com.smartorder.edu.common.service.impl;
 
-import com.smartorder.edu.knowledge.domain.entity.KnowledgeGraphEdge;
-import com.smartorder.edu.knowledge.domain.entity.KnowledgeGraphNode;
-import com.smartorder.edu.knowledge.domain.entity.Neo4jKnowledgeNode;
-import com.smartorder.edu.knowledge.mapper.KnowledgeGraphEdgeMapper;
-import com.smartorder.edu.knowledge.mapper.KnowledgeGraphNodeMapper;
-import com.smartorder.edu.knowledge.repository.Neo4jKnowledgeNodeRepository;
-import com.smartorder.edu.knowledge.service.INeo4jKnowledgeGraphService;
+import com.smartorder.edu.common.mapper.Neo4jKnowledgeNodeRepository;
+import com.smartorder.edu.common.model.entity.Neo4jKnowledgeNode;
+import com.smartorder.edu.common.service.INeo4jKnowledgeGraphService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -15,7 +11,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
  * Neo4j 知识图谱服务实现
@@ -26,8 +21,6 @@ import java.util.stream.Collectors;
 public class Neo4jKnowledgeGraphServiceImpl implements INeo4jKnowledgeGraphService {
 
     private final Neo4jKnowledgeNodeRepository neo4jRepository;
-    private final KnowledgeGraphNodeMapper mysqlNodeMapper;
-    private final KnowledgeGraphEdgeMapper mysqlEdgeMapper;
 
     @Override
     @Transactional
@@ -51,7 +44,7 @@ public class Neo4jKnowledgeGraphServiceImpl implements INeo4jKnowledgeGraphServi
 
     @Override
     @Transactional
-    public void createRelation(String sourceNodeId, String targetNodeId, String relationType, 
+    public void createRelation(String sourceNodeId, String targetNodeId, String relationType,
                                Double weight, Long spaceId) {
         Neo4jKnowledgeNode sourceNode = neo4jRepository.findById(sourceNodeId)
                 .orElseThrow(() -> new RuntimeException("源节点不存在: " + sourceNodeId));
@@ -79,6 +72,16 @@ public class Neo4jKnowledgeGraphServiceImpl implements INeo4jKnowledgeGraphServi
     @Override
     public List<Neo4jKnowledgeNode> findNodesBySpaceId(Long spaceId) {
         return neo4jRepository.findBySpaceId(spaceId);
+    }
+
+    @Override
+    public List<Neo4jKnowledgeNode> findNodesByKnowledgeBaseId(Long knowledgeBaseId) {
+        return neo4jRepository.findByKnowledgeBaseId(knowledgeBaseId);
+    }
+
+    @Override
+    public List<Neo4jKnowledgeNode> findNodesByFileId(Long fileId) {
+        return neo4jRepository.findByFileId(fileId);
     }
 
     @Override
@@ -112,55 +115,25 @@ public class Neo4jKnowledgeGraphServiceImpl implements INeo4jKnowledgeGraphServi
     }
 
     @Override
-    @Transactional
-    public void syncFromMySQL(Long spaceId) {
-        log.info("开始同步MySQL知识图谱到Neo4j，空间ID: {}", spaceId);
-
-        // 1. 同步节点
-        List<KnowledgeGraphNode> mysqlNodes = mysqlNodeMapper.selectList(
-                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<KnowledgeGraphNode>()
-                        .eq("space_id", spaceId)
-                        .eq("is_deleted", 0));
-
-        List<Neo4jKnowledgeNode> neo4jNodes = mysqlNodes.stream()
-                .map(this::convertToNeo4jNode)
-                .collect(Collectors.toList());
-
-        neo4jRepository.saveAll(neo4jNodes);
-        log.info("同步节点完成，数量: {}", neo4jNodes.size());
-
-        // 2. 同步关系
-        List<KnowledgeGraphEdge> mysqlEdges = mysqlEdgeMapper.selectList(
-                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<KnowledgeGraphEdge>()
-                        .eq("space_id", spaceId)
-                        .eq("is_deleted", 0));
-
-        for (KnowledgeGraphEdge edge : mysqlEdges) {
-            try {
-                Neo4jKnowledgeNode sourceNode = findByMysqlId(edge.getFromNodeId());
-                Neo4jKnowledgeNode targetNode = findByMysqlId(edge.getToNodeId());
-
-                if (sourceNode != null && targetNode != null) {
-                    createRelation(sourceNode.getId(), targetNode.getId(), 
-                                  edge.getRelationType(), edge.getWeight(), spaceId);
-                }
-            } catch (Exception e) {
-                log.warn("同步关系失败，边ID: {}, 错误: {}", edge.getId(), e.getMessage());
-            }
-        }
-
-        log.info("同步关系完成，数量: {}", mysqlEdges.size());
+    public Neo4jKnowledgeNode findByNameAndKnowledgeBaseId(String name, Long knowledgeBaseId) {
+        return neo4jRepository.findByNameAndKnowledgeBaseIdExact(name, knowledgeBaseId).orElse(null);
     }
 
-    private Neo4jKnowledgeNode convertToNeo4jNode(KnowledgeGraphNode mysqlNode) {
-        Neo4jKnowledgeNode neo4jNode = new Neo4jKnowledgeNode();
-        neo4jNode.setId(UUID.randomUUID().toString());
-        neo4jNode.setMysqlId(mysqlNode.getId());
-        neo4jNode.setSpaceId(mysqlNode.getSpaceId());
-        neo4jNode.setName(mysqlNode.getName());
-        neo4jNode.setDescription(mysqlNode.getDescription());
-        neo4jNode.setCategory(mysqlNode.getCategory());
-        neo4jNode.setImportance(mysqlNode.getImportance());
-        return neo4jNode;
+    @Override
+    @Transactional
+    public void deleteNodesByFileId(Long fileId) {
+        List<Neo4jKnowledgeNode> nodes = neo4jRepository.findByFileId(fileId);
+        if (!nodes.isEmpty()) {
+            neo4jRepository.deleteAll(nodes);
+            log.info("已删除文件相关的图节点，fileId={}, count={}", fileId, nodes.size());
+        }
+    }
+
+    @Override
+    @Transactional
+    public void syncFromMySQL(Long spaceId) {
+        // 此方法保留为兼容，但具体实现需要依赖 MySQL 的 Mapper
+        // 在 common 模块中暂不实现，由 knowledge 模块的 Controller 调用
+        log.warn("syncFromMySQL 方法需要在具体业务模块中实现");
     }
 }
