@@ -1,5 +1,6 @@
 package com.smartorder.edu.agent.orchestrator;
 
+import com.smartorder.edu.agent.config.AgentConfiguration;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.memory.ConversationCompressService;
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
@@ -20,6 +21,7 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.PartialThinking;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
+import dev.langchain4j.model.openai.OpenAiChatRequestParameters;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -45,6 +47,7 @@ public class SelfManagedReActEngine {
 
     private static final int MAX_TOOL_ROUNDS = 5;
 
+    private final AgentConfiguration agentConfiguration;
     private final ChatModel chatLanguageModel;
     private final StreamingChatModel streamingChatLanguageModel;
     private final LangChain4jToolAdapter toolAdapter;
@@ -85,6 +88,9 @@ public class SelfManagedReActEngine {
                 ChatRequest chatRequest = ChatRequest.builder()
                         .messages(messages)
                         .toolSpecifications(tools.isEmpty() ? null : tools)
+                        .parameters(OpenAiChatRequestParameters.builder()
+                                .customParameters(agentConfiguration.buildThinkingCustomParameters())
+                                .build())
                         .build();
                 response = chatLanguageModel.chat(chatRequest);
             } catch (Exception e) {
@@ -185,6 +191,9 @@ public class SelfManagedReActEngine {
         ChatRequest chatRequest = ChatRequest.builder()
                 .messages(messages)
                 .toolSpecifications(tools.isEmpty() ? null : tools)
+                .parameters(OpenAiChatRequestParameters.builder()
+                        .customParameters(agentConfiguration.buildThinkingCustomParameters())
+                        .build())
                 .build();
 
         streamingChatLanguageModel.chat(chatRequest, new StreamingChatResponseHandler() {
