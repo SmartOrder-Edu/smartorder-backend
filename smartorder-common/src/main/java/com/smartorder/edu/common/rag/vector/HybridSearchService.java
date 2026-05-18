@@ -47,7 +47,7 @@ public class HybridSearchService {
     private int rrfK;
 
     public HybridSearchService(MilvusClientV2 milvusClient,
-                               EmbeddingModel embeddingModel,
+                               @Qualifier("embeddingModel") EmbeddingModel embeddingModel,
                                TfidfSparseVectorService tfidfService) {
         this.milvusClient = milvusClient;
         this.embeddingModel = embeddingModel;

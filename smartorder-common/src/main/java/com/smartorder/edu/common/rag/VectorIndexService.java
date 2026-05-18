@@ -4,7 +4,7 @@ package com.smartorder.edu.common.rag;
 import com.google.gson.JsonObject;
 import com.smartorder.edu.common.model.entity.KnowledgeChunk;
 import com.smartorder.edu.common.model.rag.VectorIndexDocument;
-import com.smartorder.edu.common.rag.vector.VectorIndexAdapter;
+import com.smartorder.edu.common.rag.vector.TfidfSparseVectorService;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -12,6 +12,8 @@ import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.service.vector.request.UpsertReq;
 import io.milvus.v2.service.vector.response.UpsertResp;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -25,52 +27,45 @@ public class VectorIndexService {
 
     private final MilvusClientV2 milvusClient;
     private final EmbeddingModel embeddingModel;
-    private final VectorIndexAdapter vectorIndexAdapter;
+    private final TfidfSparseVectorService tfidfService;
 
-    // 以你截图为准的集合名称
-    private static final String COLLECTION_NAME = "rag_chunks";
-    
+    @Value("${milvus.collection-name:rag_chunks}")
+    private String collectionName;
+
     // 嵌入模型批量处理大小
     private static final int EMBEDDING_BATCH_SIZE = 100;
 
-    public VectorIndexService(MilvusClientV2 milvusClient, EmbeddingModel embeddingModel, VectorIndexAdapter vectorIndexAdapter) {
+    public VectorIndexService(MilvusClientV2 milvusClient,
+                              @Qualifier("embeddingModel") EmbeddingModel embeddingModel,
+                              TfidfSparseVectorService tfidfService) {
         this.milvusClient = milvusClient;
         this.embeddingModel = embeddingModel;
-        this.vectorIndexAdapter = vectorIndexAdapter;
+        this.tfidfService = tfidfService;
     }
 
     /**
-     * 将 Chunk 向量化并写入 Milvus（同时写入密集向量集合和混合搜索集合）
+     * 将 Chunk 向量化并写入 Milvus（密集向量 + 稀疏向量）
      */
     public void indexChunks(List<KnowledgeChunk> chunks) {
         if (chunks == null || chunks.isEmpty()) {
             return;
         }
-        
+
         log.info("开始处理 {} 个文档块的向量化索引", chunks.size());
-        
+
         // 分批处理，避免内存溢出和API限制
         for (int batchStart = 0; batchStart < chunks.size(); batchStart += EMBEDDING_BATCH_SIZE) {
             int batchEnd = Math.min(batchStart + EMBEDDING_BATCH_SIZE, chunks.size());
             List<KnowledgeChunk> batchChunks = chunks.subList(batchStart, batchEnd);
-            
-            log.info("处理批次 {}/{}，数量: {}", 
-                    (batchStart / EMBEDDING_BATCH_SIZE) + 1, 
+
+            log.info("处理批次 {}/{}，数量: {}",
+                    (batchStart / EMBEDDING_BATCH_SIZE) + 1,
                     (int) Math.ceil((double) chunks.size() / EMBEDDING_BATCH_SIZE),
                     batchChunks.size());
-            
+
             processBatch(batchChunks);
         }
 
-        // 同步写入混合搜索集合（密集向量 + TF-IDF 稀疏向量）
-        try {
-            log.info("开始同步写入混合搜索集合...");
-            vectorIndexAdapter.indexChunksToHybrid(chunks);
-            log.info("混合搜索集合写入完成");
-        } catch (Exception e) {
-            log.error("写入混合搜索集合失败，密集向量集合已写入成功", e);
-        }
-        
         log.info("完成所有文档块的向量化索引，总数: {}", chunks.size());
     }
     
@@ -92,30 +87,34 @@ public class VectorIndexService {
                     .build());
         }
 
-        // 1. 调用 Embedding 模型，将文本批量转换为向量 (512维)
+        // 1. 调用 Embedding 模型，将文本批量转换为向量 (1024维)
         log.info("开始生成文本向量，数量: {}", textsToEmbed.size());
         List<TextSegment> textSegments = textsToEmbed.stream()
                 .map(TextSegment::from)
                 .toList();
         List<Embedding> embeddings = embeddingModel.embedAll(textSegments).content();
 
-        // 2. 将生成的向量装配到待插入的文档中
+        // 2. 生成稀疏向量 (TF-IDF)
+        log.info("开始生成稀疏向量...");
+        tfidfService.updateVocabulary(textsToEmbed);
+        List<Map<Long, Float>> sparseVectors = tfidfService.computeTfidfVectors(textsToEmbed);
+
+        // 3. 将生成的向量装配到待插入的文档中
         com.google.gson.Gson gson = new com.google.gson.Gson();
         List<JsonObject> milvusData = new ArrayList<>();
         for (int i = 0; i < docs.size(); i++) {
             VectorIndexDocument doc = docs.get(i);
-            List<Float> vectorList = embeddings.get(i).vectorAsList();
+            List<Float> denseVector = embeddings.get(i).vectorAsList();
+            Map<Long, Float> sparseVector = sparseVectors.get(i);
 
             // 组装 Milvus V2 SDK 需要的 JsonObject 格式
             JsonObject row = new JsonObject();
-            // 主键 (对应你的向量集合配置，必须叫 vector_id 或你建表时指定的 PK 名字)
             row.addProperty("vector_id", doc.getId());
-            // 向量字段 (对应你集合中 512 维的 float_vector 字段，假设叫 embedding)
-            row.add("embedding", gson.toJsonTree(vectorList));
-            // 文本内容
+            row.add("dense_vector", gson.toJsonTree(denseVector));
+            row.add("sparse_vector", gson.toJsonTree(sparseVector));
             row.addProperty("content", doc.getText());
 
-            // 将其它元数据铺平放入（或者放入一个 JSON 字段，取决于你的 Milvus Collection Schema 是否开启了 Dynamic Field）
+            // 将其它元数据铺平放入
             Map<String, Object> metadata = doc.getMetadata();
             for (Map.Entry<String, Object> entry : metadata.entrySet()) {
                 if (entry.getValue() != null) {
@@ -125,7 +124,7 @@ public class VectorIndexService {
             milvusData.add(row);
         }
 
-        // 3. 执行 Upsert 操作
+        // 4. 执行 Upsert 操作
         doUpsert(milvusData);
     }
 
@@ -161,13 +160,13 @@ public class VectorIndexService {
     private void doUpsert(List<JsonObject> milvusData) {
         try {
             UpsertReq upsertReq = UpsertReq.builder()
-                    .collectionName(COLLECTION_NAME)
+                    .collectionName(collectionName)
                     .data(milvusData)
                     .build();
 
             UpsertResp response = milvusClient.upsert(upsertReq);
             log.info("成功写入(Upsert) Milvus 向量库，集合: {}, 插入数量: {}",
-                    COLLECTION_NAME, response.getUpsertCnt());
+                    collectionName, response.getUpsertCnt());
         } catch (Exception e) {
             log.error("写入 Milvus 向量库失败！", e);
             throw new RuntimeException("Milvus upsert failed", e);
