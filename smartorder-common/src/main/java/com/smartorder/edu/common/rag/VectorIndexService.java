@@ -9,6 +9,7 @@ import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import io.milvus.v2.client.MilvusClientV2;
+import io.milvus.v2.service.vector.request.DeleteReq;
 import io.milvus.v2.service.vector.request.UpsertReq;
 import io.milvus.v2.service.vector.response.UpsertResp;
 import lombok.extern.slf4j.Slf4j;
@@ -170,6 +171,42 @@ public class VectorIndexService {
         } catch (Exception e) {
             log.error("写入 Milvus 向量库失败！", e);
             throw new RuntimeException("Milvus upsert failed", e);
+        }
+    }
+
+    /**
+     * 根据知识库ID删除所有向量
+     */
+    public void deleteByKnowledgeBaseId(Long knowledgeBaseId) {
+        try {
+            String filter = "knowledge_base_id == " + knowledgeBaseId;
+            DeleteReq deleteReq = DeleteReq.builder()
+                    .collectionName(collectionName)
+                    .filter(filter)
+                    .build();
+            milvusClient.delete(deleteReq);
+            log.info("已删除知识库相关的向量，knowledgeBaseId={}", knowledgeBaseId);
+        } catch (Exception e) {
+            log.error("删除知识库向量失败，knowledgeBaseId={}", knowledgeBaseId, e);
+            throw e;
+        }
+    }
+
+    /**
+     * 根据文件ID删除所有向量
+     */
+    public void deleteByFileId(Long fileId) {
+        try {
+            String filter = "file_id == " + fileId;
+            DeleteReq deleteReq = DeleteReq.builder()
+                    .collectionName(collectionName)
+                    .filter(filter)
+                    .build();
+            milvusClient.delete(deleteReq);
+            log.info("已删除文件相关的向量，fileId={}", fileId);
+        } catch (Exception e) {
+            log.error("删除文件向量失败，fileId={}", fileId, e);
+            throw e;
         }
     }
 

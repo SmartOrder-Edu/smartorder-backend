@@ -133,6 +133,18 @@ public class Neo4jKnowledgeGraphServiceImpl implements INeo4jKnowledgeGraphServi
 
     @Override
     @Transactional
+    public void deleteNodesByKnowledgeBaseId(Long knowledgeBaseId) {
+        try {
+            neo4jRepository.deleteByKnowledgeBaseId(knowledgeBaseId);
+            log.info("已删除知识库相关的图节点，knowledgeBaseId={}", knowledgeBaseId);
+        } catch (Exception e) {
+            log.error("删除知识库图节点失败，knowledgeBaseId={}", knowledgeBaseId, e);
+            throw e;
+        }
+    }
+
+    @Override
+    @Transactional
     public void syncFromMySQL(Long spaceId) {
         // 此方法保留为兼容，但具体实现需要依赖 MySQL 的 Mapper
         // 在 common 模块中暂不实现，由 knowledge 模块的 Controller 调用

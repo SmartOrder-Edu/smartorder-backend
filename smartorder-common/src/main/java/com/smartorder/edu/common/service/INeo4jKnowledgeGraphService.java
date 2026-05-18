@@ -81,6 +81,11 @@ public interface INeo4jKnowledgeGraphService {
     void deleteNodesByFileId(Long fileId);
 
     /**
+     * 删除知识库相关的所有节点
+     */
+    void deleteNodesByKnowledgeBaseId(Long knowledgeBaseId);
+
+    /**
      * 同步MySQL知识图谱到Neo4j
      */
     void syncFromMySQL(Long spaceId);

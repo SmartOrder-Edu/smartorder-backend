@@ -111,4 +111,11 @@ public interface Neo4jKnowledgeNodeRepository extends Neo4jRepository<Neo4jKnowl
            "WHERE id(n) < id(m) " +
            "RETURN n.id AS sourceId, m.id AS targetId, type(r) AS relationType")
     List<Map<String, Object>> findRelationshipsByFileId(@Param("fileId") Long fileId);
+
+    /**
+     * 根据知识库ID删除所有节点及其关系
+     */
+    @Query("MATCH (n:KnowledgeNode {knowledge_base_id: $knowledgeBaseId}) " +
+           "DETACH DELETE n")
+    void deleteByKnowledgeBaseId(@Param("knowledgeBaseId") Long knowledgeBaseId);
 }
