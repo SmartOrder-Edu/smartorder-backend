@@ -15,6 +15,7 @@ import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -64,13 +65,12 @@ public class SelfManagedReActEngine {
             AgentRuntimeContext runtimeContext,
             SseEmitter emitter
     ) {
-        // 1. 保存用户消息到 DB
-        memoryService.saveUserMessage(
-                runtimeContext.getConversationId(), request.getUserId(), request.getMessage());
-
-        // 2. 从记忆系统构建消息列表（含历史上下文）
+        // 1. 从记忆系统构建历史上下文（不含当前消息，用户消息已由 orchestrator 统一落库）
         List<ChatMessage> messages = memoryService.buildMessages(
-                runtimeContext.getConversationId(), request.getUserId(), request.getMessage());
+                runtimeContext.getConversationId(), request.getUserId());
+
+        // 2. 追加当前用户消息到上下文
+        messages.add(UserMessage.from(request.getMessage()));
 
         // 3. 构建工具规范
         List<ToolSpecification> tools = toolAdapter.buildToolSpecifications(routeResult.getRequiredTools());

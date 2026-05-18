@@ -40,12 +40,14 @@ public class ConversationController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "50") int size) {
 
+        Long userId = getCurrentUserId();
+
         if (size > 100) size = 100;
         if (page < 1) page = 1;
         int offset = (page - 1) * size;
 
-        int total = messageMapper.countByConversationId(conversationId);
-        List<ConversationMessage> entities = messageMapper.selectMessagesPage(conversationId, size, offset);
+        int total = messageMapper.countByConversationId(conversationId, userId);
+        List<ConversationMessage> entities = messageMapper.selectMessagesPage(conversationId, userId, size, offset);
 
         List<MessageVO> voList = entities.stream().map(e -> {
             MessageVO vo = new MessageVO();
