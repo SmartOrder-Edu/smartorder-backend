@@ -1,6 +1,7 @@
 package com.smartorder.edu.common.service.impl;
 
 
+import com.smartorder.edu.common.event.UserRegisteredEvent;
 import com.smartorder.edu.common.model.dto.ChangePasswordDTO;
 import com.smartorder.edu.common.model.dto.LoginDTO;
 import com.smartorder.edu.common.model.dto.RegisterDTO;
@@ -13,6 +14,7 @@ import com.smartorder.edu.common.util.EmailVerificationCodeUtils;
 import com.smartorder.edu.common.util.JwtTokenUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -47,6 +49,10 @@ public class AuthServiceImpl implements IAuthService {
      * Redis模板，用于操作Redis缓存
      */
     private final StringRedisTemplate stringRedisTemplate;
+    /**
+     * Spring 事件发布器
+     */
+    private final ApplicationEventPublisher eventPublisher;
 
     private static final String REDIS_KEY_PREFIX = "refreshToken:";
 
@@ -101,6 +107,17 @@ public class AuthServiceImpl implements IAuthService {
         user.setPassword(encodedPassword);
         // 保存用户
         userService.insertUser(user);
+
+        // 发布用户注册事件，供下游模块（smartorder-student）创建初始学生画像
+        eventPublisher.publishEvent(new UserRegisteredEvent(
+                this,
+                user.getId(),
+                registerDTO.getIdentity(),
+                registerDTO.getDirection(),
+                registerDTO.getLevel(),
+                registerDTO.getGoal(),
+                registerDTO.getSelfDescription()
+        ));
     }
 
     @Override

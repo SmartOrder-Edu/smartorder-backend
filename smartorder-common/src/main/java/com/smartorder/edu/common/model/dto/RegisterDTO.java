@@ -36,4 +36,21 @@ public class RegisterDTO {
      * 验证码
      */
     private String verificationCode;
+
+    // ====== 画像初始化字段（全部可选） ======
+
+    /** 身份：undergraduate|graduate|self|career */
+    private String identity;
+
+    /** 学习方向：ai|cs|os|ds|ee|other */
+    private String direction;
+
+    /** 当前基础：beginner|some|course|advanced */
+    private String level;
+
+    /** 近期目标：exam|project|skill|competition */
+    private String goal;
+
+    /** 自由文本自我描述（最长500字符） */
+    private String selfDescription;
 }
