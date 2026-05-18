@@ -7,11 +7,17 @@ import com.smartorder.edu.common.model.entity.KnowledgeChunk;
 import com.smartorder.edu.common.model.entity.KnowledgeDocument;
 import com.smartorder.edu.common.model.rag.RagChildChunk;
 import com.smartorder.edu.common.model.rag.RagParseResult;
+import com.smartorder.edu.common.util.AliOSSUtils;
 import com.smartorder.edu.common.util.TextHashUtils;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,12 +25,14 @@ import java.util.List;
 import static com.smartorder.edu.common.common.Constants.ACTIVE;
 import static com.smartorder.edu.common.common.Constants.PENDING;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RagPersistService {
 
     private final KnowledgeDocumentMapper documentMapper;
     private final KnowledgeChunkMapper chunkMapper;
+    private final AliOSSUtils aliOSSUtils;
 
     @Transactional
     public PersistResult saveParseResult(RagParseResult result) {
@@ -47,6 +55,17 @@ public class RagPersistService {
         document.setStatus(ACTIVE);
         document.setCreatedAt(LocalDateTime.now());
         document.setUpdatedAt(LocalDateTime.now());
+
+        // 上传 Markdown 到 OSS 并保存路径
+        if (result.getMarkdown() != null && !result.getMarkdown().isEmpty()) {
+            String markdownPath = uploadMarkdownToOss(
+                    result.getKnowledgeBaseId(),
+                    result.getFileId(),
+                    result.getMarkdown()
+            );
+            document.setRawTextPath(markdownPath);
+        }
+
         documentMapper.insert(document);
 
         List<KnowledgeChunk> chunks = new ArrayList<>();
@@ -99,6 +118,26 @@ public class RagPersistService {
     private int estimateTokenCount(String text) {
         if (text == null || text.isBlank()) return 0;
         return Math.max(1, text.length() / 2);
+    }
+
+    /**
+     * 上传 Markdown 内容到 OSS
+     * @param knowledgeBaseId 知识库ID
+     * @param fileId 文件ID
+     * @param markdown Markdown 内容
+     * @return OSS 文件访问路径
+     */
+    private String uploadMarkdownToOss(Long knowledgeBaseId, Long fileId, String markdown) {
+        String filePath = "knowledge-markdown/" + knowledgeBaseId + "/";
+        String fileName = fileId + ".md";
+        try (InputStream inputStream = new ByteArrayInputStream(markdown.getBytes(StandardCharsets.UTF_8))) {
+            String url = aliOSSUtils.uploadStream(inputStream, fileName, filePath);
+            log.info("Markdown 文件上传成功，fileId={}, url={}", fileId, url);
+            return url;
+        } catch (IOException e) {
+            log.error("上传 Markdown 文件失败，fileId={}", fileId, e);
+            throw new RuntimeException("上传 Markdown 文件失败", e);
+        }
     }
 
     public record PersistResult(KnowledgeDocument document, List<KnowledgeChunk> chunks) {}
