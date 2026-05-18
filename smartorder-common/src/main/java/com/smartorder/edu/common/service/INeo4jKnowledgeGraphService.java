@@ -1,6 +1,7 @@
 package com.smartorder.edu.common.service;
 
 import com.smartorder.edu.common.model.entity.Neo4jKnowledgeNode;
+import com.smartorder.edu.common.model.vo.KnowledgeGraphVO;
 
 import java.util.List;
 
@@ -83,4 +84,9 @@ public interface INeo4jKnowledgeGraphService {
      * 同步MySQL知识图谱到Neo4j
      */
     void syncFromMySQL(Long spaceId);
+
+    /**
+     * 获取文件的知识图谱（节点+边）
+     */
+    KnowledgeGraphVO getFileKnowledgeGraph(Long fileId);
 }

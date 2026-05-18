@@ -1,6 +1,8 @@
 package com.smartorder.edu.knowledge.controller;
 
+import com.smartorder.edu.common.model.vo.KnowledgeGraphVO;
 import com.smartorder.edu.common.model.vo.Result;
+import com.smartorder.edu.common.service.INeo4jKnowledgeGraphService;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import com.smartorder.edu.knowledge.domain.entity.KnowledgeGraphEdge;
 import com.smartorder.edu.knowledge.domain.entity.KnowledgeGraphNode;
@@ -27,6 +29,7 @@ import java.util.Map;
 public class KnowledgeGraphController {
 
     private final IKnowledgeGraphService knowledgeGraphService;
+    private final INeo4jKnowledgeGraphService neo4jKnowledgeGraphService;
 
     @GetMapping
     @Operation(summary = "获取学习空间的知识图谱", description = "返回指定学习空间的所有节点和边")
@@ -47,6 +50,8 @@ public class KnowledgeGraphController {
         List<KnowledgeGraphNode> nodes = knowledgeGraphService.searchNodes(spaceId, keyword);
         return Result.success(nodes);
     }
+
+
 
     private Long getCurrentUserId() {
         Claims claims = ThreadLocalUtils.get();

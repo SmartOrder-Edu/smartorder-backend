@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -101,5 +102,13 @@ public interface Neo4jKnowledgeNodeRepository extends Neo4jRepository<Neo4jKnowl
            "WHERE n.name = $name AND n.knowledge_base_id = $knowledgeBaseId " +
            "RETURN n LIMIT 1")
     Optional<Neo4jKnowledgeNode> findByNameAndKnowledgeBaseIdExact(@Param("name") String name,
-                                                                   @Param("knowledgeBaseId") Long knowledgeBaseId);
+                                                                    @Param("knowledgeBaseId") Long knowledgeBaseId);
+
+    /**
+     * 根据文件ID查找节点之间的关系
+     */
+    @Query("MATCH (n:KnowledgeNode {file_id: $fileId})-[r]-(m:KnowledgeNode {file_id: $fileId}) " +
+           "WHERE id(n) < id(m) " +
+           "RETURN n.id AS sourceId, m.id AS targetId, type(r) AS relationType")
+    List<Map<String, Object>> findRelationshipsByFileId(@Param("fileId") Long fileId);
 }

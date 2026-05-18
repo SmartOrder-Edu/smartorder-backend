@@ -2,6 +2,7 @@ package com.smartorder.edu.common.service.impl;
 
 import com.smartorder.edu.common.mapper.Neo4jKnowledgeNodeRepository;
 import com.smartorder.edu.common.model.entity.Neo4jKnowledgeNode;
+import com.smartorder.edu.common.model.vo.KnowledgeGraphVO;
 import com.smartorder.edu.common.service.INeo4jKnowledgeGraphService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -135,5 +137,41 @@ public class Neo4jKnowledgeGraphServiceImpl implements INeo4jKnowledgeGraphServi
         // 此方法保留为兼容，但具体实现需要依赖 MySQL 的 Mapper
         // 在 common 模块中暂不实现，由 knowledge 模块的 Controller 调用
         log.warn("syncFromMySQL 方法需要在具体业务模块中实现");
+    }
+
+    @Override
+    public KnowledgeGraphVO getFileKnowledgeGraph(Long fileId) {
+        KnowledgeGraphVO vo = new KnowledgeGraphVO();
+        vo.setFileId(fileId);
+
+        // 查询文件的所有节点
+        List<Neo4jKnowledgeNode> neo4jNodes = neo4jRepository.findByFileId(fileId);
+
+        // 转换节点
+        List<KnowledgeGraphVO.NodeVO> nodeVOs = new ArrayList<>();
+        for (Neo4jKnowledgeNode node : neo4jNodes) {
+            KnowledgeGraphVO.NodeVO nodeVO = new KnowledgeGraphVO.NodeVO();
+            nodeVO.setId(node.getId());
+            nodeVO.setName(node.getName());
+            nodeVO.setDescription(node.getDescription());
+            nodeVO.setCategory(node.getCategory());
+            nodeVO.setImportance(node.getImportance());
+            nodeVOs.add(nodeVO);
+        }
+        vo.setNodes(nodeVOs);
+
+        // 查询节点之间的关系
+        List<Map<String, Object>> relationships = neo4jRepository.findRelationshipsByFileId(fileId);
+        List<KnowledgeGraphVO.EdgeVO> edgeVOs = new ArrayList<>();
+        for (Map<String, Object> rel : relationships) {
+            KnowledgeGraphVO.EdgeVO edgeVO = new KnowledgeGraphVO.EdgeVO();
+            edgeVO.setSource((String) rel.get("sourceId"));
+            edgeVO.setTarget((String) rel.get("targetId"));
+            edgeVO.setRelationType((String) rel.get("relationType"));
+            edgeVOs.add(edgeVO);
+        }
+        vo.setEdges(edgeVOs);
+
+        return vo;
     }
 }
