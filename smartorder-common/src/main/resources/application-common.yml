@@ -33,6 +33,10 @@ spring:
     url: jdbc:mysql://117.72.222.3:3306/smart_order_db?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&useSSL=false&allowPublicKeyRetrieval=true
     username: ${mysql_username}
     password: ${mysql_password}
+    # Druid 连接超时配置（调试用）
+    connection-timeout: 10000
+    connect-timeout: 10000
+    socket-timeout: 30000
 
     # 2. Druid 核心配置
     druid:
