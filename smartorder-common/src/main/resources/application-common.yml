@@ -199,7 +199,18 @@ milvus:
   collection-name: smart_order_db  # 集合名称
   dimension: 512                            # BGE-small-zh 模型的维度是 512
 
+# TF-IDF 稀疏向量配置
+tfidf:
+  max-vocabulary-size: 100000
+  min-term-frequency: 2
 
+# 混合搜索配置 (密集向量使用现有 BGE 模型)
+hybrid-search:
+  collection-name: hybrid_chunks
+  dense-weight: 0.7
+  sparse-weight: 0.3
+  default-top-k: 10
+  rrf-k: 60
 
 # Python 解析服务配置
 python:
