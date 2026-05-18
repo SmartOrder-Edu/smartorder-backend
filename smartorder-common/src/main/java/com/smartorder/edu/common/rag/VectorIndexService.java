@@ -4,6 +4,7 @@ package com.smartorder.edu.common.rag;
 import com.google.gson.JsonObject;
 import com.smartorder.edu.common.model.entity.KnowledgeChunk;
 import com.smartorder.edu.common.model.rag.VectorIndexDocument;
+import com.smartorder.edu.common.rag.vector.VectorIndexAdapter;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -24,6 +25,7 @@ public class VectorIndexService {
 
     private final MilvusClientV2 milvusClient;
     private final EmbeddingModel embeddingModel;
+    private final VectorIndexAdapter vectorIndexAdapter;
 
     // 以你截图为准的集合名称
     private static final String COLLECTION_NAME = "rag_chunks";
@@ -31,13 +33,14 @@ public class VectorIndexService {
     // 嵌入模型批量处理大小
     private static final int EMBEDDING_BATCH_SIZE = 100;
 
-    public VectorIndexService(MilvusClientV2 milvusClient, EmbeddingModel embeddingModel) {
+    public VectorIndexService(MilvusClientV2 milvusClient, EmbeddingModel embeddingModel, VectorIndexAdapter vectorIndexAdapter) {
         this.milvusClient = milvusClient;
         this.embeddingModel = embeddingModel;
+        this.vectorIndexAdapter = vectorIndexAdapter;
     }
 
     /**
-     * 将 Chunk 向量化并写入 Milvus
+     * 将 Chunk 向量化并写入 Milvus（同时写入密集向量集合和混合搜索集合）
      */
     public void indexChunks(List<KnowledgeChunk> chunks) {
         if (chunks == null || chunks.isEmpty()) {
@@ -57,6 +60,15 @@ public class VectorIndexService {
                     batchChunks.size());
             
             processBatch(batchChunks);
+        }
+
+        // 同步写入混合搜索集合（密集向量 + TF-IDF 稀疏向量）
+        try {
+            log.info("开始同步写入混合搜索集合...");
+            vectorIndexAdapter.indexChunksToHybrid(chunks);
+            log.info("混合搜索集合写入完成");
+        } catch (Exception e) {
+            log.error("写入混合搜索集合失败，密集向量集合已写入成功", e);
         }
         
         log.info("完成所有文档块的向量化索引，总数: {}", chunks.size());
