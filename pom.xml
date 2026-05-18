@@ -91,6 +91,7 @@
 
 
     <dependencies>
+
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-web-search-engine-tavily</artifactId>
@@ -491,6 +492,51 @@
             <artifactId>hutool-all</artifactId>
             <version>5.8.40</version>
         </dependency>
+
+
+        <!-- ONNX Runtime：用于加载 SigLIP ONNX 模型 -->
+        <dependency>
+            <groupId>com.microsoft.onnxruntime</groupId>
+            <artifactId>onnxruntime</artifactId>
+            <version>1.17.0</version>
+        </dependency>
+
+        <!-- Apache Lucene Core：用于 TF-IDF 计算 -->
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-core</artifactId>
+            <version>9.9.2</version>
+        </dependency>
+
+        <!-- Lucene 分析器（中文分词） -->
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-analysis-smartcn</artifactId>
+            <version>9.9.2</version>
+        </dependency>
+
+        <!-- SigLIP ONNX 模型支持 -->
+        <dependency>
+            <groupId>com.microsoft.onnxruntime</groupId>
+            <artifactId>onnxruntime</artifactId>
+            <version>1.17.0</version>
+        </dependency>
+
+        <!-- TF-IDF 计算 -->
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-core</artifactId>
+            <version>9.9.2</version>
+        </dependency>
+
+        <!-- Lucene 分析器（中文分词） -->
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-analysis-smartcn</artifactId>
+            <version>9.9.2</version>
+        </dependency>
+
+
 
 
     </dependencies>
