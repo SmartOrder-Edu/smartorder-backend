@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.InputStream;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -134,21 +135,23 @@ public class FileResourceServiceImpl implements IFileResourceService {
         Long fileSize = dto.getFileSize();
         String fileHash = dto.getFileHash();
         Long targetFolderId = dto.getTargetFolderId();
+        Long fileId = IdUtil.getSnowflakeNextId();
 
-        String objectKey = "yun/resource/" + userId + "/" + targetFolderId + '/' + IdUtil.getSnowflakeNextIdStr() + "/" + fileName.substring(fileName.lastIndexOf('.'));
+        String objectKey = "yun/resource/" + userId + "/" + targetFolderId + '/' + fileId.toString() + fileName.substring(fileName.lastIndexOf('.'));
+//        String objectKey = "yun/resource/" + userId + "/" + targetFolderId + '/' + fileId.toString() + "-" + fileName.substring(0,fileName.lastIndexOf('.')) + fileName.substring(fileName.lastIndexOf('.'));
+
         // 分片上传唯一标识(凭证)
         String uploadId = aliOSSUtils.initiateMultipartUpload(objectKey);
         // 查询已上传分片列表(断点传续)
         List<Integer> listUploadedParts = aliOSSUtils.listUploadedParts(objectKey, uploadId);
 
-        UploadTask task = new UploadTask(fileHash, objectKey, uploadId, listUploadedParts, null);
+        UploadTask task = new UploadTask(fileHash, objectKey, uploadId, listUploadedParts, new ArrayList<>());
 
         log.info("task:{}",task);
         String uploadTaskKey = "yun:resources:upload:task:" + userId + ":" + fileHash;
         redisTemplate.opsForValue().set(uploadTaskKey,toJson(task),30, TimeUnit.MINUTES);
 
         // 存储文件元信息，等待分片上传完成后更新URL和状态
-        Long fileId = IdUtil.getSnowflakeNextId();
         FileResource file = new FileResource();
         file.setId(fileId);
         file.setFolderId(targetFolderId);
@@ -166,7 +169,7 @@ public class FileResourceServiceImpl implements IFileResourceService {
         log.info("文件记录已经创建，并且已经检查已上传的文件,文件ID：{}，对象Key：{}", fileId, objectKey);
         Map<String,Object> result = Map.of(
                 "uploadId", uploadId,
-                "uploadedParts", listUploadedParts,
+                "uploadedChunksParts", listUploadedParts,
                 "fileId", fileId.toString()
         );
         return result;
@@ -210,7 +213,7 @@ public class FileResourceServiceImpl implements IFileResourceService {
             UploadTask uploadTask = fromJson(taskJson, UploadTask.class);
             uploadTask.partETags.add(new PartETag(chunkNumber,eTag));
 
-            redisTemplate.opsForValue().set(uploadKey,toJson(uploadTask),30,TimeUnit.MINUTES);
+            redisTemplate.opsForValue().set(uploadKey,toJson(uploadTask),30, TimeUnit.MINUTES);
         } catch (Exception e) {
             log.error("更新分片信息失败", e);
             throw new RuntimeException("更新分片信息失败",e);
@@ -219,6 +222,7 @@ public class FileResourceServiceImpl implements IFileResourceService {
 
 
     @Override
+    @Transactional
     public Map<String, Object> mergeChunks(String fileHash, Long fileId, Long userId) {
         String uploadKey = "yun:resources:upload:task:" + userId + ":" + fileHash;
         String taskJson = redisTemplate.opsForValue().get(uploadKey);
@@ -249,8 +253,8 @@ public class FileResourceServiceImpl implements IFileResourceService {
 //            rabbitTemplate.convertAndSend(TEACHER_RESOURCE_DIRECT_EXCHANGE,ROUTING_KEY_TEACHER_RESOURCE_PARSE, fileId);
             return Map.of("url", completeMultipartUploadURL);
         } catch (Exception e) {
-            log.error("更新分片信息失败", e);
-            throw new RuntimeException("更新分片信息失败",e);
+            log.error("合并分片信息失败", e);
+            throw new RuntimeException("合并分片信息失败",e);
         }
     }
 
@@ -273,6 +277,7 @@ public class FileResourceServiceImpl implements IFileResourceService {
             LambdaQueryWrapper<FileResource> queryWrapper = new LambdaQueryWrapper<>();
             queryWrapper.eq(FileResource::getUserId, userId)
                     .eq(FileResource::getFileUrl, uploadTask.objectKey);
+
             FileResource file = fileResourceMapper.selectOne(queryWrapper);
             if (file != null) {
                 file.setUploadStatus(2);
