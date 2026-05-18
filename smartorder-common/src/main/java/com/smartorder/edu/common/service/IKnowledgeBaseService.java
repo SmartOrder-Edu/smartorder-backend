@@ -21,4 +21,9 @@ public interface IKnowledgeBaseService {
      */
     Boolean updateKnowledgeBase(KnowledgeBaseReqDTO reqDTO, Long currentUserId);
 
+    /**
+     * 删除知识库（级联删除所有相关数据）
+     */
+    void deleteKnowledgeBase(Long knowledgeBaseId, Long currentUserId);
+
 }

@@ -1,6 +1,7 @@
-package com.smartorder.edu.knowledge.service;
+package com.smartorder.edu.common.service;
 
-import com.smartorder.edu.knowledge.domain.entity.Neo4jKnowledgeNode;
+import com.smartorder.edu.common.model.entity.Neo4jKnowledgeNode;
+import com.smartorder.edu.common.model.vo.KnowledgeGraphVO;
 
 import java.util.List;
 
@@ -28,6 +29,16 @@ public interface INeo4jKnowledgeGraphService {
      * 根据空间ID查找所有节点
      */
     List<Neo4jKnowledgeNode> findNodesBySpaceId(Long spaceId);
+
+    /**
+     * 根据知识库ID查找所有节点
+     */
+    List<Neo4jKnowledgeNode> findNodesByKnowledgeBaseId(Long knowledgeBaseId);
+
+    /**
+     * 根据文件ID查找所有节点
+     */
+    List<Neo4jKnowledgeNode> findNodesByFileId(Long fileId);
 
     /**
      * 查找节点的前置知识（多跳推理）
@@ -60,7 +71,27 @@ public interface INeo4jKnowledgeGraphService {
     Neo4jKnowledgeNode findByMysqlId(Long mysqlId);
 
     /**
+     * 根据名称和知识库ID查找节点
+     */
+    Neo4jKnowledgeNode findByNameAndKnowledgeBaseId(String name, Long knowledgeBaseId);
+
+    /**
+     * 删除文件相关的所有节点
+     */
+    void deleteNodesByFileId(Long fileId);
+
+    /**
+     * 删除知识库相关的所有节点
+     */
+    void deleteNodesByKnowledgeBaseId(Long knowledgeBaseId);
+
+    /**
      * 同步MySQL知识图谱到Neo4j
      */
     void syncFromMySQL(Long spaceId);
+
+    /**
+     * 获取文件的知识图谱（节点+边）
+     */
+    KnowledgeGraphVO getFileKnowledgeGraph(Long fileId);
 }

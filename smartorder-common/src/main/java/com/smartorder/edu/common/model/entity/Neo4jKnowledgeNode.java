@@ -1,4 +1,4 @@
-package com.smartorder.edu.knowledge.domain.entity;
+package com.smartorder.edu.common.model.entity;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -39,6 +39,12 @@ public class Neo4jKnowledgeNode {
     @Property("mysql_id")
     private Long mysqlId;
 
+    @Property("file_id")
+    private Long fileId;
+
+    @Property("knowledge_base_id")
+    private Long knowledgeBaseId;
+
     @Relationship(type = "PREREQUISITE_OF", direction = Relationship.Direction.OUTGOING)
     private Set<Neo4jKnowledgeNode> prerequisites = new HashSet<>();
 
@@ -48,7 +54,7 @@ public class Neo4jKnowledgeNode {
     @Relationship(type = "PART_OF", direction = Relationship.Direction.OUTGOING)
     private Set<Neo4jKnowledgeNode> parentNodes = new HashSet<>();
 
-    public Neo4jKnowledgeNode(String id, Long spaceId, String name, String description, 
+    public Neo4jKnowledgeNode(String id, Long spaceId, String name, String description,
                               String category, Integer importance, Long mysqlId) {
         this.id = id;
         this.spaceId = spaceId;

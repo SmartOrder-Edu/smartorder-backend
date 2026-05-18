@@ -25,10 +25,10 @@ public class CollectionInitService {
 
     private final MilvusClientV2 milvusClient;
 
-    @Value("${hybrid-search.collection-name:hybrid_chunks}")
+    @Value("${milvus.collection-name:rag_chunks}")
     private String collectionName;
 
-    @Value("${milvus.dimension:512}")
+    @Value("${milvus.dimension:1024}")
     private int denseVectorDim;
 
     public CollectionInitService(MilvusClientV2 milvusClient) {
@@ -123,6 +123,11 @@ public class CollectionInitService {
         // 元数据字段
         schema.addField(AddFieldReq.builder()
                 .fieldName("chunk_id")
+                .dataType(DataType.Int64)
+                .build());
+
+        schema.addField(AddFieldReq.builder()
+                .fieldName("user_id")
                 .dataType(DataType.Int64)
                 .build());
 
