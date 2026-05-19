@@ -4,7 +4,7 @@ import com.smartorder.edu.agent.model.entity.ConversationMessage;
 import com.smartorder.edu.agent.model.entity.ConversationSummary;
 import com.smartorder.edu.agent.mapper.ConversationMessageMapper;
 import com.smartorder.edu.agent.mapper.ConversationSummaryMapper;
-import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.AiServices;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,10 +32,12 @@ public class ConversationCompressService {
     private final ConversationMessageMapper messageMapper;
     private final ConversationSummaryMapper summaryMapper;
     private final ConversationMemoryService memoryService;
-    private final ChatLanguageModel chatLanguageModel;
+    private final ChatModel chatLanguageModel;
 
     /**
      * 检查并触发压缩（异步执行，不阻塞聊天）
+     *
+     * 增量摘要策略：旧摘要 + 新增未压缩消息 → 增量摘要，避免多轮压缩后早期信息丢失
      */
     @Async
     public void checkAndCompress(String conversationId, Long userId) {
@@ -47,22 +49,34 @@ public class ConversationCompressService {
         log.info("[Compress] 开始压缩: conversationId={}, messageCount={}", conversationId, count);
 
         try {
-            // 1. 获取对话文本
-            String conversationText = memoryService.getConversationText(conversationId);
-            if (conversationText.isBlank()) {
+            // 1. 获取已有摘要
+            ConversationSummary existing = summaryMapper.selectByConversationId(conversationId);
+            String existingSummary = (existing != null && existing.getSummaryText() != null)
+                    ? existing.getSummaryText() : "";
+
+            // 2. 获取新增未压缩消息的文本
+            String newMessagesText = memoryService.getUncompressedText(conversationId);
+            if (newMessagesText.isBlank() && existingSummary.isBlank()) {
                 log.warn("[Compress] 无可压缩内容: conversationId={}", conversationId);
                 return;
             }
 
-            // 2. 使用 SummaryAgent 生成摘要
+            // 3. 组合输入：旧摘要 + 新增消息
+            String compressInput;
+            if (existingSummary.isBlank()) {
+                compressInput = newMessagesText;
+            } else {
+                compressInput = "【已有摘要】\n" + existingSummary + "\n\n【新增对话】\n" + newMessagesText;
+            }
+
+            // 4. 使用 SummaryAgent 生成增量摘要
             SummaryAgent summaryAgent = AiServices.builder(SummaryAgent.class)
-                    .chatLanguageModel(chatLanguageModel)
+                    .chatModel(chatLanguageModel)
                     .build();
 
-            String summaryText = summaryAgent.summarize(conversationText);
+            String summaryText = summaryAgent.summarize(compressInput);
 
-            // 3. 保存或更新摘要
-            ConversationSummary existing = summaryMapper.selectByConversationId(conversationId);
+            // 5. 保存或更新摘要
             if (existing != null) {
                 existing.setSummaryText(summaryText);
                 existing.setMessageCount(count);
@@ -77,7 +91,7 @@ public class ConversationCompressService {
                 summaryMapper.insert(summary);
             }
 
-            // 4. 标记旧消息为已压缩（保留最近 30 条不压缩）
+            // 6. 标记旧消息为已压缩（保留最近 30 条不压缩）
             List<ConversationMessage> recentMessages =
                     messageMapper.selectRecentMessages(conversationId, 30);
             // recentMessages 按 create_time DESC 排序，最后一条是最近 30 条中最旧的

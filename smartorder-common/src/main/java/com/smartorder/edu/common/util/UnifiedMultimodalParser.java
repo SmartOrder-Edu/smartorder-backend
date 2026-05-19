@@ -6,6 +6,7 @@ import com.smartorder.edu.common.model.entity.FileParseRecord;
 import com.smartorder.edu.common.model.vo.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.poi.hwpf.HWPFDocument;
 import org.apache.poi.hwpf.extractor.WordExtractor;
@@ -88,7 +89,15 @@ public class UnifiedMultimodalParser {
     private   AliOSSUtils aliOSSUtils;
 
 
-
+    private static final String MIME_TEXT = "text/plain";
+    private static final String MIME_MARKDOWN = "text/markdown";
+    private static final String MIME_PDF = "application/pdf";
+    private static final String MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    private static final String MIME_DOC = "application/msword";
+    private static final String MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    private static final String MIME_XLS = "application/vnd.ms-excel";
+    private static final String MIME_PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    private static final String MIME_PPT = "application/vnd.ms-powerpoint";
     /**
      * 获取百度OCR客户端实例（单例模式，每次调用创建新实例保证线程安全）
      * @return AipOcr OCR客户端对象
@@ -202,6 +211,9 @@ public class UnifiedMultimodalParser {
             case "text/plain":
                 rawContent = parseText(file);
                 break;
+            case "text/markdown":
+                rawContent = parseMarkdown(file);
+                break;
             case "application/pdf":
                 rawContent = parsePdf(file);
                 break;
@@ -216,6 +228,7 @@ public class UnifiedMultimodalParser {
                 // 剔除了Base64，现在只需返回视频的摘要文本
                 rawContent = parseVideo(file);
                 break;
+
             case "image/jpeg":
             case "image/png":
                 // 剔除了Base64，现在只需返回图片元信息+OCR结果
@@ -246,52 +259,57 @@ public class UnifiedMultimodalParser {
      * @throws Exception 文件读取异常
      */
     private String detectFileType(File file) throws Exception {
-        // 第一步：通过文件后缀名初步判断
         String fileName = file.getName().toLowerCase();
-        if (fileName.endsWith(".txt")) return "text/plain";
-        if (fileName.endsWith(".pdf")) return "application/pdf";
-        if (fileName.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-        if (fileName.endsWith(".doc")) return "application/msword";
-        // 扩展音频格式：WEBM
-        if (fileName.endsWith(".mp3") || fileName.endsWith(".webm")) return "audio/mpeg";
-        // 扩展视频格式：MKV/WEBM
-        if (fileName.endsWith(".mp4") || fileName.endsWith(".mkv") || fileName.endsWith(".webm")) return "video/mp4";
-        // 扩展图片格式：BMP/GIF
-        if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg") || fileName.endsWith(".bmp") || fileName.endsWith(".gif")) return "image/jpeg";
+
+        if (fileName.endsWith(".txt")) return MIME_TEXT;
+        if (fileName.endsWith(".md") || fileName.endsWith(".markdown")) return MIME_MARKDOWN;
+
+        if (fileName.endsWith(".pdf")) return MIME_PDF;
+
+        if (fileName.endsWith(".docx")) return MIME_DOCX;
+        if (fileName.endsWith(".doc")) return MIME_DOC;
+
+        if (fileName.endsWith(".xlsx")) return MIME_XLSX;
+        if (fileName.endsWith(".xls")) return MIME_XLS;
+
+        if (fileName.endsWith(".pptx")) return MIME_PPTX;
+        if (fileName.endsWith(".ppt")) return MIME_PPT;
+
+        if (fileName.endsWith(".mp3") || fileName.endsWith(".wav")) return "audio/mpeg";
+
+        // webm 不建议直接判成 audio，webm 可能是音频也可能是视频
+        if (fileName.endsWith(".mp4") || fileName.endsWith(".mkv") || fileName.endsWith(".webm")) {
+            return "video/mp4";
+        }
+
+        if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) return "image/jpeg";
         if (fileName.endsWith(".png")) return "image/png";
-        // Excel
-        if (fileName.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-        if (fileName.endsWith(".xls")) return "application/vnd.ms-excel";
+        if (fileName.endsWith(".bmp")) return "image/bmp";
+        if (fileName.endsWith(".gif")) return "image/gif";
 
-        // PowerPoint
-        if (fileName.endsWith(".pptx")) return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-        if (fileName.endsWith(".ppt")) return "application/vnd.ms-powerpoint";
-
-        // 第二步：通过文件头字节流精准判断（防止后缀名伪装）
-        byte[] header = new byte[4]; // 读取前4个字节
+        byte[] header = new byte[4];
         try (FileInputStream fis = new FileInputStream(file)) {
-            fis.read(header);
+            int len = fis.read(header);
+            if (len <= 0) return "unknown";
         }
-        // 转换为16进制字符串
+
         String hexHeader = bytesToHex(header).toUpperCase();
-        // JPG文件头：FFD8
+
+        if (hexHeader.startsWith("25504446")) return MIME_PDF; // %PDF
         if (hexHeader.startsWith("FFD8")) return "image/jpeg";
-        // PNG文件头：8950
-        if (hexHeader.startsWith("8950")) return "image/png";
-        // BMP文件头：424D
-        if (hexHeader.startsWith("424D")) return "image/jpeg";
-        // GIF文件头：47494638
-        if (hexHeader.startsWith("47494638")) return "image/jpeg";
-        // WEBM/MKV文件头：1A45DFA3
-        if (hexHeader.startsWith("1A45DFA3")) {
-            if (fileName.endsWith(".webm") || fileName.endsWith(".mkv")) {
-                return fileName.endsWith(".webm") && !fileName.contains("video") ? "audio/mpeg" : "video/mp4";
-            }
+        if (hexHeader.startsWith("89504E47")) return "image/png";
+        if (hexHeader.startsWith("424D")) return "image/bmp";
+        if (hexHeader.startsWith("47494638")) return "image/gif";
+
+        // Office OpenXML: docx/xlsx/pptx 本质是 zip，文件头一般是 PK
+        if (hexHeader.startsWith("504B0304")) {
+            if (fileName.endsWith(".docx")) return MIME_DOCX;
+            if (fileName.endsWith(".xlsx")) return MIME_XLSX;
+            if (fileName.endsWith(".pptx")) return MIME_PPTX;
         }
-        // 未识别的文件类型
+
         return "unknown";
     }
-
     /**
      * 字节数组转16进制字符串（用于文件头检测）
      * @param bytes 待转换的字节数组
@@ -405,26 +423,81 @@ public class UnifiedMultimodalParser {
      * @return String 提取并清洗后的文本内容
      * @throws Exception PDF读取/解析异常
      */
+
     private String parsePdf(File file) throws Exception {
-        // 加载PDF文档（try-with-resources自动关闭资源）
+        String text = parsePdfText(file);
+
+        if (text != null && text.trim().length() >= 50) {
+            return text;
+        }
+
+        log.warn("PDF 文本内容较少，尝试 OCR 解析: {}", file.getName());
+        return parsePdfByOcr(file);
+    }
+    private String parsePdfByOcr(File file) throws Exception {
+        StringBuilder result = new StringBuilder();
+
         try (PDDocument document = PDDocument.load(file)) {
-            // 校验：PDF是否加密
             if (document.isEncrypted()) {
                 throw new Exception("PDF文件已加密，无法解析");
             }
-            // 创建PDF文本提取器
+
+            PDFRenderer renderer = new PDFRenderer(document);
+
+            for (int pageIndex = 0; pageIndex < document.getNumberOfPages(); pageIndex++) {
+                BufferedImage image = renderer.renderImageWithDPI(pageIndex, 200);
+
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                ImageIO.write(image, "png", baos);
+
+                String ocrText = recognizeImageText(baos.toByteArray());
+
+                result.append("\n\n## 第 ")
+                        .append(pageIndex + 1)
+                        .append(" 页\n\n")
+                        .append(ocrText == null || ocrText.isBlank() ? "本页未识别到有效文字。" : ocrText);
+            }
+        }
+
+        return result.toString().trim();
+    }
+    private String parsePdfText(File file) throws Exception {
+        try (PDDocument document = PDDocument.load(file)) {
+            if (document.isEncrypted()) {
+                throw new Exception("PDF文件已加密，无法解析");
+            }
+
             PDFTextStripper stripper = new PDFTextStripper();
-            // 设置提取页码范围：从第1页到最后一页
             stripper.setStartPage(1);
             stripper.setEndPage(document.getNumberOfPages());
-            // 提取文本
+
             String text = stripper.getText(document);
-            // 内容清洗：合并多余换行和空格
-            return text.replaceAll("\\n+", "\n")
-                    .replaceAll("\\s{2,}", " ")
+
+            return text.replaceAll("\\n{3,}", "\n\n")
+                    .replaceAll("[ \\t]{2,}", " ")
                     .trim();
         }
     }
+//    private String parsePdf(File file) throws Exception {
+//        // 加载PDF文档（try-with-resources自动关闭资源）
+//        try (PDDocument document = PDDocument.load(file)) {
+//            // 校验：PDF是否加密
+//            if (document.isEncrypted()) {
+//                throw new Exception("PDF文件已加密，无法解析");
+//            }
+//            // 创建PDF文本提取器
+//            PDFTextStripper stripper = new PDFTextStripper();
+//            // 设置提取页码范围：从第1页到最后一页
+//            stripper.setStartPage(1);
+//            stripper.setEndPage(document.getNumberOfPages());
+//            // 提取文本
+//            String text = stripper.getText(document);
+//            // 内容清洗：合并多余换行和空格
+//            return text.replaceAll("\\n+", "\n")
+//                    .replaceAll("\\s{2,}", " ")
+//                    .trim();
+//        }
+//    }
 
     /**
      * 解析Word文件（兼容DOC和DOCX格式）
@@ -786,5 +859,25 @@ public class UnifiedMultimodalParser {
         return ocrText.toString().trim();
     }
 
+    /**
+     * 解析 Markdown 文件
+     *
+     * Markdown 文件本身已经是结构化文本，不能像普通 TXT 一样压缩所有空白，
+     * 否则会破坏标题、列表、表格、代码块。
+     */
+    private String parseMarkdown(File file) throws Exception {
+        String content = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+
+        // 去掉 UTF-8 BOM
+        content = content.replaceFirst("^\\uFEFF", "");
+
+        // 统一换行符
+        content = content.replace("\r\n", "\n").replace("\r", "\n");
+
+        // 最多只压缩连续 3 个以上空行为 2 个空行，保留 Markdown 段落结构
+        content = content.replaceAll("\\n{3,}", "\n\n");
+
+        return content.trim();
+    }
 
 }

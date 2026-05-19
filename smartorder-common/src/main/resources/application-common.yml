@@ -20,6 +20,11 @@ spring:
         base-url: "https://api.deepseek.com/"
         options:
           model: "deepseek-reasoner"
+  rag:
+    ai:
+      enabled: true
+      api-key: ${DEEPSEEK_API_KEY}
+      model: deepseek-chat
 
   datasource:
     # 1. 基本连接信息
@@ -191,10 +196,21 @@ email:
 milvus:
   host: 117.72.222.3
   port: 19530
-  collection-name: teacher_semantic_memory  # 集合名称
-  dimension: 512                            # BGE-small-zh 模型的维度是 512
+  collection-name: rag_chunks  # 集合名称
+  dimension: 1024                           # bge-m3 模型的维度是 1024
 
+# TF-IDF 稀疏向量配置
+tfidf:
+  max-vocabulary-size: 100000
+  min-term-frequency: 2
 
+# 混合搜索配置 (密集向量使用现有 BGE 模型)
+hybrid-search:
+  collection-name: rag_chunks
+  dense-weight: 0.7
+  sparse-weight: 0.3
+  default-top-k: 10
+  rrf-k: 60
 
 # Python 解析服务配置
 python:
@@ -229,6 +245,22 @@ langchain4j:
       # 以及大模型返回的工具调用指令长什么样，非常有助于排障。
       log-requests: true
       log-responses: true
+    embedding-model:
+      api-key: ${MIMO_API_KEY}
+      base-url: https://token-plan-cn.xiaomimimo.com/v1
+      model-name: bge-m3
+
+# =======================================================
+# Agent LLM 思考模式配置（DeepSeek V4 兼容）
+# =======================================================
+# thinking-mode:
+#   disabled    - 不启用思考模式（默认，兼容 MIMO）
+#   deepseek-v4 - 启用 DeepSeek V4 思考模式（在请求中注入 thinking.type=enabled + reasoning_effort）
+# reasoning-effort 仅对 deepseek-v4 模式生效，可选值: high, xhigh
+agent:
+  llm:
+    thinking-mode: ${AGENT_THINKING_MODE:disabled}
+    reasoning-effort: ${AGENT_REASONING_EFFORT:high}
 
 # 讯飞虚拟人交互配置
 xfyun:

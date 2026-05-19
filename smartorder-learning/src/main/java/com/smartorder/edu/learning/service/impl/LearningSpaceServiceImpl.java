@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -114,6 +115,28 @@ public class LearningSpaceServiceImpl implements ILearningSpaceService {
                 .set("is_deleted", 1);
         learningSpaceMapper.update(null, updateWrapper);
         log.info("用户{}删除学习空间{}成功", userId, spaceId);
+    }
+
+    @Override
+    public LearningSpaceVO changeStatus(Long userId, Long spaceId, String status) {
+        if (status == null || status.isBlank()) {
+            throw new BusinessException("状态不能为空");
+        }
+        if (!List.of("active", "archived", "completed").contains(status)) {
+            throw new BusinessException("无效的状态值，允许的值：active/archived/completed");
+        }
+        LearningSpace space = getAndCheckOwner(userId, spaceId);
+        UpdateWrapper<LearningSpace> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", spaceId).eq("user_id", userId).eq("is_deleted", 0)
+                .set("status", status);
+        if ("completed".equals(status)) {
+            updateWrapper.set("actual_end_date", LocalDate.now());
+        } else if ("active".equals(status)) {
+            updateWrapper.set("actual_end_date", null);
+        }
+        learningSpaceMapper.update(null, updateWrapper);
+        log.info("用户{}变更学习空间{}状态为{}", userId, spaceId, status);
+        return toVO(learningSpaceMapper.selectById(spaceId));
     }
 
     /**

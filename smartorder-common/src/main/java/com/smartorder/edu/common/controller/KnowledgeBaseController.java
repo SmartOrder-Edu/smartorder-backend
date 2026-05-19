@@ -80,4 +80,18 @@ public class KnowledgeBaseController {
         // 调用 Service 执行更新
         return knowledgeBaseService.updateKnowledgeBase(reqDTO, currentUserId);
     }
+
+    /**
+     * 删除知识库（级联删除所有相关数据）
+     */
+    @DeleteMapping("delete/{id}")
+    public String deleteKnowledgeBase(@PathVariable Long id) {
+        // 获取当前登录用户 ID
+        Claims claims = ThreadLocalUtils.get();
+        Long currentUserId = claims.get("userId", Long.class);
+
+        // 调用 Service 执行删除
+        knowledgeBaseService.deleteKnowledgeBase(id, currentUserId);
+        return "知识库删除成功";
+    }
 }

@@ -52,4 +52,15 @@ public class KnowledgeFileController {
         return knowledgeFileService.completeMultipartUpload(req, userId);
 
     }
+
+    /**
+     * 4. 删除文件（级联删除所有相关数据）
+     */
+    @DeleteMapping("/{id}")
+    public String deleteKnowledgeFile(@PathVariable Long id) {
+        Claims claims = ThreadLocalUtils.get();
+        Long userId = claims.get("userId", Long.class);
+        knowledgeFileService.deleteKnowledgeFile(id, userId);
+        return "文件删除成功";
+    }
 }

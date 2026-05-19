@@ -1,5 +1,6 @@
 package com.smartorder.edu.learning.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.smartorder.edu.learning.domain.entity.LearningPathEdge;
 import com.smartorder.edu.learning.mapper.LearningPathEdgeMapper;
 import com.smartorder.edu.learning.service.ILearningPathEdgeService;
@@ -22,5 +23,12 @@ public class LearningPathEdgeServiceImpl implements ILearningPathEdgeService {
             if (edge.getIsDeleted() == null) edge.setIsDeleted(0);
             edgeMapper.insert(edge);
         }
+    }
+
+    @Override
+    public List<LearningPathEdge> getBySpaceId(Long spaceId) {
+        QueryWrapper<LearningPathEdge> qw = new QueryWrapper<>();
+        qw.eq("space_id", spaceId).eq("is_deleted", 0);
+        return edgeMapper.selectList(qw);
     }
 }

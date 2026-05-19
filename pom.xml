@@ -17,7 +17,6 @@
 
     <modules>
         <module>smartorder-common</module>
-        <module>smartorder-user</module>
         <module>smartorder-learning</module>
         <module>smartorder-assessment</module>
         <module>smartorder-knowledge</module>
@@ -40,7 +39,7 @@
         <url/>
     </scm>
     <properties>
-        <java.version>21</java.version>
+        <java.version>17</java.version>
         <commons-codec.version>1.16.0</commons-codec.version>
         <spring-ai.version>1.1.2</spring-ai.version>
         <hutool.version>5.8.40</hutool.version>
@@ -51,7 +50,10 @@
         <jjwt.version>0.9.1</jjwt.version>
         <jaxb-api.version>2.3.1</jaxb-api.version>
         <ali-oss.version>3.17.4</ali-oss.version>
-        <langchain4j.version>1.0.0-beta3</langchain4j.version>
+        <langchain4j.version>1.13.0</langchain4j.version>
+        <!-- LangChain4j 内部属性映射：
+             langchain4j.stable.version=1.13.0（核心模块）
+             langchain4j.beta.version=1.13.0-beta23（starter/集成模块） -->
         <swagger.version>4.5.0</swagger.version>
     </properties>
 
@@ -75,15 +77,23 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <!-- LangChain4j BOM：统一管理核心模块(1.13.0)和 starter/集成模块(1.13.0-beta23)的版本 -->
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-bom</artifactId>
+                <version>${langchain4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
 
     <dependencies>
+
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-web-search-engine-tavily</artifactId>
-            <version>0.35.0</version>
         </dependency>
         <!-- Spring AOP 依赖 -->
         <dependency>
@@ -235,13 +245,11 @@
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-open-ai-spring-boot-starter</artifactId>
-            <version>${langchain4j.version}</version>
         </dependency>
 
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-spring-boot-starter</artifactId>
-            <version>${langchain4j.version}</version>
         </dependency>
         <!--redis依赖-->
         <dependency>
@@ -373,29 +381,42 @@
             <scope>compile</scope> <!-- 非测试环境需改为compile，默认test -->
         </dependency>
 
+        <dependency>
+            <groupId>io.milvus</groupId>
+            <artifactId>milvus-sdk-java</artifactId>
+            <version>2.4.4</version>
+        </dependency>
+
+<!--        &lt;!&ndash; Milvus Java Client 最新版 &ndash;&gt;-->
+<!--        <dependency>-->
+<!--            <groupId>io.milvus</groupId>-->
+<!--            <artifactId>milvus-client-java</artifactId>-->
+<!--            <version>2.4.0</version>-->
+<!--        </dependency>-->
+
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+        </dependency>
         <!-- langchain4j 的 MyBatis 存储支持 -->
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-easy-rag</artifactId>
-            <version>${langchain4j.version}</version>
         </dependency>
 
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j</artifactId>
-            <version>${langchain4j.version}</version>
         </dependency>
 
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-core</artifactId>
-            <version>${langchain4j.version}</version>
         </dependency>
 
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-milvus</artifactId>
-            <version>${langchain4j.version}</version>
         </dependency>
 
         <!-- Neo4j 图数据库依赖 -->
@@ -407,7 +428,6 @@
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-embeddings-bge-small-zh-v15-q</artifactId>
-            <version>${langchain4j.version}</version>
         </dependency>
 
         <!-- HTML转Word核心依赖 -->
@@ -479,6 +499,31 @@
             <artifactId>hutool-all</artifactId>
             <version>5.8.40</version>
         </dependency>
+
+
+        <!-- ONNX Runtime：用于加载 SigLIP ONNX 模型 -->
+        <dependency>
+            <groupId>com.microsoft.onnxruntime</groupId>
+            <artifactId>onnxruntime</artifactId>
+            <version>1.17.0</version>
+        </dependency>
+
+        <!-- Apache Lucene Core：用于 TF-IDF 计算 -->
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-core</artifactId>
+            <version>9.9.2</version>
+        </dependency>
+
+        <!-- Lucene 分析器（中文分词） -->
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-analysis-smartcn</artifactId>
+            <version>9.9.2</version>
+        </dependency>
+
+
+
 
 
     </dependencies>
