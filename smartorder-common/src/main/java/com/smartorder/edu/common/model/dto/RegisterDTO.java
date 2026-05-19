@@ -42,7 +42,10 @@ public class RegisterDTO {
     /** 身份：undergraduate|graduate|self|career */
     private String identity;
 
-    /** 学习方向：ai|cs|os|ds|ee|other */
+    /** 年级：freshman|sophomore|junior|senior|g1|g2|g3 */
+    private String grade;
+
+    /** 学习方向：ai|cs|ds|ee|business|humanities|design|other */
     private String direction;
 
     /** 学习方向补充说明（选"其他"时必填） */
@@ -54,11 +57,17 @@ public class RegisterDTO {
     /** 当前基础补充说明 */
     private String levelDetail;
 
-    /** 近期目标：exam|project|skill|competition */
+    /** 近期目标：exam|project|skill|grad|competition */
     private String goal;
 
     /** 近期目标补充说明 */
     private String goalDetail;
+
+    /** 目标截止时间：1week|1month|semester|longterm */
+    private String goalDeadline;
+
+    /** 每日学习时间：lt30|30to60|1to2|2to3|gt3 */
+    private String dailyStudyTime;
 
     /** 自由文本自我描述（最长500字符） */
     private String selfDescription;

@@ -45,6 +45,9 @@ public class UserRegisteredEventListener {
         if (event.getIdentity() != null && !event.getIdentity().isEmpty()) {
             basic.put("identity_type", event.getIdentity());
         }
+        if (event.getGrade() != null && !event.getGrade().isEmpty()) {
+            basic.put("grade", event.getGrade());
+        }
         if (event.getDirection() != null && !event.getDirection().isEmpty()) {
             basic.put("target_direction", event.getDirection());
         }
@@ -62,6 +65,12 @@ public class UserRegisteredEventListener {
         }
         if (event.getGoalDetail() != null && !event.getGoalDetail().isBlank()) {
             basic.put("primary_goal_detail", event.getGoalDetail());
+        }
+        if (event.getGoalDeadline() != null && !event.getGoalDeadline().isEmpty()) {
+            basic.put("goal_deadline", event.getGoalDeadline());
+        }
+        if (event.getDailyStudyTime() != null && !event.getDailyStudyTime().isEmpty()) {
+            basic.put("daily_study_time", event.getDailyStudyTime());
         }
         if (event.getSelfDescription() != null && !event.getSelfDescription().isBlank()) {
             basic.put("self_description", event.getSelfDescription());
