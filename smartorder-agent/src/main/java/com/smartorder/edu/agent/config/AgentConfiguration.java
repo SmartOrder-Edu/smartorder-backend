@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -31,6 +32,29 @@ public class AgentConfiguration {
 
     @Value("${langchain4j.open-ai.chat-model.model-name}")
     private String modelName;
+
+    @Value("${agent.llm.thinking-mode:disabled}")
+    private String thinkingMode;
+
+    @Value("${agent.llm.reasoning-effort:high}")
+    private String reasoningEffort;
+
+    /**
+     * 根据 thinking-mode 配置构建请求级自定义参数。
+     * DeepSeek V4 需要 {@code "thinking": {"type": "enabled"}} 才会返回 reasoning_content；
+     * MIMO 不需要此参数，默认 disabled 时返回空 Map。
+     */
+    public Map<String, Object> buildThinkingCustomParameters() {
+        if (!"deepseek-v4".equalsIgnoreCase(thinkingMode)) {
+            return Map.of();
+        }
+        Map<String, Object> params = new HashMap<>();
+        params.put("thinking", Map.of("type", "enabled"));
+        if (reasoningEffort != null && !reasoningEffort.isBlank()) {
+            params.put("reasoning_effort", reasoningEffort);
+        }
+        return params;
+    }
 
     @Primary
     @Bean

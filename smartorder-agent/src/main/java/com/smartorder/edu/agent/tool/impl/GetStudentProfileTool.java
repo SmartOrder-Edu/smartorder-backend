@@ -3,20 +3,23 @@ package com.smartorder.edu.agent.tool.impl;
 import com.smartorder.edu.agent.tool.ToolCategory;
 import com.smartorder.edu.agent.tool.ToolHandler;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
+import com.smartorder.edu.student.service.IStudentProfileService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * 获取学生画像工具——迁移自 ProfileTool
+ * 获取学生画像工具 — 使用 JSON 维度画像
+ *
+ * @author 谢光湘
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class GetStudentProfileTool implements ToolHandler {
 
-    private final com.smartorder.edu.user.service.IStudentProfileService profileService;
+    private final IStudentProfileService profileService;
 
     @Override
     public String name() {
@@ -25,7 +28,7 @@ public class GetStudentProfileTool implements ToolHandler {
 
     @Override
     public String description() {
-        return "获取学生画像，包括学习偏好、基础水平、薄弱知识点、动态标签";
+        return "获取学生画像，包括基础信息、学习目标、知识基础、薄弱点、偏好等 JSON 维度数据";
     }
 
     @Override

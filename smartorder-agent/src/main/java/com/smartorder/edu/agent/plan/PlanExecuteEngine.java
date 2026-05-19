@@ -96,12 +96,15 @@ public class PlanExecuteEngine {
             planJson = planAgent.createPlan(prompt);
         } catch (Exception e) {
             log.error("[PlanEngine] PlanAgent 生成失败", e);
+            String errorMsg = "抱歉，生成学习规划时遇到了问题，请稍后再试。";
             dispatcher.emit(emitter, context, AgentEventType.ERROR, Map.of(
                     "message", "规划生成失败: " + e.getMessage()
             ));
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of(
-                    "text", "抱歉，生成学习规划时遇到了问题，请稍后再试。"
+                    "text", errorMsg
             ));
+            memoryService.saveAssistantMessage(
+                    context.getConversationId(), request.getUserId(), errorMsg, null);
             return;
         }
 
@@ -111,9 +114,12 @@ public class PlanExecuteEngine {
             plan = schemaValidator.validateAndParse(planJson);
         } catch (Exception e) {
             log.error("[PlanEngine] Schema 校验失败: {}", e.getMessage());
+            String schemaMsg = "生成的规划格式不正确，请重新描述你的学习目标。";
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of(
-                    "text", "生成的规划格式不正确，请重新描述你的学习目标。"
+                    "text", schemaMsg
             ));
+            memoryService.saveAssistantMessage(
+                    context.getConversationId(), request.getUserId(), schemaMsg, null);
             return;
         }
 
@@ -153,6 +159,10 @@ public class PlanExecuteEngine {
                 : "我已为你规划了「" + spaceName + "」的学习路径，包含 " + phaseCount + " 个学习阶段。";
 
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", resultMsg));
+
+        // 10. 保存助手回复到 DB
+        memoryService.saveAssistantMessage(
+                context.getConversationId(), request.getUserId(), resultMsg, null);
     }
 
     /**

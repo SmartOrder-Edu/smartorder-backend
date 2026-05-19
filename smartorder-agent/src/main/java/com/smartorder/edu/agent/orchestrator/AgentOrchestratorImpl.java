@@ -1,5 +1,6 @@
 package com.smartorder.edu.agent.orchestrator;
 
+import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.plan.PlanExecuteEngine;
 import com.smartorder.edu.agent.route.IntentRouteResult;
@@ -30,6 +31,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
     private final PlanExecuteEngine planExecuteEngine;
     private final MultiAgentCoordinator multiAgentCoordinator;
     private final TraceEventDispatcher dispatcher;
+    private final ConversationMemoryService memoryService;
 
     @Override
     public void handle(AgentChatRequest request, SseEmitter emitter) {
@@ -42,6 +44,9 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 .build();
 
         try {
+            // 0. 统一保存用户消息（所有模式都落库）
+            memoryService.saveUserMessage(conversationId, request.getUserId(), request.getMessage());
+
             // 1. 意图路由
             IntentRouteResult routeResult = intentRouteService.route(request.getMessage());
             context.setMode(routeResult.getRunMode());
