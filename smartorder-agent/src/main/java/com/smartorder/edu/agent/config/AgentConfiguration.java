@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -65,6 +66,7 @@ public class AgentConfiguration {
                 .modelName(modelName)
                 .returnThinking(true)
                 .sendThinking(true, "reasoning_content")
+                .timeout(Duration.ofSeconds(120))
                 .build();
     }
 
@@ -77,6 +79,7 @@ public class AgentConfiguration {
                 .modelName(modelName)
                 .returnThinking(true)
                 .sendThinking(true, "reasoning_content")
+                .timeout(Duration.ofSeconds(120))
                 .build();
     }
 

@@ -1,12 +1,10 @@
 package com.smartorder.edu.common.model.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 @Data
 public class KnowledgeBaseReqDTO {
-    @NotNull(message = "知识库ID不能为空")
     private Long id;
 
     @NotBlank(message = "知识库名称不能为空")
