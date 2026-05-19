@@ -45,11 +45,20 @@ public class RegisterDTO {
     /** 学习方向：ai|cs|os|ds|ee|other */
     private String direction;
 
+    /** 学习方向补充说明（选"其他"时必填） */
+    private String directionDetail;
+
     /** 当前基础：beginner|some|course|advanced */
     private String level;
 
+    /** 当前基础补充说明 */
+    private String levelDetail;
+
     /** 近期目标：exam|project|skill|competition */
     private String goal;
+
+    /** 近期目标补充说明 */
+    private String goalDetail;
 
     /** 自由文本自我描述（最长500字符） */
     private String selfDescription;

@@ -114,8 +114,11 @@ public class AuthServiceImpl implements IAuthService {
                 user.getId(),
                 registerDTO.getIdentity(),
                 registerDTO.getDirection(),
+                registerDTO.getDirectionDetail(),
                 registerDTO.getLevel(),
+                registerDTO.getLevelDetail(),
                 registerDTO.getGoal(),
+                registerDTO.getGoalDetail(),
                 registerDTO.getSelfDescription()
         ));
     }

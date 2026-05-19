@@ -48,11 +48,20 @@ public class UserRegisteredEventListener {
         if (event.getDirection() != null && !event.getDirection().isEmpty()) {
             basic.put("target_direction", event.getDirection());
         }
+        if (event.getDirectionDetail() != null && !event.getDirectionDetail().isBlank()) {
+            basic.put("target_direction_detail", event.getDirectionDetail());
+        }
         if (event.getLevel() != null && !event.getLevel().isEmpty()) {
             basic.put("current_level", event.getLevel());
         }
+        if (event.getLevelDetail() != null && !event.getLevelDetail().isBlank()) {
+            basic.put("current_level_detail", event.getLevelDetail());
+        }
         if (event.getGoal() != null && !event.getGoal().isEmpty()) {
             basic.put("primary_goal", event.getGoal());
+        }
+        if (event.getGoalDetail() != null && !event.getGoalDetail().isBlank()) {
+            basic.put("primary_goal_detail", event.getGoalDetail());
         }
         if (event.getSelfDescription() != null && !event.getSelfDescription().isBlank()) {
             basic.put("self_description", event.getSelfDescription());
