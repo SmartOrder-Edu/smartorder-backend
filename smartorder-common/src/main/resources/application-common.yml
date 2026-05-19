@@ -197,7 +197,7 @@ milvus:
   host: 117.72.222.3
   port: 19530
   collection-name: rag_chunks  # 集合名称
-  dimension: 1024                           # bge-m3 模型的维度是 1024
+  dimension: 1536                           # deepseek-embedding 模型的维度是 1536
 
 # TF-IDF 稀疏向量配置
 tfidf:
@@ -246,9 +246,9 @@ langchain4j:
       log-requests: true
       log-responses: true
     embedding-model:
-      api-key: ${MIMO_API_KEY}
-      base-url: https://token-plan-cn.xiaomimimo.com/v1
-      model-name: bge-m3
+      api-key: ${DEEPSEEK_API_KEY}
+      base-url: https://api.deepseek.com/v1
+      model-name: deepseek-embedding
 
 # =======================================================
 # Agent LLM 思考模式配置（DeepSeek V4 兼容）
