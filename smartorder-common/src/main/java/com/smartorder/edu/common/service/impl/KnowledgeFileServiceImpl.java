@@ -90,7 +90,6 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
 
         try {
             // 2. 直接调用 OSS 上传分片即可！
-            // 废弃原先存入 Redis ETag 的操作，减轻 Redis 压力，杜绝不一致风险
             aliOSSUtils.uploadPart(objectKey, uploadId, partNumber, file.getInputStream());
         } catch (IOException e) {
             log.error("分片 {} 上传失败, uploadId: {}", partNumber, uploadId, e);

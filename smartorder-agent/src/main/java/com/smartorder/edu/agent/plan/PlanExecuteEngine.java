@@ -1,16 +1,18 @@
 package com.smartorder.edu.agent.plan;
 
 import com.alibaba.fastjson.JSONObject;
+import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.tool.LangChain4jToolAdapter;
+import com.smartorder.edu.agent.tool.LearningPlanCreationTool;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
 import com.smartorder.edu.agent.tool.ToolRegistry;
 import com.smartorder.edu.agent.trace.AgentEventType;
 import com.smartorder.edu.agent.trace.AgentRuntimeContext;
 import com.smartorder.edu.agent.trace.TraceEventDispatcher;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
-import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.AiServices;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,22 +25,25 @@ import java.util.Map;
  * 规划执行引擎——负责规划阶段
  *
  * 流程：
- * 调用学生画像工具 → PlanAgent 生成 JSON → Schema 校验 → 保存 draft → SSE 推送 agent.plan.created
+ * 调用学生画像工具 → PlanAgent 生成 JSON → Schema 校验 → 保存 draft
+ * → 调用 LearningPlanCreationTool 创建学习空间 → SSE 推送 agent.plan.created
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class PlanExecuteEngine {
 
-    private final ChatLanguageModel chatLanguageModel;
+    private final ChatModel chatLanguageModel;
     private final ToolRegistry toolRegistry;
     private final LangChain4jToolAdapter toolAdapter;
     private final PlanSchemaValidator schemaValidator;
     private final PlanDraftService draftService;
     private final TraceEventDispatcher dispatcher;
+    private final ConversationMemoryService memoryService;
+    private final LearningPlanCreationTool planCreationTool;
 
     /**
-     * 规划阶段：生成规划草稿，等待用户确认
+     * 规划阶段：生成规划草稿并自动创建学习空间
      */
     public void runPlanning(
             AgentChatRequest request,
@@ -53,9 +58,6 @@ public class PlanExecuteEngine {
         ));
 
         // 2. 获取学生画像
-        dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
-                "message", "正在了解你的学习情况..."
-        ));
 
         String profileJson = "{}";
         if (toolRegistry.contains("getStudentProfile")) {
@@ -80,18 +82,17 @@ public class PlanExecuteEngine {
             }
         }
 
-        // 3. 调用 PlanAgent 生成规划
-        dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
-                "message", "正在为你量身定制学习规划..."
-        ));
+        // 3. 确定用户目标文本
+        String userGoal = resolveUserGoal(request);
 
+        // 4. 调用 PlanAgent 生成规划
         String planJson;
         try {
             PlanAgent planAgent = AiServices.builder(PlanAgent.class)
-                    .chatLanguageModel(chatLanguageModel)
+                    .chatModel(chatLanguageModel)
                     .build();
 
-            String prompt = buildPlanPrompt(request.getMessage(), profileJson);
+            String prompt = buildPlanPrompt(userGoal, profileJson);
             planJson = planAgent.createPlan(prompt);
         } catch (Exception e) {
             log.error("[PlanEngine] PlanAgent 生成失败", e);
@@ -104,7 +105,7 @@ public class PlanExecuteEngine {
             return;
         }
 
-        // 4. Schema 校验
+        // 5. Schema 校验
         JSONObject plan;
         try {
             plan = schemaValidator.validateAndParse(planJson);
@@ -116,7 +117,7 @@ public class PlanExecuteEngine {
             return;
         }
 
-        // 5. 保存草稿
+        // 6. 保存草稿
         String draftId = draftService.saveDraft(
                 context.getConversationId(),
                 context.getTraceId(),
@@ -124,18 +125,68 @@ public class PlanExecuteEngine {
                 plan
         );
 
-        // 6. 推送 plan.created 事件
+        // 7. 自动创建学习空间（调用 LearningPlanCreationTool）
+        String creationResult;
+        try {
+            log.info("[PlanEngine] 自动创建学习空间: userId={}, draftId={}", request.getUserId(), draftId);
+            creationResult = planCreationTool.createLearningPlan(request.getUserId(), userGoal);
+        } catch (Exception e) {
+            log.error("[PlanEngine] 创建学习空间失败", e);
+            dispatcher.emit(emitter, context, AgentEventType.ERROR, Map.of(
+                    "message", "学习空间创建失败: " + e.getMessage()
+            ));
+            creationResult = null;
+        }
+
+        // 8. 推送 plan.created 事件
         dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
                 "draftId", draftId,
-                "plan", plan
+                "plan", plan,
+                "creationResult", creationResult != null ? creationResult : "创建失败"
         ));
 
-        // 7. 文本提示
-        dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of(
-                "text", "我已为你生成了「" + plan.getString("spaceName") + "」的学习规划。" +
-                        "包含 " + plan.getJSONArray("phases").size() + " 个学习阶段。" +
-                        "请查看规划详情并确认是否创建此学习空间。"
-        ));
+        // 9. 文本提示
+        String spaceName = plan.getString("spaceName");
+        int phaseCount = plan.getJSONArray("phases").size();
+        String resultMsg = creationResult != null
+                ? "学习空间「" + spaceName + "」已创建成功。" + phaseCount + " 个学习阶段已就绪。"
+                : "我已为你规划了「" + spaceName + "」的学习路径，包含 " + phaseCount + " 个学习阶段。";
+
+        dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", resultMsg));
+    }
+
+    /**
+     * 确定用户的学习目标文本
+     * 如果当前消息是确认类短消息（如"好的"），则从对话历史中提取原始目标；
+     * 否则直接使用当前消息。
+     */
+    private String resolveUserGoal(AgentChatRequest request) {
+        String message = request.getMessage();
+        if (message == null || message.isBlank()) {
+            return "用户希望制定学习计划";
+        }
+
+        // 判断是否为确认类短消息
+        String trimmed = message.trim();
+        boolean isConfirmation = trimmed.length() <= 10 && (
+                trimmed.equals("好的") || trimmed.equals("可以") || trimmed.equals("是的") ||
+                trimmed.equals("行") || trimmed.equals("确认") || trimmed.equals("需要") ||
+                trimmed.equals("嗯") || trimmed.equals("对") || trimmed.equals("好") ||
+                trimmed.equals("创建吧") || trimmed.equals("开始吧") || trimmed.equals("没问题") ||
+                trimmed.equals("搞吧") || trimmed.equals("做吧") || trimmed.equals("弄吧") ||
+                trimmed.equalsIgnoreCase("ok") || trimmed.equalsIgnoreCase("yes")
+        );
+
+        if (isConfirmation && request.getConversationId() != null) {
+            String historicalGoal = memoryService.extractRecentGoal(request.getConversationId());
+            if (historicalGoal != null) {
+                log.info("[PlanEngine] 从对话历史中恢复用户目标: {}", historicalGoal);
+                return historicalGoal;
+            }
+            log.warn("[PlanEngine] 未能从对话历史中提取目标，使用确认消息本身");
+        }
+
+        return message;
     }
 
     private String buildPlanPrompt(String userMessage, String profileJson) {

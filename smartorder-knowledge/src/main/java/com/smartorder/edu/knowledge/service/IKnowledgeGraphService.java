@@ -19,4 +19,19 @@ public interface IKnowledgeGraphService {
      * 批量插入知识图谱边
      */
     void batchInsertEdges(List<KnowledgeGraphEdge> edges);
+
+    /**
+     * 根据学习空间ID查询知识图谱节点
+     */
+    List<KnowledgeGraphNode> getNodesBySpaceId(Long spaceId);
+
+    /**
+     * 根据学习空间ID查询知识图谱边
+     */
+    List<KnowledgeGraphEdge> getEdgesBySpaceId(Long spaceId);
+
+    /**
+     * 根据关键字搜索知识图谱节点
+     */
+    List<KnowledgeGraphNode> searchNodes(Long spaceId, String keyword);
 }

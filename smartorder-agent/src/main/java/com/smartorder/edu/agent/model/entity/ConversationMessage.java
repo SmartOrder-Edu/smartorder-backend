@@ -16,6 +16,7 @@ public class ConversationMessage {
     private Long userId;
     private String role;
     private String content;
+    private String reasoningContent;
     private String toolName;
     private String metadataJson;
     private Integer isCompressed;

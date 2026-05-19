@@ -75,7 +75,7 @@ public class KnowledgeFile {
     private String fileHash;
 
     /**
-     * 解析状态：pending=待解析，parsing=解析中，parsed=解析完成，failed=解析失败
+     * 解析状态：pending=待解析，processing=解析中，success=解析完成，failed=解析失败
      */
     @TableField("parse_status")
     private String parseStatus;
@@ -87,7 +87,7 @@ public class KnowledgeFile {
     private String parseError;
 
     /**
-     * 分块状态：pending=待分块，chunking=分块中，chunked=分块完成，failed=分块失败
+     * 分块状态：pending=待分块，processing=分块中，success=分块完成，failed=分块失败
      */
     @TableField("chunk_status")
     private String chunkStatus;
@@ -99,7 +99,7 @@ public class KnowledgeFile {
     private String chunkError;
 
     /**
-     * 向量化状态：pending=待向量化，embedding=向量化中，embedded=向量化完成，failed=向量化失败
+     * 向量化状态：pending=待向量化，processing=向量化中，success=向量化完成，failed=向量化失败
      */
     @TableField("embedding_status")
     private String embeddingStatus;

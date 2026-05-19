@@ -13,4 +13,9 @@ public interface ILearningPathEdgeService {
      * 批量插入边
      */
     void batchInsert(List<LearningPathEdge> edges);
+
+    /**
+     * 根据学习空间ID查询边列表
+     */
+    List<LearningPathEdge> getBySpaceId(Long spaceId);
 }

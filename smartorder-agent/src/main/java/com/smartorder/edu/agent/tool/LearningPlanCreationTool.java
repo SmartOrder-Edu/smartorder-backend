@@ -9,7 +9,7 @@ import com.smartorder.edu.learning.domain.entity.*;
 import com.smartorder.edu.learning.mapper.LearningSpaceMapper;
 import com.smartorder.edu.learning.service.*;
 import dev.langchain4j.agent.tool.Tool;
-import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.ChatModel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -37,7 +37,7 @@ public class LearningPlanCreationTool {
     private final ILearningPathEdgeService edgeService;
     private final ITaskService taskService;
     private final IKnowledgeGraphService kgService;
-    private final ChatLanguageModel chatLanguageModel;
+    private final ChatModel chatLanguageModel;
 
     @Tool("创建一个完整的学习计划（学习空间）。当用户确认要开始学习某个目标时调用。" +
           "参数 planDescription 应包含：用户的目标描述、可用时间、学科领域、学术水平等关键信息。" +

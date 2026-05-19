@@ -1,0 +1,94 @@
+package com.smartorder.edu.agent.tool.impl;
+
+import com.smartorder.edu.agent.tool.ToolCategory;
+import com.smartorder.edu.agent.tool.ToolHandler;
+import com.smartorder.edu.agent.tool.ToolInvokeContext;
+import com.smartorder.edu.knowledge.domain.entity.KnowledgeGraphEdge;
+import com.smartorder.edu.knowledge.domain.entity.KnowledgeGraphNode;
+import com.smartorder.edu.knowledge.service.IKnowledgeGraphService;
+import lombok.Data;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 查询知识工具——查询知识图谱节点和边
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class QueryKnowledgeTool implements ToolHandler {
+
+    private final IKnowledgeGraphService knowledgeGraphService;
+
+    @Override
+    public String name() {
+        return "queryKnowledge";
+    }
+
+    @Override
+    public String description() {
+        return "查询知识图谱中的知识点，可按学习空间ID和关键字搜索。返回知识节点和它们之间的关系边。用于回答学科知识结构、相关知识点查询等问题";
+    }
+
+    @Override
+    public Class<?> requestType() {
+        return QueryKnowledgeRequest.class;
+    }
+
+    @Override
+    public ToolCategory category() {
+        return ToolCategory.KNOWLEDGE;
+    }
+
+    @Override
+    public Object execute(Object request, ToolInvokeContext context) {
+        QueryKnowledgeRequest req = (QueryKnowledgeRequest) request;
+        Long spaceId = req.getSpaceId();
+
+        log.info("[QueryKnowledge] spaceId={}, keyword={}", spaceId, req.getKeyword());
+
+        List<KnowledgeGraphNode> nodes;
+        if (req.getKeyword() != null && !req.getKeyword().isBlank()) {
+            nodes = knowledgeGraphService.searchNodes(spaceId, req.getKeyword());
+        } else {
+            nodes = knowledgeGraphService.getNodesBySpaceId(spaceId);
+        }
+
+        List<KnowledgeGraphEdge> edges = knowledgeGraphService.getEdgesBySpaceId(spaceId);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("spaceId", spaceId);
+        result.put("nodeCount", nodes.size());
+        result.put("edgeCount", edges.size());
+        result.put("nodes", nodes.stream().map(n -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", n.getId());
+            m.put("name", n.getName());
+            m.put("description", n.getDescription());
+            m.put("category", n.getCategory());
+            m.put("importance", n.getImportance());
+            return m;
+        }).toList());
+        result.put("edges", edges.stream().map(e -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("fromNodeId", e.getFromNodeId());
+            m.put("toNodeId", e.getToNodeId());
+            m.put("relationType", e.getRelationType());
+            m.put("weight", e.getWeight());
+            return m;
+        }).toList());
+
+        return result;
+    }
+
+    @Data
+    public static class QueryKnowledgeRequest {
+        private Long spaceId;
+        private String keyword;
+    }
+}

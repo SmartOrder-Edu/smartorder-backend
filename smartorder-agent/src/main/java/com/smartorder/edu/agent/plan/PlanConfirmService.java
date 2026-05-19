@@ -76,9 +76,28 @@ public class PlanConfirmService {
             spaceDTO.setName(plan.getString("spaceName"));
             spaceDTO.setType(plan.getString("type") != null ? plan.getString("type") : "course");
             spaceDTO.setDescription(plan.getString("description"));
-            spaceDTO.setGoals(plan.getJSONArray("goals").toJavaList(String.class).toString());
-            spaceDTO.setStartDate(plan.getString("startDate") != null
-                    ? LocalDate.parse(plan.getString("startDate")) : LocalDate.now());
+
+            // goals null-safe
+            JSONArray goalsArr = plan.getJSONArray("goals");
+            spaceDTO.setGoals(goalsArr != null ? goalsArr.toJSONString() : "[]");
+
+            // startDate 解析防御
+            try {
+                spaceDTO.setStartDate(plan.getString("startDate") != null
+                        ? LocalDate.parse(plan.getString("startDate")) : LocalDate.now());
+            } catch (Exception e) {
+                log.warn("[PlanConfirm] startDate 解析失败，使用默认值: {}", plan.getString("startDate"));
+                spaceDTO.setStartDate(LocalDate.now());
+            }
+
+            // targetEndDate 设置
+            if (plan.getString("targetEndDate") != null) {
+                try {
+                    spaceDTO.setTargetEndDate(LocalDate.parse(plan.getString("targetEndDate")));
+                } catch (Exception e) {
+                    log.warn("[PlanConfirm] targetEndDate 解析失败，忽略: {}", plan.getString("targetEndDate"));
+                }
+            }
 
             LearningSpaceVO spaceVO = spaceService.createSpace(userId, spaceDTO);
             Long spaceId = spaceVO.getId();

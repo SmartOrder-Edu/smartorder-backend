@@ -1,5 +1,6 @@
 package com.smartorder.edu.knowledge.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.smartorder.edu.knowledge.domain.entity.KnowledgeGraphNode;
 import com.smartorder.edu.knowledge.domain.entity.KnowledgeGraphEdge;
 import com.smartorder.edu.knowledge.mapper.KnowledgeGraphNodeMapper;
@@ -36,5 +37,27 @@ public class KnowledgeGraphServiceImpl implements IKnowledgeGraphService {
             if (edge.getWeight() == null) edge.setWeight(1.0);
             edgeMapper.insert(edge);
         }
+    }
+
+    @Override
+    public List<KnowledgeGraphNode> getNodesBySpaceId(Long spaceId) {
+        QueryWrapper<KnowledgeGraphNode> qw = new QueryWrapper<>();
+        qw.eq("space_id", spaceId).eq("is_deleted", 0).orderByAsc("id");
+        return nodeMapper.selectList(qw);
+    }
+
+    @Override
+    public List<KnowledgeGraphEdge> getEdgesBySpaceId(Long spaceId) {
+        QueryWrapper<KnowledgeGraphEdge> qw = new QueryWrapper<>();
+        qw.eq("space_id", spaceId).eq("is_deleted", 0);
+        return edgeMapper.selectList(qw);
+    }
+
+    @Override
+    public List<KnowledgeGraphNode> searchNodes(Long spaceId, String keyword) {
+        QueryWrapper<KnowledgeGraphNode> qw = new QueryWrapper<>();
+        qw.eq("space_id", spaceId).eq("is_deleted", 0)
+                .like("name", keyword);
+        return nodeMapper.selectList(qw);
     }
 }
