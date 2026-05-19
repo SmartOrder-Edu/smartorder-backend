@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.aliyun.oss.OSSException;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.common.util.AliOSSUtils;
 import com.smartorder.edu.student.domain.dto.InitFileUploadDTO;
@@ -232,7 +233,9 @@ public class FileResourceServiceImpl implements IFileResourceService {
 
         try {
             UploadTask uploadTask = fromJson(taskJson, UploadTask.class);
-            List<com.aliyun.oss.model.PartETag> partETags = uploadTask.partETags.stream().map(p -> p.toOssPartETag()).toList();
+            List<com.aliyun.oss.model.PartETag> partETags = uploadTask.partETags.stream()
+                    .map(p -> p.toOssPartETag())
+                    .collect(Collectors.toList());
 
             String completeMultipartUploadURL = aliOSSUtils.completeMultipartUpload(uploadTask.objectKey, uploadTask.uploadId, partETags);
 
@@ -350,7 +353,13 @@ public class FileResourceServiceImpl implements IFileResourceService {
         if (file.getFileUrl() == null || file.getFileUrl().isEmpty()) {
             throw new BusinessException("文件路径不存在");
         }
-        InputStream inputStream = aliOSSUtils.downloadFile(file.getFileUrl());
+        InputStream inputStream;
+        try {
+            inputStream = aliOSSUtils.downloadFile(file.getFileUrl());
+        } catch (OSSException e) {
+            log.error("OSS文件下载失败, fileId={}, fileUrl={}, errorCode={}", id, file.getFileUrl(), e.getErrorCode(), e);
+            throw new BusinessException("文件在云存储中不存在，可能已被删除");
+        }
         return new FileDownloadResult(file.getFileName(), file.getFileType(), file.getFileSize(), inputStream);
     }
 }
