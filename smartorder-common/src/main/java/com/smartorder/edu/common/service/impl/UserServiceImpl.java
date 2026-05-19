@@ -15,6 +15,11 @@ import com.smartorder.edu.common.util.AliOSSUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.util.validation.ValidationException;
+import org.springframework.amqp.AmqpException;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessagePostProcessor;
+import org.springframework.amqp.rabbit.connection.CorrelationData;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -37,6 +42,7 @@ public class UserServiceImpl implements IUserService {
     private final UserMapper userMapper;
     private final AliOSSUtils aliOSSUtils;
     private final String DEFAULT_AVATAR_URL = "https://xueling-platform.oss-cn-hangzhou.aliyuncs.com/d915734b-a240-4350-acb6-30b6e2d3d981.jpg";
+    private final RabbitTemplate rabbitTemplate;
 
     @Override
     public void insertUser(User user) {
@@ -55,6 +61,33 @@ public class UserServiceImpl implements IUserService {
             user.setAvatarUrl(DEFAULT_AVATAR_URL);
         }
         userMapper.insert(user);
+
+
+        String exchange = "smartOrder.user.file.quota.direct";
+        String routingKey = "user.file.quota";
+
+        // 1.创建CorrelationData
+        CorrelationData cd = new CorrelationData();
+
+        // 2.设置ConfirmCallback（替代原来的Future回调）--生产者确认机制
+        rabbitTemplate.setConfirmCallback((correlationData, ack, cause) -> {
+            if (ack) {
+                log.debug("发送消息成功，收到 ack!");
+            } else {
+                log.error("发送消息失败，收到 nack, reason : {}", cause);
+            }
+        });
+
+        rabbitTemplate.convertAndSend(exchange, routingKey, userId, new MessagePostProcessor() {
+            @Override
+            public Message postProcessMessage(Message message) throws AmqpException {
+                message.getMessageProperties()
+                        .setExpiration("10000");
+                return message;
+            }
+        },cd);//开启生产者确认模式，发送消息时会等待 RabbitMQ 的确认回调
+
+        log.info("消息发送成功！");
     }
 
     @Override

@@ -321,9 +321,15 @@ public class AliOSSUtils {
      * @return OSS存储路径+文件名
      */
     public String parseOssFileNameFromUrl(String fileUrl) {
-        // 截取URL中域名后的部分
+        // 如果已经是相对路径（objectKey），直接返回
         String domain = bucketName + "." + endpoint.split("//")[1];
-        return fileUrl.substring(fileUrl.indexOf(domain) + domain.length() + 1);
+        int domainIndex = fileUrl.indexOf(domain);
+        if (domainIndex == -1) {
+            // 不包含域名，说明已经是 objectKey
+            return fileUrl;
+        }
+        // 包含域名，截取域名后的部分
+        return fileUrl.substring(domainIndex + domain.length() + 1);
     }
 
     /**

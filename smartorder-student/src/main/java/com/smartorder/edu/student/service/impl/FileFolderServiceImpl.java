@@ -2,7 +2,6 @@ package com.smartorder.edu.student.service.impl;
 
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.common.service.IUserService;
@@ -38,39 +37,46 @@ public class FileFolderServiceImpl implements IFileFolderService {
 
     private final FileFolderMapper fileFolderMapper;
     private final FileResourceMapper fileResourceMapper;
-
     private final IUserService userService;
     private final AliOSSUtils aliOSSUtils;
     private final IUserFileQuotaService userFileQuotaService;
 
     @Override
-    public List<FileFolderContentVO> getFolderTree(Long userId) {
-        QueryWrapper<FileFolder> wrapper = new QueryWrapper<>();
-        wrapper.eq("user_id", userId);
-        List<FileFolder> folders = fileFolderMapper.selectList(wrapper);
+    public FileFolderContentVO getFolderTree(Long userId) {
+        // 1. 查出用户所有文件夹
+        LambdaQueryWrapper<FileFolder> query = new LambdaQueryWrapper<>();
+        query.eq(FileFolder::getUserId, userId);
+        List<FileFolder> allFolders = fileFolderMapper.selectList(query);
 
-        // 构建轻量级 FileFolderVO 列表用于分组
-        List<FileFolderVO> folderVOs = folders.stream().map(f -> {
-            FileFolderVO vo = new FileFolderVO();
-            BeanUtils.copyProperties(f, vo);
-            return vo;
-        }).collect(Collectors.toList());
+        // 2. 按 parentId 分组
+        Map<Long, List<FileFolder>> parentMap = allFolders.stream()
+                .collect(Collectors.groupingBy(FileFolder::getParentId));
 
-        Map<Long, List<FileFolderVO>> parentMap = folderVOs.stream()
-                .filter(f -> f.getFolderParentId() != null)
-                .collect(Collectors.groupingBy(FileFolderVO::getFolderParentId));
+        // 3. 构建根节点
+        FileFolderContentVO root = new FileFolderContentVO();
+        root.setFolderId(0L);
+        root.setFolderName("根目录");
+        root.setFolders(buildChildFolders(parentMap.getOrDefault(0L, Collections.emptyList()), parentMap));
+        root.setFiles(Collections.emptyList());
 
-        // 构建 FileFolderContentVO 列表并设置子文件夹
-        List<FileFolderContentVO> vos = folders.stream().map(f -> {
-            FileFolderContentVO vo = new FileFolderContentVO();
-            BeanUtils.copyProperties(f, vo);
-            vo.setFolders(parentMap.getOrDefault(f.getId(), new ArrayList<>()));
-            return vo;
-        }).collect(Collectors.toList());
+        return root;
+    }
 
-        return vos.stream()
-                .filter(f -> f.getFolderParentId() == null || f.getFolderParentId() == 0)
-                .collect(Collectors.toList());
+    private List<FileFolderVO> buildChildFolders(List<FileFolder> folders, Map<Long, List<FileFolder>> parentMap) {
+        return folders.stream()
+                .sorted(Comparator.comparing(FileFolder::getSort, Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(FileFolder::getUpdateTime, Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(f -> {
+                    FileFolderVO vo = new FileFolderVO();
+                    vo.setFolderId(f.getId());
+                    vo.setFolderName(f.getFolderName());
+                    vo.setFolderParentId(f.getParentId());
+                    vo.setSort(f.getSort());
+                    vo.setUpdateTime(f.getUpdateTime());
+                    vo.setChildren(buildChildFolders(
+                            parentMap.getOrDefault(f.getId(), Collections.emptyList()), parentMap));
+                    return vo;
+                }).toList();
     }
 
     @Override
@@ -271,6 +277,7 @@ public class FileFolderServiceImpl implements IFileFolderService {
      * @param userId
      */
     @Override
+    @Transactional
     public void moveFile(Long fileId, Long targetFolderId, Long userId) {
         // 1. 校验文件是否存在且归属当前用户
         FileResource file = fileResourceMapper.selectById(fileId);
@@ -427,5 +434,39 @@ public class FileFolderServiceImpl implements IFileFolderService {
                 .set(FileFolder::getParentId, targetParentId)
                 .set(FileFolder::getUpdateTime, LocalDateTime.now());
         fileFolderMapper.update(null, wrapper);
+    }
+
+    @Override
+    @Transactional
+    public void batchMoveToFolder(FileFolderContentVO vo, Long userId) {
+        Long targetFolderId = vo.getFolderId();
+
+        // 1. 校验目标文件夹（根目录跳过）
+        if (targetFolderId != null && targetFolderId != 0) {
+            FileFolder targetFolder = fileFolderMapper.selectById(targetFolderId);
+            if (targetFolder == null) {
+                throw new BusinessException("目标文件夹不存在");
+            }
+            if (!targetFolder.getUserId().equals(userId)) {
+                throw new BusinessException("目标文件夹不属于当前用户");
+            }
+        }
+
+        // todo-当前文件夹folderId是List<FileFolderVO>的子文件夹列表或者等于目标文件夹则报错
+
+
+        // 2. 批量移动文件夹
+        if (vo.getFolders() != null) {
+            for (FileFolderVO folderVO : vo.getFolders()) {
+                moveFolder(folderVO.getFolderId(), targetFolderId, userId);
+            }
+        }
+
+        // 3. 批量移动文件
+        if (vo.getFiles() != null) {
+            for (FileResourceVO fileVO : vo.getFiles()) {
+                moveFile(fileVO.getId(), targetFolderId, userId);
+            }
+        }
     }
 }

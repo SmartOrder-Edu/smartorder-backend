@@ -8,7 +8,7 @@ import java.util.List;
 public class FileFolderContentVO {
     private Long folderId;
     private String folderName;
-    private Long folderParentId;
+//    private Long folderParentId;
 
     private List<FileFolderVO> folders;
     private List<FileResourceVO> files;

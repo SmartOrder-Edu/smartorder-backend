@@ -43,10 +43,10 @@ public class FileFolderController {
     // todo
     @GetMapping("/folders/tree")
     @Operation(summary = "获取文件夹树", description = "获取当前用户的文件夹树形结构")
-    public Result<List<FileFolderContentVO>> getTree() {
+    public Result<FileFolderContentVO> getTree() {
         Claims claims = ThreadLocalUtils.get();
         Long userId = claims.get("userId", Long.class);
-        List<FileFolderContentVO> tree = fileFolderService.getFolderTree(userId);
+        FileFolderContentVO tree = fileFolderService.getFolderTree(userId);
         return Result.success(tree);
     }
 
@@ -94,6 +94,15 @@ public class FileFolderController {
         Long userId = claims.get("userId", Long.class);
         fileFolderService.moveFolder(id, targetParentId, userId);
         return Result.success("文件夹移动成功");
+    }
+
+    @PostMapping("/folders/batch-move")
+    @Operation(summary = "批量移动文件夹和文件", description = "将多个文件夹和文件批量移动到目标文件夹")
+    public Result<String> batchMoveToFolder(@RequestBody FileFolderContentVO vo) {
+        Claims claims = ThreadLocalUtils.get();
+        Long userId = claims.get("userId", Long.class);
+        fileFolderService.batchMoveToFolder(vo, userId);
+        return Result.success("批量移动成功");
     }
 
     // 文件资源
@@ -197,11 +206,12 @@ public class FileFolderController {
 
     @GetMapping("/download/{id}")
     @Operation(summary = "下载文件", description = "根据文件ID下载文件")
-    public void downloadFile(@PathVariable Long id, HttpServletResponse response) throws IOException {
+    public void downloadFile(@PathVariable String id, HttpServletResponse response) throws IOException {
+        Long downloadFileId = Long.parseLong(id);
         Claims claims = ThreadLocalUtils.get();
         Long userId = claims.get("userId", Long.class);
 
-        IFileResourceService.FileDownloadResult result = fileResourceService.downloadFile(id, userId);
+        IFileResourceService.FileDownloadResult result = fileResourceService.downloadFile(downloadFileId, userId);
         InputStream inputStream = null;
         try {
             inputStream = result.inputStream();
@@ -232,7 +242,7 @@ public class FileFolderController {
             }
             outputStream.flush();
         } catch (Exception e) {
-            log.error("文件下载失败, id={}", id, e);
+            log.error("文件下载失败, id={}", downloadFileId, e);
             if (!response.isCommitted()) {
                 response.reset();
                 response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
