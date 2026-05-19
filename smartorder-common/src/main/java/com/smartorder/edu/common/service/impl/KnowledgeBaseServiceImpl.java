@@ -96,6 +96,9 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KnowledgeBaseMapper, K
 
     @Override
     public Boolean updateKnowledgeBase(KnowledgeBaseReqDTO reqDTO, Long currentUserId) {
+        if (reqDTO.getId() == null) {
+            throw new RuntimeException("更新知识库时ID不能为空");
+        }
         // 1. 校验知识库是否存在，且该知识库属于当前用户 (防止越权修改)
         KnowledgeBase existingKb = this.lambdaQuery()
                 .eq(KnowledgeBase::getId, reqDTO.getId())
