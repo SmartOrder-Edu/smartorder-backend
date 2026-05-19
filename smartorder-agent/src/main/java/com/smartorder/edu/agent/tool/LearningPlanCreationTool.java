@@ -42,7 +42,7 @@ public class LearningPlanCreationTool {
     @Tool("创建一个完整的学习计划（学习空间）。当用户确认要开始学习某个目标时调用。" +
           "参数 planDescription 应包含：用户的目标描述、可用时间、学科领域、学术水平等关键信息。" +
           "Agent 应先通过 getStudentProfile 了解学生，再调用此工具创建计划。")
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(transactionManager = "transactionManager", rollbackFor = Exception.class)
     public String createLearningPlan(Long userId, String planDescription) {
         log.info("[LearningPlanCreationTool] 用户 {} 请求创建学习计划: {}", userId, planDescription);
 

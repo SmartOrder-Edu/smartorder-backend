@@ -61,9 +61,11 @@ public class ConversationMemoryService {
             """;
 
     /**
-     * 构建发给 LLM 的消息列表
+     * 构建发给 LLM 的历史上下文消息列表（不含当前用户消息）
+     *
+     * 调用方需在返回列表末尾追加当前用户消息，避免重复。
      */
-    public List<ChatMessage> buildMessages(String conversationId, Long userId, String currentMessage) {
+    public List<ChatMessage> buildMessages(String conversationId, Long userId) {
         List<ChatMessage> messages = new ArrayList<>();
 
         // 1. System Prompt
@@ -75,7 +77,7 @@ public class ConversationMemoryService {
             messages.add(SystemMessage.from("【历史会话摘要】" + summary.getSummaryText()));
         }
 
-        // 3. 最近 30 条消息
+        // 3. 最近 30 条历史消息（不包含当前消息，因为当前消息尚未落库）
         List<ConversationMessage> recentMessages = messageMapper.selectRecentMessages(conversationId, MAX_RECENT_MESSAGES);
         // selectRecentMessages 按 create_time DESC 返回，需要反转顺序
         for (int i = recentMessages.size() - 1; i >= 0; i--) {
@@ -87,9 +89,6 @@ public class ConversationMemoryService {
                 messages.add(chatMsg);
             }
         }
-
-        // 4. 当前用户消息
-        messages.add(UserMessage.from(currentMessage));
 
         log.info("[MemoryService] 构建上下文: conversationId={}, summary={}, recentMsgs={}, totalMsgs={}",
                 conversationId,
@@ -167,13 +166,13 @@ public class ConversationMemoryService {
     }
 
     /**
-     * 获取可用于生成摘要的对话文本
+     * 获取未压缩消息的文本（用于增量摘要）
+     * 只取 is_compressed = 0 的消息，按时间正序拼接
      */
-    public String getConversationText(String conversationId) {
-        List<ConversationMessage> messages = messageMapper.selectRecentMessages(conversationId, 50);
+    public String getUncompressedText(String conversationId) {
+        List<ConversationMessage> messages = messageMapper.selectUncompressedMessages(conversationId);
         StringBuilder sb = new StringBuilder();
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            ConversationMessage msg = messages.get(i);
+        for (ConversationMessage msg : messages) {
             if (msg.getContent() == null || msg.getContent().isBlank()) continue;
             sb.append("[").append(msg.getRole()).append("]: ").append(msg.getContent()).append("\n\n");
         }

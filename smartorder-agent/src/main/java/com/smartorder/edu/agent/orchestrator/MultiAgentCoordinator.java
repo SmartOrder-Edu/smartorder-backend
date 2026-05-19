@@ -1,5 +1,6 @@
 package com.smartorder.edu.agent.orchestrator;
 
+import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.subagent.*;
@@ -37,6 +38,7 @@ public class MultiAgentCoordinator {
     private final KnowledgeGraphSubAgent knowledgeGraphSubAgent;
     private final TraceEventDispatcher dispatcher;
     private final SubAgentMailbox mailbox;
+    private final ConversationMemoryService memoryService;
 
     private final ExecutorService subAgentExecutor = Executors.newFixedThreadPool(4);
 
@@ -85,7 +87,11 @@ public class MultiAgentCoordinator {
                 "text", finalAnswer
         ));
 
-        // 5. 清理信箱
+        // 5. 保存助手回复到 DB
+        memoryService.saveAssistantMessage(
+                context.getConversationId(), request.getUserId(), finalAnswer, null);
+
+        // 6. 清理信箱
         mailbox.clear(sessionKey);
 
         log.info("[MultiAgent] 完成: traceId={}, subAgentCount={}", context.getTraceId(), results.size());

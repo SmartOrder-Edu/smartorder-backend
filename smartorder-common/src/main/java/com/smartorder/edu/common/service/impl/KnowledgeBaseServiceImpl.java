@@ -1,14 +1,20 @@
 package com.smartorder.edu.common.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.smartorder.edu.common.mapper.*;
 import com.smartorder.edu.common.model.dto.KnowledgeBaseReqDTO;
-import com.smartorder.edu.common.model.entity.KnowledgeBase;
+import com.smartorder.edu.common.model.entity.*;
 import com.smartorder.edu.common.model.vo.KnowledgeBaseListRespVO;
-import com.smartorder.edu.common.mapper.KnowledgeBaseMapper;
+import com.smartorder.edu.common.rag.VectorIndexService;
 import com.smartorder.edu.common.service.IKnowledgeBaseService;
+import com.smartorder.edu.common.service.INeo4jKnowledgeGraphService;
+import com.smartorder.edu.common.util.AliOSSUtils;
 import com.smartorder.edu.common.util.IdGenerator;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -16,8 +22,19 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 
+@Slf4j
 @Service
+@RequiredArgsConstructor
 public class KnowledgeBaseServiceImpl extends ServiceImpl<KnowledgeBaseMapper, KnowledgeBase> implements IKnowledgeBaseService {
+
+    private final KnowledgeFileMapper knowledgeFileMapper;
+    private final KnowledgeDocumentMapper knowledgeDocumentMapper;
+    private final KnowledgeChunkMapper knowledgeChunkMapper;
+    private final KnowledgeFileJobMapper knowledgeFileJobMapper;
+    private final RagReferenceMapper ragReferenceMapper;
+    private final INeo4jKnowledgeGraphService neo4jKnowledgeGraphService;
+    private final VectorIndexService vectorIndexService;
+    private final AliOSSUtils aliOSSUtils;
     /**
      * 创建知识库
      */
@@ -104,5 +121,97 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KnowledgeBaseMapper, K
 
         // 4. 执行更新
         return this.updateById(existingKb);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteKnowledgeBase(Long knowledgeBaseId, Long currentUserId) {
+        // 1. 校验知识库是否存在，且该知识库属于当前用户
+        KnowledgeBase existingKb = this.lambdaQuery()
+                .eq(KnowledgeBase::getId, knowledgeBaseId)
+                .eq(KnowledgeBase::getUserId, currentUserId)
+                .one();
+
+        if (existingKb == null) {
+            throw new RuntimeException("知识库不存在或您无权删除该知识库");
+        }
+
+        log.info("开始删除知识库，knowledgeBaseId={}, userId={}", knowledgeBaseId, currentUserId);
+
+        try {
+            // 2. 删除 Neo4j 中的图节点
+            try {
+                neo4jKnowledgeGraphService.deleteNodesByKnowledgeBaseId(knowledgeBaseId);
+            } catch (Exception e) {
+                log.warn("删除 Neo4j 节点失败，继续执行", e);
+            }
+
+            // 3. 删除 Milvus 中的向量
+            try {
+                vectorIndexService.deleteByKnowledgeBaseId(knowledgeBaseId);
+            } catch (Exception e) {
+                log.warn("删除 Milvus 向量失败，继续执行", e);
+            }
+
+            // 4. 查询所有文件，用于删除 OSS 文件
+            List<KnowledgeFile> files = knowledgeFileMapper.selectList(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<KnowledgeFile>()
+                            .eq(KnowledgeFile::getKnowledgeBaseId, knowledgeBaseId)
+            );
+
+            // 5. 删除 OSS 中的文件
+            for (KnowledgeFile file : files) {
+                try {
+                    if (file.getFileUrl() != null && !file.getFileUrl().isEmpty()) {
+                        aliOSSUtils.deleteFile(file.getFileUrl());
+                        log.info("已删除 OSS 文件，fileId={}, url={}", file.getId(), file.getFileUrl());
+                    }
+                } catch (Exception e) {
+                    log.warn("删除 OSS 文件失败，fileId={}", file.getId(), e);
+                }
+            }
+
+            // 6. 删除 MySQL 中的子表数据（按依赖顺序）
+            // 6.1 删除 rag_references
+            ragReferenceMapper.delete(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<RagReference>()
+                            .eq(RagReference::getKnowledgeBaseId, knowledgeBaseId)
+            );
+
+            // 6.2 删除 knowledge_chunks
+            knowledgeChunkMapper.delete(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<KnowledgeChunk>()
+                            .eq(KnowledgeChunk::getKnowledgeBaseId, knowledgeBaseId)
+            );
+
+            // 6.3 删除 knowledge_documents
+            knowledgeDocumentMapper.delete(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<KnowledgeDocument>()
+                            .eq(KnowledgeDocument::getKnowledgeBaseId, knowledgeBaseId)
+            );
+
+            // 6.4 删除 knowledge_file_jobs
+            knowledgeFileJobMapper.delete(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<KnowledgeFileJob>()
+                            .eq(KnowledgeFileJob::getKnowledgeBaseId, knowledgeBaseId)
+            );
+
+            // 6.5 删除 knowledge_files
+            knowledgeFileMapper.delete(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<KnowledgeFile>()
+                            .eq(KnowledgeFile::getKnowledgeBaseId, knowledgeBaseId)
+            );
+
+            // 7. 软删除 knowledge_bases（更新状态为 deleted）
+            existingKb.setStatus("deleted");
+            existingKb.setUpdatedAt(LocalDateTime.now());
+            this.updateById(existingKb);
+
+            log.info("知识库删除成功，knowledgeBaseId={}", knowledgeBaseId);
+
+        } catch (Exception e) {
+            log.error("删除知识库失败，knowledgeBaseId={}", knowledgeBaseId, e);
+            throw new RuntimeException("删除知识库失败: " + e.getMessage(), e);
+        }
     }
 }

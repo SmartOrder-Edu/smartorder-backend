@@ -17,7 +17,6 @@
 
     <modules>
         <module>smartorder-common</module>
-        <module>smartorder-user</module>
         <module>smartorder-learning</module>
         <module>smartorder-assessment</module>
         <module>smartorder-knowledge</module>
@@ -91,6 +90,7 @@
 
 
     <dependencies>
+
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-web-search-engine-tavily</artifactId>
@@ -384,7 +384,15 @@
         <dependency>
             <groupId>io.milvus</groupId>
             <artifactId>milvus-sdk-java</artifactId>
-            <version>2.4.0</version> </dependency>
+            <version>2.4.4</version>
+        </dependency>
+
+<!--        &lt;!&ndash; Milvus Java Client 最新版 &ndash;&gt;-->
+<!--        <dependency>-->
+<!--            <groupId>io.milvus</groupId>-->
+<!--            <artifactId>milvus-client-java</artifactId>-->
+<!--            <version>2.4.0</version>-->
+<!--        </dependency>-->
 
         <dependency>
             <groupId>com.google.code.gson</groupId>
@@ -491,6 +499,31 @@
             <artifactId>hutool-all</artifactId>
             <version>5.8.40</version>
         </dependency>
+
+
+        <!-- ONNX Runtime：用于加载 SigLIP ONNX 模型 -->
+        <dependency>
+            <groupId>com.microsoft.onnxruntime</groupId>
+            <artifactId>onnxruntime</artifactId>
+            <version>1.17.0</version>
+        </dependency>
+
+        <!-- Apache Lucene Core：用于 TF-IDF 计算 -->
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-core</artifactId>
+            <version>9.9.2</version>
+        </dependency>
+
+        <!-- Lucene 分析器（中文分词） -->
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-analysis-smartcn</artifactId>
+            <version>9.9.2</version>
+        </dependency>
+
+
+
 
 
     </dependencies>

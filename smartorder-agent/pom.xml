@@ -44,7 +44,7 @@
         </dependency>
         <dependency>
             <groupId>com.smartorder.edu</groupId>
-            <artifactId>smartorder-user</artifactId>
+            <artifactId>smartorder-student</artifactId>
             <version>0.0.1-SNAPSHOT</version>
         </dependency>
         <dependency>

@@ -22,6 +22,9 @@ public interface ConversationMessageMapper extends BaseMapper<ConversationMessag
     @Update("UPDATE conversation_message SET is_compressed = 1 WHERE conversation_id = #{conversationId} AND is_compressed = 0 AND is_deleted = 0 AND id < #{maxId}")
     void markCompressed(@Param("conversationId") String conversationId, @Param("maxId") Long maxId);
 
+    @Select("SELECT * FROM conversation_message WHERE conversation_id = #{conversationId} AND is_compressed = 0 AND is_deleted = 0 ORDER BY create_time ASC")
+    List<ConversationMessage> selectUncompressedMessages(@Param("conversationId") String conversationId);
+
     @Select("""
         SELECT
             cm.conversation_id AS conversationId,
@@ -49,9 +52,9 @@ public interface ConversationMessageMapper extends BaseMapper<ConversationMessag
         """)
     List<ConversationVO> selectUserConversations(@Param("userId") Long userId);
 
-    @Select("SELECT * FROM conversation_message WHERE conversation_id = #{conversationId} AND is_deleted = 0 ORDER BY create_time ASC LIMIT #{limit} OFFSET #{offset}")
-    List<ConversationMessage> selectMessagesPage(@Param("conversationId") String conversationId, @Param("limit") int limit, @Param("offset") int offset);
+    @Select("SELECT * FROM conversation_message WHERE conversation_id = #{conversationId} AND user_id = #{userId} AND is_deleted = 0 ORDER BY create_time ASC LIMIT #{limit} OFFSET #{offset}")
+    List<ConversationMessage> selectMessagesPage(@Param("conversationId") String conversationId, @Param("userId") Long userId, @Param("limit") int limit, @Param("offset") int offset);
 
-    @Select("SELECT COUNT(*) FROM conversation_message WHERE conversation_id = #{conversationId} AND is_deleted = 0")
-    int countByConversationId(@Param("conversationId") String conversationId);
+    @Select("SELECT COUNT(*) FROM conversation_message WHERE conversation_id = #{conversationId} AND user_id = #{userId} AND is_deleted = 0")
+    int countByConversationId(@Param("conversationId") String conversationId, @Param("userId") Long userId);
 }

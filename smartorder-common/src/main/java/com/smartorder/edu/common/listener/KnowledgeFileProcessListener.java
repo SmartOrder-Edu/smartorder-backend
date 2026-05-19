@@ -12,6 +12,7 @@ import com.smartorder.edu.common.model.entity.KnowledgeFile;
 import com.smartorder.edu.common.model.entity.KnowledgeFileJob;
 import com.smartorder.edu.common.model.rag.RagParseResult;
 
+import com.smartorder.edu.common.rag.KnowledgeGraphBuildService;
 import com.smartorder.edu.common.rag.RagFileParserService;
 import com.smartorder.edu.common.rag.RagPersistService;
 import com.smartorder.edu.common.rag.VectorIndexService;
@@ -41,6 +42,8 @@ public class KnowledgeFileProcessListener {
     private final RagPersistService ragPersistService;
 
     private final VectorIndexService vectorIndexService;
+
+    private final KnowledgeGraphBuildService knowledgeGraphBuildService;
 
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE_FILE_PROCESS, containerFactory = "rabbitListenerContainerFactory")
@@ -78,6 +81,15 @@ public class KnowledgeFileProcessListener {
             updateJob(jobId, "保存文档和分块", 50);
             RagPersistService.PersistResult persistResult = ragPersistService.saveParseResult(parseResult);
             updateFileStatus(file.getId(),SUCCESS, SUCCESS, PROCESSING);
+
+            updateJob(jobId, "构建知识图谱", 60);
+            try {
+                int nodesCreated = knowledgeGraphBuildService.buildGraphFromChunks(
+                        persistResult.chunks(), file.getKnowledgeBaseId(), file.getId());
+                log.info("知识图谱构建完成，创建节点数量: {}", nodesCreated);
+            } catch (Exception e) {
+                log.warn("知识图谱构建失败，继续处理向量索引: {}", e.getMessage());
+            }
 
             updateJob(jobId, "写入向量数据库", 75);
             vectorIndexService.indexChunks(persistResult.chunks());
