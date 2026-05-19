@@ -8,13 +8,11 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 )
 @MapperScan({
     "com.smartorder.edu.common.mapper",
-    "com.smartorder.edu.user.mapper",
     "com.smartorder.edu.student.mapper",
     "com.smartorder.edu.learning.mapper",
     "com.smartorder.edu.assessment.mapper",
     "com.smartorder.edu.agent.mapper",
-        "com.smartorder.edu.knowledge.mapper",
-    "com.smartorder.edu.student.mapper"
+    "com.smartorder.edu.knowledge.mapper"
 })
 public class SmartorderWebApplication {
 

@@ -17,7 +17,6 @@
 
     <modules>
         <module>smartorder-common</module>
-        <module>smartorder-user</module>
         <module>smartorder-learning</module>
         <module>smartorder-assessment</module>
         <module>smartorder-knowledge</module>

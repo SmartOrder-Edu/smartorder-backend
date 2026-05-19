@@ -109,21 +109,7 @@ public class AuthServiceImpl implements IAuthService {
         userService.insertUser(user);
 
         // 发布用户注册事件，供下游模块（smartorder-student）创建初始学生画像
-        eventPublisher.publishEvent(new UserRegisteredEvent(
-                this,
-                user.getId(),
-                registerDTO.getIdentity(),
-                registerDTO.getGrade(),
-                registerDTO.getDirection(),
-                registerDTO.getDirectionDetail(),
-                registerDTO.getLevel(),
-                registerDTO.getLevelDetail(),
-                registerDTO.getGoal(),
-                registerDTO.getGoalDetail(),
-                registerDTO.getGoalDeadline(),
-                registerDTO.getDailyStudyTime(),
-                registerDTO.getSelfDescription()
-        ));
+        eventPublisher.publishEvent(new UserRegisteredEvent(this, user.getId()));
     }
 
     @Override

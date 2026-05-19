@@ -3,6 +3,7 @@ package com.smartorder.edu.student.controller;
 import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import com.smartorder.edu.student.domain.entity.StudentProfile;
+import com.smartorder.edu.student.dto.ProfileInitDTO;
 import com.smartorder.edu.student.service.IStudentProfileService;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
@@ -40,6 +41,14 @@ public class StudentProfileController {
         Long userId = getCurrentUserId();
         profile.setUserId(userId);
         studentProfileService.saveOrUpdate(profile);
+        return Result.success("ok");
+    }
+
+    @PostMapping("/init")
+    @Operation(summary = "引导页初始化画像", description = "引导页提交画像数据，更新已有的空画像记录")
+    public Result<String> initProfile(@RequestBody ProfileInitDTO dto) {
+        Long userId = getCurrentUserId();
+        studentProfileService.initProfile(userId, dto);
         return Result.success("ok");
     }
 
