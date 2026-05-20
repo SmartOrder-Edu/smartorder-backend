@@ -39,7 +39,8 @@ public class SecurityConfig {
                         //放行所有请求，鉴权逻辑由LoginInterceptor处理，防止Spring Security提前拦截
                         .anyRequest().permitAll()
                 )
-                .csrf(AbstractHttpConfigurer::disable);
+                .csrf(AbstractHttpConfigurer::disable)
+                .headers(headers -> headers.frameOptions(org.springframework.security.config.annotation.web.configurers.HeadersConfigurer.FrameOptionsConfig::disable));
         return http.build();
     }
 
