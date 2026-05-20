@@ -40,6 +40,7 @@ public class RagFileParserService {
             }
 
             String markdown = markdownNormalizeService.toMarkdown(rawText, fileType, fileEntity.getOriginalName());
+
             MarkdownChunkResult chunkResult = markdownChunkService.split(
                     markdown,
                     fileEntity.getId(),
