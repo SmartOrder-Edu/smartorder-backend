@@ -191,6 +191,7 @@ public class KnowledgeFileListener {
             }
 
             updateJob(jobId, "写入向量数据库", 75);
+
             vectorIndexService.indexChunks(persistResult.chunks());
             markChunksEmbedded(persistResult.chunks());
             updateFileStatus(file.getId(), SUCCESS, SUCCESS, SUCCESS);

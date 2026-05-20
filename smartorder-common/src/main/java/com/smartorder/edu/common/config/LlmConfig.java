@@ -39,6 +39,9 @@ public class LlmConfig {
     @Value("${langchain4j.open-ai.embedding-model.model-name:bge-m3}")
     private String embeddingModelName;
 
+    @Value("${langchain4j.open-ai.embedding-model.dimensions:1024}")
+    private int embeddingDimensions;
+
     @Bean
     public OpenAiChatModel chatLanguageModel() {
         return OpenAiChatModel.builder()
@@ -57,6 +60,7 @@ public class LlmConfig {
                 .apiKey(embeddingApiKey)
                 .baseUrl(embeddingBaseUrl)
                 .modelName(embeddingModelName)
+                .dimensions(embeddingDimensions)
                 .build();
     }
 }

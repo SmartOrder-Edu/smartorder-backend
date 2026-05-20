@@ -34,7 +34,7 @@ public class VectorIndexService {
     private String collectionName;
 
     // 嵌入模型批量处理大小
-    private static final int EMBEDDING_BATCH_SIZE = 100;
+    private static final int EMBEDDING_BATCH_SIZE = 10;
 
     public VectorIndexService(MilvusClientV2 milvusClient,
                               @Qualifier("embeddingModel") EmbeddingModel embeddingModel,
