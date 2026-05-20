@@ -24,4 +24,6 @@ public class FileParseRecord {
     private String rawContent;
     /** 文件在阿里云OSS中的访问地址 */
     private String ossUrl;
+    /** 文件页数，主要用于PDF、PPT、Word等文档 */
+    private Integer pageCount;
 }

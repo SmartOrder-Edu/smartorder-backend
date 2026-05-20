@@ -44,7 +44,8 @@ public class MarkdownChunkService {
             Long fileId,
             Long knowledgeBaseId,
             String fileName,
-            String fileType
+            String fileType,
+            Integer totalPages  // 新增参数：文件总页数
     ) {
         // 1. 按 Markdown 标题解析文档结构
         List<MarkdownSection> sections = parseSections(markdown, fileName);
@@ -166,6 +167,9 @@ public class MarkdownChunkService {
                             .sourceType(fileType)
                             .chunkIndex(childIndex++)
                             .sectionLevel(childSection.getLevel())
+
+                            // 设置文件总页数
+                            .pageNumber(totalPages != null ? totalPages : 1)
 
                             // 根据文件类型判断子块类型：text / table / image_ocr
                             .chunkType(resolveChunkType(fileType))

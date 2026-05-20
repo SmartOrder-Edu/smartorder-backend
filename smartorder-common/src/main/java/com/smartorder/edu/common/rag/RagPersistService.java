@@ -83,7 +83,7 @@ public class RagPersistService {
             chunk.setContentHash(TextHashUtils.sha256(child.getContent()));
             chunk.setTokenCount(estimateTokenCount(child.getContent()));
             chunk.setCharCount(child.getContent() == null ? 0 : child.getContent().length());
-            chunk.setPageNumber(child.getPageNumber());
+            chunk.setPageNumber(child.getPageNumber() != null ? child.getPageNumber() : 1);
             chunk.setSectionTitle(child.getTitle());
             chunk.setSectionLevel(child.getSectionLevel());
             chunk.setTitlePath(child.getHeadingPath());
