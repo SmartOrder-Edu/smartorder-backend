@@ -335,7 +335,7 @@ public class FileFolderServiceImpl implements IFileFolderService {
      * 生成唯一文件名，避免文件覆盖（如果文件名已存在，则在文件名后添加数字后缀）
      * @param originalFileName 原始文件名
      * @param targetFolderId 目标文件夹ID
-     * @param teacherId 教师ID
+     * @param userId 用户ID
      * @return String 唯一文件名
      */
     private String generateUniqueFileName(String originalFileName, Long targetFolderId, Long userId) {

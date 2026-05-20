@@ -1,6 +1,5 @@
 package com.smartorder.edu.knowledge.controller;
 
-import com.smartorder.edu.common.model.vo.KnowledgeGraphVO;
 import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.service.INeo4jKnowledgeGraphService;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
