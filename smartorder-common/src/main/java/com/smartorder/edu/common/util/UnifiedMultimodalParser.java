@@ -5,7 +5,12 @@ import com.smartorder.edu.common.constant.ResultCode;
 import com.smartorder.edu.common.model.entity.FileParseRecord;
 import com.smartorder.edu.common.model.vo.Result;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDResources;
+import org.apache.pdfbox.pdmodel.graphics.PDXObject;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.poi.hwpf.HWPFDocument;
@@ -247,8 +252,19 @@ public class UnifiedMultimodalParser {
         }
 
         String contentSummary = generateContentSummary(rawContent, fileType);
+        
+        // 提取文件页数
+        Integer pageCount = 1; // 默认值
+        if ("application/pdf".equals(fileType)) {
+            try {
+                pageCount = getPdfPageCount(file);
+            } catch (Exception e) {
+                log.warn("获取PDF页数失败: {}", file.getName(), e);
+            }
+        }
+        
         // 注意：构造函数移除了 frameBase64，这里直接使用全参数构造或 setter (OSS URL由上层填充)
-        return new FileParseRecord(fileName, fileType, contentSummary, rawContent, null);
+        return new FileParseRecord(fileName, fileType, contentSummary, rawContent, null, pageCount);
     }
 
     // ===================== 基础工具方法 =====================
@@ -425,14 +441,37 @@ public class UnifiedMultimodalParser {
      */
 
     private String parsePdf(File file) throws Exception {
-        String text = parsePdfText(file);
+        StringBuilder result = new StringBuilder();
 
-        if (text != null && text.trim().length() >= 50) {
-            return text;
+        try (PDDocument document = PDDocument.load(file)) {
+            if (document.isEncrypted()) {
+                throw new Exception("PDF文件已加密，无法解析");
+            }
+
+            PDFTextStripper stripper = new PDFTextStripper();
+            PDFRenderer renderer = new PDFRenderer(document);
+
+            for (int i = 0; i < document.getNumberOfPages(); i++) {
+                stripper.setStartPage(i + 1);
+                stripper.setEndPage(i + 1);
+                String pageText = stripper.getText(document).trim();
+
+                // 检测到图片 或 文本量少 → OCR
+                if (hasImagesInPage(document, i) || pageText.length() < 30) {
+                    log.info("PDF第{}页检测到图片或文本量少，进行OCR: {}", i + 1, file.getName());
+                    BufferedImage image = renderer.renderImageWithDPI(i, 200);
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    ImageIO.write(image, "png", baos);
+                    String ocrText = recognizeImageText(baos.toByteArray());
+                    result.append("\n\n## 第 ").append(i + 1).append(" 页\n\n")
+                            .append(ocrText == null || ocrText.isBlank() ? "本页未识别到有效文字。" : ocrText);
+                } else {
+                    result.append("\n\n## 第 ").append(i + 1).append(" 页\n\n").append(pageText);
+                }
+            }
         }
 
-        log.warn("PDF 文本内容较少，尝试 OCR 解析: {}", file.getName());
-        return parsePdfByOcr(file);
+        return result.toString().replaceAll("\\n{3,}", "\n\n").replaceAll("[ \\t]{2,}", " ").trim();
     }
     private String parsePdfByOcr(File file) throws Exception {
         StringBuilder result = new StringBuilder();
@@ -477,6 +516,95 @@ public class UnifiedMultimodalParser {
                     .replaceAll("[ \\t]{2,}", " ")
                     .trim();
         }
+    }
+
+    /**
+     * 获取PDF文件页数
+     * @param file PDF文件
+     * @return int 页数
+     * @throws Exception PDF读取异常
+     */
+    public int getPdfPageCount(File file) throws Exception {
+        try (PDDocument document = PDDocument.load(file)) {
+            if (document.isEncrypted()) {
+                throw new Exception("PDF文件已加密，无法解析");
+            }
+            return document.getNumberOfPages();
+        }
+    }
+
+    /**
+     * 提取PDF指定页的文本内容（供PdfRagParser调用）
+     * @param file PDF文件
+     * @param pageIndex 页码索引（从0开始）
+     * @return String 该页的文本内容
+     */
+    public String extractPdfPageText(File file, int pageIndex) throws Exception {
+        try (PDDocument document = PDDocument.load(file)) {
+            if (document.isEncrypted()) {
+                throw new Exception("PDF文件已加密，无法解析");
+            }
+            PDFTextStripper stripper = new PDFTextStripper();
+            stripper.setStartPage(pageIndex + 1);
+            stripper.setEndPage(pageIndex + 1);
+            return stripper.getText(document).replaceAll("\\n{3,}", "\n\n")
+                    .replaceAll("[ \\t]{2,}", " ").trim();
+        }
+    }
+
+    /**
+     * 对PDF指定页进行OCR识别（供PdfRagParser调用）
+     * @param file PDF文件
+     * @param pageIndex 页码索引（从0开始）
+     * @return String OCR识别后的文本内容
+     */
+    public String ocrPdfPage(File file, int pageIndex) throws Exception {
+        try (PDDocument document = PDDocument.load(file)) {
+            if (document.isEncrypted()) {
+                throw new Exception("PDF文件已加密，无法解析");
+            }
+            PDFRenderer renderer = new PDFRenderer(document);
+            BufferedImage image = renderer.renderImageWithDPI(pageIndex, 200);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(image, "png", baos);
+            String ocrText = recognizeImageText(baos.toByteArray());
+            return ocrText == null || ocrText.isBlank() ? "" : ocrText.trim();
+        }
+    }
+
+    /**
+     * 检测PDF指定页面是否包含内嵌图片（供PdfRagParser调用）
+     * @param file PDF文件
+     * @param pageIndex 页码索引（从0开始）
+     * @return boolean 是否包含图片
+     */
+    public boolean hasImagesInPage(File file, int pageIndex) throws Exception {
+        try (PDDocument document = PDDocument.load(file)) {
+            return hasImagesInPage(document, pageIndex);
+        }
+    }
+
+    /**
+     * 检测PDF指定页面是否包含内嵌图片（内部方法）
+     * @param document PDDocument对象
+     * @param pageIndex 页码索引（从0开始）
+     * @return boolean 是否包含图片
+     */
+    private boolean hasImagesInPage(PDDocument document, int pageIndex) {
+        try {
+            PDPage page = document.getPage(pageIndex);
+            PDResources resources = page.getResources();
+            if (resources == null) return false;
+            for (COSName name : resources.getXObjectNames()) {
+                PDXObject xobject = resources.getXObject(name);
+                if (xobject instanceof PDImageXObject) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("检测页面图片资源失败: page={}", pageIndex, e);
+        }
+        return false;
     }
 //    private String parsePdf(File file) throws Exception {
 //        // 加载PDF文档（try-with-resources自动关闭资源）

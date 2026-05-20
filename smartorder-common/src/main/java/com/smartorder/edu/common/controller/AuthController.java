@@ -67,7 +67,9 @@ public class AuthController {
     public ResponseEntity<Result<String>> login(@RequestBody LoginDTO loginDTO, HttpServletRequest request, HttpServletResponse response) {
         log.info("IP: {} 正在尝试登录, Email: {}, Phone: {}", request.getRemoteAddr(), loginDTO.getEmail(), loginDTO.getPhone());
         loginDTO.setIp(request.getRemoteAddr());
+
         Map<String,String> tokens = authService.login(loginDTO);
+
         ResponseCookie refreshCookie = ResponseCookie.from("refreshToken",tokens.get("refreshToken"))
                 .httpOnly(true)     //防止XSS攻击
                 .path("/")

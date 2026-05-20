@@ -171,6 +171,7 @@ public class ExcelRagParser {
                             .sourceType("excel")
                             .chunkIndex(childIndex++)
                             .sectionLevel(2)
+                            .pageNumber(1)  // Excel 文件默认1页
                             .chunkType("table")
                             .metadata(metadata)
                             .build());

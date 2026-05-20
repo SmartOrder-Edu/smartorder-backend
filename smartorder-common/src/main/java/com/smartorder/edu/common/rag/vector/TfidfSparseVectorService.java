@@ -4,7 +4,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.cn.smart.SmartChineseAnalyzer;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
@@ -22,13 +24,23 @@ import java.util.concurrent.atomic.AtomicLong;
 @Service
 public class TfidfSparseVectorService {
 
+    private static final String REDIS_KEY_PREFIX = "rag:tfidf:";
+    private static final String VOCABULARY_KEY = REDIS_KEY_PREFIX + "vocabulary";
+    private static final String DOC_FREQ_KEY = REDIS_KEY_PREFIX + "doc_freq";
+    private static final String META_KEY = REDIS_KEY_PREFIX + "meta";
+
     @Value("${tfidf.max-vocabulary-size:100000}")
     private int maxVocabularySize;
 
     @Value("${tfidf.min-term-frequency:2}")
     private int minTermFrequency;
 
+    private final StringRedisTemplate redisTemplate;
     private SmartChineseAnalyzer analyzer;
+
+    public TfidfSparseVectorService(@Qualifier("stringRedisTemplate") StringRedisTemplate redisTemplate) {
+        this.redisTemplate = redisTemplate;
+    }
 
     // 词汇表：term -> index
     private final Map<String, Long> vocabulary = new ConcurrentHashMap<>();
@@ -45,7 +57,8 @@ public class TfidfSparseVectorService {
     @PostConstruct
     public void init() {
         analyzer = new SmartChineseAnalyzer();
-        log.info("TF-IDF 服务初始化完成，最大词汇表大小: {}", maxVocabularySize);
+        loadFromRedis();
+        log.info("TF-IDF 服务初始化完成，最大词汇表大小: {}，当前词汇量: {}", maxVocabularySize, vocabulary.size());
     }
 
     @PreDestroy
@@ -151,6 +164,9 @@ public class TfidfSparseVectorService {
             totalDocuments.incrementAndGet();
         }
 
+        // 持久化到 Redis
+        saveToRedis();
+
         log.info("词汇表更新完成，当前词汇量: {}，总文档数: {}", vocabulary.size(), totalDocuments.get());
     }
 
@@ -255,5 +271,75 @@ public class TfidfSparseVectorService {
         });
 
         log.info("词汇表加载完成，词汇量: {}，总文档数: {}", vocabulary.size(), totalDocuments.get());
+    }
+
+    /**
+     * 保存词汇表到 Redis
+     */
+    private void saveToRedis() {
+        try {
+            // 1. 保存词汇表 vocabulary
+            if (!vocabulary.isEmpty()) {
+                Map<String, String> vocabMap = new HashMap<>();
+                vocabulary.forEach((k, v) -> vocabMap.put(k, String.valueOf(v)));
+                redisTemplate.opsForHash().putAll(VOCABULARY_KEY, vocabMap);
+            }
+
+            // 2. 保存文档频率 documentFrequency
+            if (!documentFrequency.isEmpty()) {
+                Map<String, String> dfMap = new HashMap<>();
+                documentFrequency.forEach((k, v) -> dfMap.put(k, String.valueOf(v.get())));
+                redisTemplate.opsForHash().putAll(DOC_FREQ_KEY, dfMap);
+            }
+
+            // 3. 保存元数据
+            Map<String, String> metaMap = new HashMap<>();
+            metaMap.put("totalDocuments", String.valueOf(totalDocuments.get()));
+            metaMap.put("currentIndex", String.valueOf(currentIndex.get()));
+            redisTemplate.opsForHash().putAll(META_KEY, metaMap);
+
+            log.info("词汇表已保存到 Redis，词汇量: {}", vocabulary.size());
+        } catch (Exception e) {
+            log.error("保存词汇表到 Redis 失败", e);
+        }
+    }
+
+    /**
+     * 从 Redis 加载词汇表
+     */
+    private void loadFromRedis() {
+        try {
+            // 1. 加载元数据
+            Map<Object, Object> metaMap = redisTemplate.opsForHash().entries(META_KEY);
+            if (metaMap.isEmpty()) {
+                log.info("Redis 中无词汇表数据，使用空词汇表");
+                return;
+            }
+
+            if (metaMap.containsKey("totalDocuments")) {
+                totalDocuments.set(Long.parseLong((String) metaMap.get("totalDocuments")));
+            }
+            if (metaMap.containsKey("currentIndex")) {
+                currentIndex.set(Long.parseLong((String) metaMap.get("currentIndex")));
+            }
+
+            // 2. 加载词汇表
+            Map<Object, Object> vocabMap = redisTemplate.opsForHash().entries(VOCABULARY_KEY);
+            vocabulary.clear();
+            vocabMap.forEach((k, v) -> vocabulary.put((String) k, Long.parseLong((String) v)));
+
+            // 3. 加载文档频率
+            Map<Object, Object> dfMap = redisTemplate.opsForHash().entries(DOC_FREQ_KEY);
+            documentFrequency.clear();
+            dfMap.forEach((k, v) -> documentFrequency.put((String) k, new AtomicLong(Long.parseLong((String) v))));
+
+            log.info("从 Redis 加载词汇表完成，词汇量: {}，总文档数: {}", vocabulary.size(), totalDocuments.get());
+        } catch (Exception e) {
+            log.error("从 Redis 加载词汇表失败，使用空词汇表", e);
+            vocabulary.clear();
+            documentFrequency.clear();
+            totalDocuments.set(0);
+            currentIndex.set(0);
+        }
     }
 }

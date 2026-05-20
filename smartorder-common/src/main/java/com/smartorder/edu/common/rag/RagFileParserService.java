@@ -21,6 +21,7 @@ public class RagFileParserService {
     private final MarkdownNormalizeService markdownNormalizeService;
     private final MarkdownChunkService markdownChunkService;
     private final ExcelRagParser excelRagParser;
+    private final PdfRagParser pdfRagParser;
     private final FileLoadService fileLoadService;
 
     public RagParseResult parseForRag(KnowledgeFile fileEntity) throws Exception {
@@ -32,6 +33,9 @@ public class RagFileParserService {
             if (isExcel(fileType, fileEntity.getOriginalName())) {
                 return excelRagParser.parse(localFile, fileEntity);
             }
+            if (isPdf(fileType, fileEntity.getOriginalName())) {
+                return pdfRagParser.parse(localFile, fileEntity);
+            }
 
             FileParseRecord record = multimodalParser.parse(localFile);
             String rawText = record.getRawContent();
@@ -39,13 +43,21 @@ public class RagFileParserService {
                 throw new RuntimeException("文件未解析出有效文本：" + fileEntity.getOriginalName());
             }
 
+            // 获取文件页数
+            Integer pageCount = record.getPageCount();
+            if (pageCount == null) {
+                pageCount = 1; // 默认值
+            }
+
             String markdown = markdownNormalizeService.toMarkdown(rawText, fileType, fileEntity.getOriginalName());
+
             MarkdownChunkResult chunkResult = markdownChunkService.split(
                     markdown,
                     fileEntity.getId(),
                     fileEntity.getKnowledgeBaseId(),
                     fileEntity.getOriginalName(),
-                    fileType
+                    fileType,
+                    pageCount  // 传递页数参数
             );
 
             return RagParseResult.builder()
@@ -86,5 +98,10 @@ public class RagFileParserService {
     private boolean isExcel(String fileType, String fileName) {
         String lower = fileName == null ? "" : fileName.toLowerCase();
         return fileType.contains("spreadsheet") || lower.endsWith(".xlsx") || lower.endsWith(".xls");
+    }
+
+    private boolean isPdf(String fileType, String fileName) {
+        String lower = fileName == null ? "" : fileName.toLowerCase();
+        return fileType.contains("pdf") || lower.endsWith(".pdf");
     }
 }

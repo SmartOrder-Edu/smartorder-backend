@@ -83,6 +83,7 @@ public class KnowledgeFileProcessListener {
             updateFileStatus(file.getId(),SUCCESS, SUCCESS, PROCESSING);
 
             updateJob(jobId, "构建知识图谱", 60);
+
             try {
                 int nodesCreated = knowledgeGraphBuildService.buildGraphFromChunks(
                         persistResult.chunks(), file.getKnowledgeBaseId(), file.getId());
