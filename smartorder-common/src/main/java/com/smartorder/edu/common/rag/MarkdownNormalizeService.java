@@ -35,7 +35,7 @@ public class MarkdownNormalizeService {
             return "# " + fileName + "\n\n暂无有效文本。";
         }
         if (isMarkdownFile(fileType, fileName)) {
-            return normalizeExistingMarkdown(rawText, fileName);
+            return rawText;
         }
         List<String> parts = splitByLength(rawText, MAX_PART_LENGTH);
         StringBuilder sb = new StringBuilder();
@@ -45,7 +45,7 @@ public class MarkdownNormalizeService {
             String finalPrompt = buildPrompt(parts.get(i), fileType, fileName, i + 1, parts.size());
 
             // 2. 调用大模型
-            String md = callLlm(finalPrompt);
+            String md = callLlm(finalPrompt, parts.get(i), fileName, fileType);
 
             // 3. 清理与拼接
             sb.append("\n\n").append(cleanMarkdown(md));
@@ -53,14 +53,12 @@ public class MarkdownNormalizeService {
         return cleanMarkdown(sb.toString());
     }
 
-    private String callLlm(String promptText) {
+    private String callLlm(String promptText, String rawText, String fileName, String fileType) {
         try {
-            // 真实的大模型调用
             return chatLanguageModel.chat(promptText);
         } catch (Exception e) {
-            // 如果调用失败（如网络抖动、Token耗尽），进行安全降级处理
             e.printStackTrace();
-            return fallbackMarkdown(promptText, "文档内容", "text");
+            return fallbackMarkdown(rawText, fileName, fileType);
         }
     }
 
@@ -73,10 +71,16 @@ public class MarkdownNormalizeService {
         variables.put("fileType", fileType);
         variables.put("partNo", partNo);
         variables.put("totalParts", totalParts);
-        variables.put("text", text);
+        variables.put("rawText", text);
 
         Prompt prompt = template.apply(variables);
-        return prompt.text();
+        String finalPrompt = prompt.text();
+
+        if (finalPrompt.contains("${rawText}") || finalPrompt.contains("${text}")) {
+            throw new IllegalStateException("Markdown 标准化提示词变量未正确替换，请检查 prompt 变量名");
+        }
+
+        return finalPrompt;
     }
 
     private String fallbackMarkdown(String rawText, String fileName, String fileType) {
