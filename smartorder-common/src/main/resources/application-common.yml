@@ -235,6 +235,8 @@ langchain4j:
       model-name: mimo-v2.5-pro
       log-requests: true
       log-responses: true
+      timeout: PT120S
+      max-retries: 2
     streaming-chat-model:
       api-key: ${MIMO_API_KEY}
       # DeepSeek 提供了完全兼容 OpenAI 格式的接口，通常需要在 URL 后加上 /v1

@@ -112,11 +112,13 @@ public class Neo4jKnowledgeGraphServiceImpl implements INeo4jKnowledgeGraphServi
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Neo4jKnowledgeNode findByMysqlId(Long mysqlId) {
         return neo4jRepository.findByMysqlId(mysqlId).orElse(null);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Neo4jKnowledgeNode findByNameAndKnowledgeBaseId(String name, Long knowledgeBaseId) {
         return neo4jRepository.findByNameAndKnowledgeBaseIdExact(name, knowledgeBaseId).orElse(null);
     }
