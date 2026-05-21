@@ -21,6 +21,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -119,94 +121,196 @@ public class KnowledgeGraphBuildService {
     }
 
     /**
-     * 使用 LLM 提取知识图谱
+     * 使用 LLM 提取知识图谱（带重试机制）
      */
     private KnowledgeGraphExtractResult extractKnowledgeGraph(String content, PromptTemplate promptTemplate) {
-        try {
-            // 截断过长的内容
-            if (content.length() > MAX_CONTENT_LENGTH) {
-                content = content.substring(0, MAX_CONTENT_LENGTH) + "...(内容已截断)";
+        int maxRetries = 2;
+
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                // 截断过长的内容
+                String truncatedContent = content;
+                if (content.length() > MAX_CONTENT_LENGTH) {
+                    truncatedContent = content.substring(0, MAX_CONTENT_LENGTH) + "...(内容已截断)";
+                }
+
+                Map<String, Object> variables = new HashMap<>();
+                variables.put("text_content", truncatedContent);
+
+                Prompt prompt = promptTemplate.apply(variables);
+
+                String response = chatModel.chat(prompt.text());
+                log.info("LLM 响应 (尝试 {}/{}): {}", attempt + 1, maxRetries + 1,
+                        response.length() > 500 ? response.substring(0, 500) + "..." : response);
+
+                // 解析 JSON 响应
+                KnowledgeGraphExtractResult result = parseExtractResult(response);
+
+                // 解析成功或最后一次尝试，返回结果
+                if (result.isSuccess() || attempt == maxRetries) {
+                    return result;
+                }
+
+                log.warn("JSON 解析失败，准备重试 (尝试 {}/{}): {}", attempt + 1, maxRetries + 1,
+                        result.getErrorMessage());
+                Thread.sleep(500); // 短暂延迟后重试
+
+            } catch (Exception e) {
+                log.error("LLM 提取知识图谱异常 (尝试 {}/{}): {}", attempt + 1, maxRetries + 1, e.getMessage());
+                if (attempt == maxRetries) {
+                    return KnowledgeGraphExtractResult.failure("LLM 提取异常: " + e.getMessage());
+                }
             }
-
-            Map<String, Object> variables = new HashMap<>();
-            variables.put("text_content", content);
-
-            Prompt prompt = promptTemplate.apply(variables);
-
-            String response = chatModel.chat(prompt.text());
-            log.debug("LLM 响应: {}", response);
-
-            // 解析 JSON 响应
-            return parseExtractResult(response);
-        } catch (Exception e) {
-            log.error("LLM 提取知识图谱异常", e);
-            return KnowledgeGraphExtractResult.failure("LLM 提取异常: " + e.getMessage());
         }
+
+        return KnowledgeGraphExtractResult.failure("达到最大重试次数");
     }
 
     /**
-     * 解析 LLM 提取结果
+     * 解析 LLM 提取结果（增强版）
      */
     private KnowledgeGraphExtractResult parseExtractResult(String response) {
         try {
-            // 提取 JSON 部分（处理可能的 markdown 代码块）
-            String jsonStr = response;
-            if (response.contains("```json")) {
-                int start = response.indexOf("```json") + 7;
-                int end = response.indexOf("```", start);
-                if (end > start) {
-                    jsonStr = response.substring(start, end).trim();
-                }
-            } else if (response.contains("```")) {
-                int start = response.indexOf("```") + 3;
-                int end = response.indexOf("```", start);
-                if (end > start) {
-                    jsonStr = response.substring(start, end).trim();
-                }
+            // 1. 清理响应内容
+            String cleanedResponse = cleanResponse(response);
+
+            // 2. 提取 JSON 字符串
+            String jsonStr = extractJsonFromResponse(cleanedResponse);
+
+            if (jsonStr == null || jsonStr.isEmpty()) {
+                log.warn("无法从 LLM 响应中提取 JSON，原始响应: {}",
+                        response.length() > 300 ? response.substring(0, 300) + "..." : response);
+                return KnowledgeGraphExtractResult.failure("无法提取有效的 JSON 内容");
             }
 
+            // 3. 解析 JSON
             JSONObject json = JSON.parseObject(jsonStr);
 
-            // 解析节点
+            // 4. 解析节点
             List<ExtractedNode> nodes = new ArrayList<>();
             JSONArray nodesArray = json.getJSONArray("nodes");
             if (nodesArray != null) {
                 for (int i = 0; i < nodesArray.size(); i++) {
-                    JSONObject nodeJson = nodesArray.getJSONObject(i);
-                    ExtractedNode node = new ExtractedNode();
-                    node.setName(nodeJson.getString("name"));
-                    node.setDescription(nodeJson.getString("description"));
-                    node.setCategory(nodeJson.getString("category"));
-                    node.setImportance(nodeJson.getInteger("importance"));
-                    if (node.getName() != null && !node.getName().isEmpty()) {
-                        nodes.add(node);
+                    try {
+                        JSONObject nodeJson = nodesArray.getJSONObject(i);
+                        ExtractedNode node = new ExtractedNode();
+                        node.setName(nodeJson.getString("name"));
+                        node.setDescription(nodeJson.getString("description"));
+                        node.setCategory(nodeJson.getString("category"));
+                        node.setImportance(nodeJson.getInteger("importance"));
+                        if (node.getName() != null && !node.getName().isEmpty()) {
+                            nodes.add(node);
+                        }
+                    } catch (Exception e) {
+                        log.warn("解析第 {} 个节点失败: {}", i, e.getMessage());
                     }
                 }
             }
 
-            // 解析关系
+            // 5. 解析关系
             List<ExtractedRelation> relations = new ArrayList<>();
             JSONArray relationsArray = json.getJSONArray("relations");
             if (relationsArray != null) {
                 for (int i = 0; i < relationsArray.size(); i++) {
-                    JSONObject relJson = relationsArray.getJSONObject(i);
-                    ExtractedRelation relation = new ExtractedRelation();
-                    relation.setSourceName(relJson.getString("sourceName"));
-                    relation.setTargetName(relJson.getString("targetName"));
-                    relation.setRelationType(relJson.getString("relationType"));
-                    relation.setWeight(relJson.getDouble("weight"));
-                    relation.setDescription(relJson.getString("description"));
-                    if (relation.getSourceName() != null && relation.getTargetName() != null) {
-                        relations.add(relation);
+                    try {
+                        JSONObject relJson = relationsArray.getJSONObject(i);
+                        ExtractedRelation relation = new ExtractedRelation();
+                        relation.setSourceName(relJson.getString("sourceName"));
+                        relation.setTargetName(relJson.getString("targetName"));
+                        relation.setRelationType(relJson.getString("relationType"));
+                        relation.setWeight(relJson.getDouble("weight"));
+                        relation.setDescription(relJson.getString("description"));
+                        if (relation.getSourceName() != null && relation.getTargetName() != null) {
+                            relations.add(relation);
+                        }
+                    } catch (Exception e) {
+                        log.warn("解析第 {} 个关系失败: {}", i, e.getMessage());
                     }
                 }
             }
 
+            log.info("成功解析知识图谱: {} 个节点, {} 个关系", nodes.size(), relations.size());
             return KnowledgeGraphExtractResult.success(nodes, relations);
+
         } catch (Exception e) {
-            log.error("解析 LLM 响应异常: {}", response, e);
+            log.error("解析 LLM 响应异常，响应内容: {}", response.length() > 300 ?
+                    response.substring(0, 300) + "..." : response, e);
             return KnowledgeGraphExtractResult.failure("解析响应异常: " + e.getMessage());
         }
+    }
+
+    /**
+     * 清理响应内容（移除可能干扰 JSON 解析的字符）
+     */
+    private String cleanResponse(String response) {
+        if (response == null) return "";
+
+        // 移除 BOM 标记
+        response = response.replaceFirst("^\\uFEFF", "");
+
+        // 移除零宽字符
+        response = response.replaceAll("[\\u200B\\u200C\\u200D\\uFEFF]", "");
+
+        // 统一换行符
+        response = response.replace("\r\n", "\n").replace("\r", "\n");
+
+        return response.trim();
+    }
+
+    /**
+     * 从响应中提取 JSON 字符串（增强版）
+     */
+    private String extractJsonFromResponse(String response) {
+        if (response == null || response.isEmpty()) {
+            return null;
+        }
+
+        // 策略1: 提取 ```json ... ``` 代码块
+        Pattern jsonCodeBlockPattern = Pattern.compile("```json\\s*\\n?([\\s\\S]*?)\\n?\\s*```");
+        Matcher matcher = jsonCodeBlockPattern.matcher(response);
+        if (matcher.find()) {
+            String jsonStr = matcher.group(1).trim();
+            if (isValidJsonStart(jsonStr)) {
+                return jsonStr;
+            }
+        }
+
+        // 策略2: 提取 ``` ... ``` 代码块（无 json 标记）
+        Pattern codeBlockPattern = Pattern.compile("```\\s*\\n?([\\s\\S]*?)\\n?\\s*```");
+        matcher = codeBlockPattern.matcher(response);
+        if (matcher.find()) {
+            String jsonStr = matcher.group(1).trim();
+            if (isValidJsonStart(jsonStr)) {
+                return jsonStr;
+            }
+        }
+
+        // 策略3: 使用正则表达式匹配完整的 JSON 对象
+        Pattern jsonObjectPattern = Pattern.compile("\\{[\\s\\S]*\\}");
+        matcher = jsonObjectPattern.matcher(response);
+        if (matcher.find()) {
+            String jsonStr = matcher.group().trim();
+            // 验证是否包含预期的字段
+            if (jsonStr.contains("\"nodes\"") || jsonStr.contains("\"relations\"")) {
+                return jsonStr;
+            }
+        }
+
+        // 策略4: 尝试直接解析整个响应
+        if (isValidJsonStart(response.trim())) {
+            return response.trim();
+        }
+
+        return null;
+    }
+
+    /**
+     * 检查字符串是否以有效的 JSON 开头
+     */
+    private boolean isValidJsonStart(String str) {
+        if (str == null || str.isEmpty()) return false;
+        str = str.trim();
+        return str.startsWith("{") || str.startsWith("[");
     }
 
     /**
