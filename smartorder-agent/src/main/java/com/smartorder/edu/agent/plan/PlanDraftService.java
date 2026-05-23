@@ -93,6 +93,13 @@ public class PlanDraftService {
     }
 
     /**
+     * 获取指定会话的待确认草稿（如有）
+     */
+    public AgentPlanDraft getPendingDraftByConversationId(String conversationId) {
+        return draftMapper.selectPendingDraftByConversationId(conversationId);
+    }
+
+    /**
      * 取消草稿
      */
     public void cancelDraft(String draftId, Long userId) {

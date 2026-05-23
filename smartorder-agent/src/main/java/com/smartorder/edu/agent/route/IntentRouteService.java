@@ -7,119 +7,272 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * 意图路由服务——第一阶段采用纯规则路由
- * 后续阶段加入小模型兜底
+ * 意图路由服务——分层路由编排器
+ * <p>
+ * 路由优先级：状态检查 → 关键词规则 → LLM 分类（Phase 3）→ 槽位校验（Phase 4）→ 澄清兜底（Phase 5）
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class IntentRouteService {
 
+    private final StateRuleRouter stateRuleRouter;
+    private final LlmIntentClassifier llmIntentClassifier;
+    private final SlotValidator slotValidator;
+    private final ClarificationRouter clarificationRouter;
+
     /**
-     * 根据用户消息进行意图路由
+     * 分层路由（新 API）——结合会话状态进行路由
      */
-    public IntentRouteResult route(String message) {
-        IntentRouteResult ruleResult = routeByRule(message);
-        if (ruleResult != null) {
-            log.info("[IntentRoute] 规则命中: intent={}, mode={}", ruleResult.getIntentType(), ruleResult.getRunMode().getCode());
-            return ruleResult;
+    public IntentRouteResult route(RouteContext ctx) {
+        IntentRouteResult result;
+
+        // Layer 1: 状态感知路由（最高优先级）
+        IntentRouteResult stateResult = stateRuleRouter.tryRoute(ctx);
+        if (stateResult != null) {
+            log.info("[IntentRoute] State命中: intent={}, mode={}, source={}",
+                    stateResult.getIntentType(), stateResult.getRunMode().getCode(), stateResult.getSource());
+            result = stateResult;
+        } else {
+            // Layer 2: 关键词规则路由
+            IntentRouteResult ruleResult = routeByRule(ctx.getMessage());
+            if (ruleResult != null) {
+                log.info("[IntentRoute] Keyword命中: intent={}, mode={}",
+                        ruleResult.getIntentType(), ruleResult.getRunMode().getCode());
+                result = ruleResult;
+            } else {
+                // Layer 3: LLM 意图分类（语义兜底）
+                LlmIntentClassifier.LlmIntentResult llmResult = llmIntentClassifier.classify(ctx.getMessage());
+                if (llmIntentClassifier.isConfident(llmResult)) {
+                    log.info("[IntentRoute] LLM命中: intent={}, confidence={}", llmResult.intent(), llmResult.confidence());
+                    result = buildResultFromLlm(llmResult);
+                } else if (llmResult.intent() != IntentType.UNKNOWN && llmResult.confidence() > 0.0) {
+                    log.info("[IntentRoute] LLM低置信: intent={}, confidence={}，默认 REACT",
+                            llmResult.intent(), llmResult.confidence());
+                    result = buildDefaultResult();
+                } else {
+                    log.info("[IntentRoute] 规则和LLM均未命中，使用默认 REACT 模式");
+                    result = buildDefaultResult();
+                }
+            }
         }
 
-        // 第一阶段：规则未命中 → 默认 REACT 简单知识问答
-        log.info("[IntentRoute] 规则未命中，使用默认 REACT 模式");
-        return IntentRouteResult.builder()
-                .intentType("知识问答")
-                .complexity("简单")
-                .runMode(AgentRunMode.REACT)
-                .requiredTools(List.of())
-                .reason("未命中规则，默认使用 REACT 模式")
-                .build();
+        // Layer 4: 槽位校验（对非默认、非 UNKNOWN 结果进行槽位检查）
+        result = applySlotCheck(result, ctx);
+
+        // Layer 5: 低置信澄清兜底
+        if (result.isNeedsClarification()) {
+            applyClarification(result);
+        }
+
+        return result;
     }
 
-    // 确认创建计划的关键词
-    private static final List<String> CONFIRM_KEYWORDS = List.of(
-            "好的", "可以", "是的", "行", "确认", "需要", "嗯", "对", "好",
-            "创建吧", "开始吧", "没问题", "ok", "yes", "OK", "Yes", "搞吧", "做吧", "弄吧"
+    /**
+     * 槽位校验：对需要槽位的意图进行检查，不足则降级
+     */
+    private IntentRouteResult applySlotCheck(IntentRouteResult result, RouteContext ctx) {
+        if (result.getIntentEnum() == null || result.getIntentEnum() == IntentType.UNKNOWN) {
+            return result; // 默认/未知意图不校验槽位
+        }
+        if (result.getSource() == RoutingSource.STATE) {
+            return result; // State 路由已自带槽位判断，不重复校验
+        }
+
+        List<String> missingSlots = slotValidator.validate(result.getIntentEnum(), ctx);
+        if (!missingSlots.isEmpty()) {
+            log.info("[IntentRoute] Slot校验不通过: intent={}, missingSlots={}",
+                    result.getIntentEnum(), missingSlots);
+            result.setConfidence(Math.min(result.getConfidence(), 0.5));
+            result.setNeedsClarification(true);
+            result.setMissingSlots(missingSlots);
+        }
+
+        return result;
+    }
+
+    /**
+     * 澄清兜底：将路由结果转为 REACT 澄清模式
+     */
+    private void applyClarification(IntentRouteResult result) {
+        String clarificationMsg = clarificationRouter.buildClarification(
+                result.getIntentEnum() != null ? result.getIntentEnum() : IntentType.UNKNOWN,
+                result.getMissingSlots());
+        result.setRunMode(AgentRunMode.REACT);
+        result.setRequiredTools(List.of());
+        result.setSource(RoutingSource.CLARIFICATION);
+        result.setReason(clarificationMsg);
+        log.info("[IntentRoute] 进入澄清模式: {}", clarificationMsg);
+    }
+
+    /**
+     * 根据用户消息进行意图路由（兼容旧 API，无会话状态）
+     */
+    public IntentRouteResult route(String message) {
+        return route(RouteContext.builder().message(message).build());
+    }
+
+    // ============ 高置信关键词白名单 ============
+
+    // 资源生成关键词（高置信）
+    private static final List<String> RESOURCE_GEN_KEYWORDS = List.of(
+            "生成资料", "生成PPT", "测试题", "全套资料", "生成习题",
+            "出题", "做一个PPT", "生成笔记", "整理笔记"
     );
 
-    // 学习目标相关关键词
-    private static final List<String> GOAL_KEYWORDS = List.of(
-            "制定", "计划", "规划", "备考", "学习路径",
-            "想学", "学习", "准备", "考研", "成为", "提升", "达到", "目标"
+    // 明确规划请求关键词
+    private static final List<String> PLANNING_KEYWORDS = List.of(
+            "制定学习计划", "帮我规划", "备考计划", "准备考研",
+            "学习路径怎么", "帮我安排", "帮我定制", "规划一下",
+            "制定复习计划", "帮我制定"
     );
 
+    // 答疑关键词
+    private static final List<String> HELP_KEYWORDS = List.of(
+            "不理解", "帮我讲讲", "讲一下", "不会做",
+            "这题", "这道题", "帮我解释"
+    );
+
+    // 进度查询关键词
+    private static final List<String> PROGRESS_KEYWORDS = List.of(
+            "学习进度", "学习情况", "最近学了什么", "复习进度", "学习分析",
+            "学得怎么样", "进度如何", "学习报告"
+    );
+
+    // 任务管理关键词
+    private static final List<String> TASK_KEYWORDS = List.of(
+            "添加任务", "标记完成", "修改任务", "今天学什么",
+            "今日任务", "查看任务", "还有什么没完成"
+    );
+
+    // ============ 规则匹配 ============
+
+    /**
+     * 关键词规则匹配——仅处理高置信显式意图
+     * <p>
+     * 注意：已废弃的过宽关键词（如"学习"、"计划"、"不会"等单独两字词）
+     * 不再出现在规则中，由 LLM 分类器（Phase 3）兜底。
+     */
     private IntentRouteResult routeByRule(String message) {
         if (message == null || message.isBlank()) {
             return null;
         }
 
-        // 用户确认创建计划 → 直接进入 PLAN_EXECUTE 模式
-        // 只匹配整句基本为确认词的短消息，避免误匹配
-        if (isConfirmMessage(message)) {
-            return IntentRouteResult.builder()
-                    .intentType("确认创建计划")
-                    .complexity("复杂")
-                    .runMode(AgentRunMode.PLAN_EXECUTE)
-                    .requiredTools(List.of("getStudentProfile"))
-                    .reason("用户确认创建学习计划，进入规划生成流程")
-                    .build();
+        // 1. 资源生成类（最高置信度，显式命令词）
+        if (containsAny(message, RESOURCE_GEN_KEYWORDS.toArray(new String[0]))) {
+            return buildKeywordResult(IntentType.RESOURCE_GENERATION, AgentRunMode.MULTI_AGENT,
+                    0.90, List.of("getStudentProfile", "queryKnowledge", "generateResource", "generateQuiz"),
+                    "用户需要复杂资源生成");
         }
 
-        // 学习目标表达 → REACT 模式，让 AI 了解学生后主动询问是否需要创建计划
-        if (containsAny(message, GOAL_KEYWORDS.toArray(new String[0]))) {
-            return IntentRouteResult.builder()
-                    .intentType("学习目标讨论")
-                    .complexity("复杂")
-                    .runMode(AgentRunMode.REACT)
-                    .requiredTools(List.of("getStudentProfile", "manageLearningTask"))
-                    .reason("用户表达了学习相关意图，AI 应了解学生情况后主动询问是否需要创建学习计划")
-                    .build();
+        // 2. 明确学习规划请求
+        if (containsAny(message, PLANNING_KEYWORDS.toArray(new String[0]))) {
+            return buildKeywordResult(IntentType.GOAL_PLANNING, AgentRunMode.PLAN_EXECUTE,
+                    0.85, List.of("getStudentProfile"),
+                    "用户明确要求制定学习计划");
         }
 
-        // 资源生成类
-        if (containsAny(message, "生成资料", "复习资料", "PPT", "测试题", "全套资料")) {
-            return IntentRouteResult.builder()
-                    .intentType("资源生成")
-                    .complexity("复杂")
-                    .runMode(AgentRunMode.MULTI_AGENT)
-                    .requiredTools(List.of("getStudentProfile", "queryKnowledge", "generateResource", "generateQuiz"))
-                    .reason("用户需要复杂资源生成")
-                    .build();
+        // 3. 习题答疑类
+        if (containsAny(message, HELP_KEYWORDS.toArray(new String[0]))) {
+            return buildKeywordResult(IntentType.PROBLEM_HELP, AgentRunMode.REACT,
+                    0.85, List.of("getStudentProfile", "queryKnowledge", "queryTasks"),
+                    "用户需要学习辅导");
         }
 
-        // 习题答疑类
-        if (containsAny(message, "不理解", "不会", "讲一下", "为什么", "怎么做")) {
-            return IntentRouteResult.builder()
-                    .intentType("习题答疑")
-                    .complexity("复杂")
-                    .runMode(AgentRunMode.REACT)
-                    .requiredTools(List.of("getStudentProfile", "queryKnowledge", "queryTasks"))
-                    .reason("用户需要个性化学习辅导")
-                    .build();
+        // 4. 进度查询
+        if (containsAny(message, PROGRESS_KEYWORDS.toArray(new String[0]))) {
+            return buildKeywordResult(IntentType.PROGRESS_REVIEW, AgentRunMode.REACT,
+                    0.85, List.of("queryLearningProgress", "getStudentProfile"),
+                    "用户查询学习进度");
         }
 
-        // 简单知识问答
-        if (message.length() <= 30 && containsAny(message, "什么是", "解释", "定义")) {
-            return IntentRouteResult.builder()
-                    .intentType("知识问答")
-                    .complexity("简单")
-                    .runMode(AgentRunMode.REACT)
-                    .requiredTools(List.of())
-                    .reason("简单知识解释")
-                    .build();
+        // 5. 任务管理
+        if (containsAny(message, TASK_KEYWORDS.toArray(new String[0]))) {
+            return buildKeywordResult(IntentType.TASK_MANAGEMENT, AgentRunMode.REACT,
+                    0.85, List.of("queryTasks", "manageLearningTask"),
+                    "用户管理学习任务");
+        }
+
+        // 6. 简单知识问答（短消息 + 定义类关键词）
+        if (message.length() <= 30 && containsAny(message, "什么是", "解释一下", "定义")) {
+            return buildKeywordResult(IntentType.KNOWLEDGE_QA, AgentRunMode.REACT,
+                    0.80, List.of(),
+                    "简单知识解释");
         }
 
         return null;
     }
 
+    private IntentRouteResult buildKeywordResult(IntentType intent, AgentRunMode mode,
+                                                  double confidence, List<String> tools, String reason) {
+        return IntentRouteResult.builder()
+                .intentType(intent.getChineseName())
+                .intentEnum(intent)
+                .complexity("复杂")
+                .runMode(mode)
+                .requiredTools(tools)
+                .confidence(confidence)
+                .source(RoutingSource.KEYWORD)
+                .reason(reason)
+                .build();
+    }
+
     /**
-     * 判断消息是否为确认创建计划的短消息
-     * 只匹配消息体基本由确认词构成的短消息（<=10字符），避免长消息误匹配
+     * 将 LLM 分类结果映射为路由结果
      */
-    private boolean isConfirmMessage(String message) {
-        if (message.length() > 10) return false;
-        String trimmed = message.trim();
-        return CONFIRM_KEYWORDS.contains(trimmed);
+    private IntentRouteResult buildResultFromLlm(LlmIntentClassifier.LlmIntentResult llmResult) {
+        IntentType intent = llmResult.intent();
+        AgentRunMode mode = mapIntentToRunMode(intent);
+        List<String> tools = mapIntentToTools(intent);
+
+        return IntentRouteResult.builder()
+                .intentType(intent.getChineseName())
+                .intentEnum(intent)
+                .complexity("复杂")
+                .runMode(mode)
+                .requiredTools(tools)
+                .confidence(llmResult.confidence())
+                .source(RoutingSource.LLM)
+                .reason("LLM语义分类: " + llmResult.reasoning())
+                .build();
+    }
+
+    /**
+     * IntentType → AgentRunMode 映射
+     */
+    private AgentRunMode mapIntentToRunMode(IntentType intent) {
+        return switch (intent) {
+            case GOAL_PLANNING, PLAN_CONFIRMATION -> AgentRunMode.PLAN_EXECUTE;
+            case RESOURCE_GENERATION -> AgentRunMode.MULTI_AGENT;
+            case KNOWLEDGE_QA, PROBLEM_HELP, PROGRESS_REVIEW, TASK_MANAGEMENT, UNKNOWN -> AgentRunMode.REACT;
+        };
+    }
+
+    /**
+     * IntentType → 默认工具列表映射
+     */
+    private List<String> mapIntentToTools(IntentType intent) {
+        return switch (intent) {
+            case GOAL_PLANNING, PLAN_CONFIRMATION -> List.of("getStudentProfile");
+            case RESOURCE_GENERATION -> List.of("getStudentProfile", "queryKnowledge", "generateResource", "generateQuiz");
+            case PROBLEM_HELP -> List.of("getStudentProfile", "queryKnowledge", "queryTasks");
+            case PROGRESS_REVIEW -> List.of("queryLearningProgress", "getStudentProfile");
+            case TASK_MANAGEMENT -> List.of("queryTasks", "manageLearningTask");
+            case KNOWLEDGE_QA, UNKNOWN -> List.of();
+        };
+    }
+
+    private IntentRouteResult buildDefaultResult() {
+        return IntentRouteResult.builder()
+                .intentType(IntentType.KNOWLEDGE_QA.getChineseName())
+                .intentEnum(IntentType.KNOWLEDGE_QA)
+                .complexity("简单")
+                .runMode(AgentRunMode.REACT)
+                .requiredTools(List.of())
+                .confidence(0.5)
+                .source(RoutingSource.KEYWORD)
+                .reason("未命中规则，默认使用 REACT 模式")
+                .build();
     }
 
     private boolean containsAny(String text, String... keywords) {

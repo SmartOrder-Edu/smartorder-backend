@@ -12,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import com.smartorder.edu.agent.route.ConfirmationWords;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -208,18 +210,9 @@ public class ConversationMemoryService {
     }
 
     /**
-     * 判断消息是否为仅包含确认表达的短消息
+     * 判断消息是否为仅包含确认表达的短消息（委托给 ConfirmationWords 统一管理）
      */
     private boolean isConfirmationOnly(String content) {
-        String trimmed = content.trim();
-        // 短确认词精确匹配
-        return trimmed.length() <= 10 && (
-                trimmed.equals("好的") || trimmed.equals("可以") || trimmed.equals("是的") ||
-                trimmed.equals("行") || trimmed.equals("确认") || trimmed.equals("需要") ||
-                trimmed.equals("嗯") || trimmed.equals("对") || trimmed.equals("好") ||
-                trimmed.equals("创建吧") || trimmed.equals("开始吧") || trimmed.equals("没问题") ||
-                trimmed.equals("搞吧") || trimmed.equals("做吧") || trimmed.equals("弄吧") ||
-                trimmed.equalsIgnoreCase("ok") || trimmed.equalsIgnoreCase("yes")
-        );
+        return ConfirmationWords.isConfirmationOnly(content);
     }
 }

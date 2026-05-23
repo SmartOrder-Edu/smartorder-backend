@@ -3,6 +3,7 @@ package com.smartorder.edu.agent.plan;
 import com.alibaba.fastjson.JSONObject;
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
+import com.smartorder.edu.agent.route.ConfirmationWords;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.tool.LangChain4jToolAdapter;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
@@ -164,15 +165,7 @@ public class PlanExecuteEngine {
         }
 
         // 判断是否为确认类短消息
-        String trimmed = message.trim();
-        boolean isConfirmation = trimmed.length() <= 10 && (
-                trimmed.equals("好的") || trimmed.equals("可以") || trimmed.equals("是的") ||
-                trimmed.equals("行") || trimmed.equals("确认") || trimmed.equals("需要") ||
-                trimmed.equals("嗯") || trimmed.equals("对") || trimmed.equals("好") ||
-                trimmed.equals("创建吧") || trimmed.equals("开始吧") || trimmed.equals("没问题") ||
-                trimmed.equals("搞吧") || trimmed.equals("做吧") || trimmed.equals("弄吧") ||
-                trimmed.equalsIgnoreCase("ok") || trimmed.equalsIgnoreCase("yes")
-        );
+        boolean isConfirmation = ConfirmationWords.isConfirmationOnly(message);
 
         if (isConfirmation && request.getConversationId() != null) {
             String historicalGoal = memoryService.extractRecentGoal(request.getConversationId());

@@ -11,4 +11,7 @@ public interface AgentPlanDraftMapper extends BaseMapper<AgentPlanDraft> {
 
     @Select("SELECT * FROM agent_plan_draft WHERE draft_id = #{draftId}")
     AgentPlanDraft selectByDraftId(@Param("draftId") String draftId);
+
+    @Select("SELECT * FROM agent_plan_draft WHERE conversation_id = #{conversationId} AND status = 'PENDING' ORDER BY create_time DESC LIMIT 1")
+    AgentPlanDraft selectPendingDraftByConversationId(@Param("conversationId") String conversationId);
 }
