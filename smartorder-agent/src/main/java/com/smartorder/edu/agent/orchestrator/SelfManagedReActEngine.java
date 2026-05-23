@@ -65,12 +65,9 @@ public class SelfManagedReActEngine {
             AgentRuntimeContext runtimeContext,
             SseEmitter emitter
     ) {
-        // 1. 从记忆系统构建历史上下文（不含当前消息，用户消息已由 orchestrator 统一落库）
+        // 1. 从记忆系统构建历史上下文（已包含当前用户消息，因为 orchestrator 在调用引擎前已落库）
         List<ChatMessage> messages = memoryService.buildMessages(
                 runtimeContext.getConversationId(), request.getUserId());
-
-        // 2. 追加当前用户消息到上下文
-        messages.add(UserMessage.from(request.getMessage()));
 
         // 3. 构建工具规范
         List<ToolSpecification> tools = toolAdapter.buildToolSpecifications(routeResult.getRequiredTools());

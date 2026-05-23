@@ -21,7 +21,7 @@ public class PlanDraftService {
     private final AgentPlanDraftMapper draftMapper;
 
     /**
-     * 保存规划草稿
+     * 保存规划草稿（完整规划 JSON，来自 PlanExecuteEngine）
      */
     public String saveDraft(String conversationId, String traceId, Long userId, JSONObject planJson) {
         String draftId = UUID.randomUUID().toString();
@@ -33,10 +33,37 @@ public class PlanDraftService {
         draft.setUserId(userId);
         draft.setPlanJson(planJson.toJSONString());
         draft.setStatus("PENDING");
-        draft.setExpireTime(LocalDateTime.now().plusHours(24)); // 24 小时过期
+        draft.setExpireTime(LocalDateTime.now().plusHours(24));
 
         draftMapper.insert(draft);
         log.info("[PlanDraft] 草稿已保存: draftId={}, spaceName={}", draftId, planJson.getString("spaceName"));
+        return draftId;
+    }
+
+    /**
+     * 保存简单规划草稿（来自 ReAct 流中的 manageLearningTask 工具）
+     * 只有目标描述，没有完整规划 JSON，确认时需要 PlanConfirmService 先生成规划再创建
+     */
+    public String saveSimpleDraft(String conversationId, String traceId, Long userId, String goalDescription) {
+        String draftId = UUID.randomUUID().toString();
+
+        JSONObject simplePlan = new JSONObject();
+        simplePlan.put("spaceName", goalDescription);
+        simplePlan.put("description", goalDescription);
+        simplePlan.put("type", "course");
+        simplePlan.put("goalDescription", goalDescription);
+
+        AgentPlanDraft draft = new AgentPlanDraft();
+        draft.setDraftId(draftId);
+        draft.setConversationId(conversationId);
+        draft.setTraceId(traceId);
+        draft.setUserId(userId);
+        draft.setPlanJson(simplePlan.toJSONString());
+        draft.setStatus("PENDING");
+        draft.setExpireTime(LocalDateTime.now().plusHours(24));
+
+        draftMapper.insert(draft);
+        log.info("[PlanDraft] 简单草稿已保存: draftId={}, goal={}", draftId, goalDescription);
         return draftId;
     }
 

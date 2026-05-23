@@ -19,7 +19,7 @@ import java.util.List;
  * 会话记忆服务——替代 AgentConfiguration 中的纯内存 ChatMemory
  *
  * 上下文组装策略：
- * System Prompt + 会话摘要 + 最近 30 条消息 + 当前用户消息
+ * System Prompt + 会话摘要 + 最近 30 条消息（含当前用户消息，因为 orchestrator 已提前落库）
  */
 @Slf4j
 @Service
@@ -40,9 +40,9 @@ public class ConversationMemoryService {
             3. **制定计划**：根据学生情况，制定结构化的学习路径
 
             ## 核心能力（工具）
-            你拥有以下工具，可以直接在系统中执行操作：
+            你拥有以下工具：
             - **getStudentProfile**：获取学生的学习画像
-            - **manageLearningTask**：在系统中创建学习空间、学习路径和任务（这是真实可执行的工具，不是模拟）
+            - **manageLearningTask**：为用户创建学习规划草稿（需用户确认后才会创建学习空间和任务）
             - **queryKnowledge**：查询知识图谱
             - **queryTasks**：查询学习任务
             - **queryLearningProgress**：查询学习进度
@@ -53,17 +53,17 @@ public class ConversationMemoryService {
             - 在回答前，如果需要了解学生情况，先调用工具获取学生画像
             - 用热情、鼓励的语气交流
             - 回答尽量简洁，避免长篇大论
-            - 对重要操作（如创建学习空间），必须明确告知用户
             - 不要编造学生档案信息，需要时必须调用工具
-            - **你有能力通过 manageLearningTask 工具在系统中真实创建学习空间和任务，不要说自己做不到**
-            - **当用户表达学习目标或想学习某个领域时（如"我想学XX"、"帮我准备XX考试"），先调用 getStudentProfile 了解学生情况，然后主动询问是否需要立即创建学习空间和任务**
-            - 当用户明确要求制定计划时，先确认用户的具体需求（目标、时间、偏好），然后直接调用 manageLearningTask 为用户创建学习空间
+            - **当用户表达学习目标时，先调用 getStudentProfile 了解学生情况，然后调用 manageLearningTask 生成规划草稿**
+            - **manageLearningTask 只会生成草稿，不会直接创建学习空间。草稿生成后，需要用户确认才会创建学习空间和任务**
+            - **告知用户规划内容后，询问"是否确认创建？"，等待用户确认后再引导用户确认**
             """;
 
     /**
-     * 构建发给 LLM 的历史上下文消息列表（不含当前用户消息）
+     * 构建发给 LLM 的历史上下文消息列表（包含当前用户消息）
      *
-     * 调用方需在返回列表末尾追加当前用户消息，避免重复。
+     * 注意：AgentOrchestratorImpl 在调用引擎前已将当前用户消息保存到 DB，
+     * 因此 selectRecentMessages 会包含当前用户消息，调用方不应再手动追加。
      */
     public List<ChatMessage> buildMessages(String conversationId, Long userId) {
         List<ChatMessage> messages = new ArrayList<>();
@@ -77,7 +77,7 @@ public class ConversationMemoryService {
             messages.add(SystemMessage.from("【历史会话摘要】" + summary.getSummaryText()));
         }
 
-        // 3. 最近 30 条历史消息（不包含当前消息，因为当前消息尚未落库）
+        // 3. 最近 30 条历史消息（包含当前消息，因为 orchestrator 在调用引擎前已落库）
         List<ConversationMessage> recentMessages = messageMapper.selectRecentMessages(conversationId, MAX_RECENT_MESSAGES);
         // selectRecentMessages 按 create_time DESC 返回，需要反转顺序
         for (int i = recentMessages.size() - 1; i >= 0; i--) {

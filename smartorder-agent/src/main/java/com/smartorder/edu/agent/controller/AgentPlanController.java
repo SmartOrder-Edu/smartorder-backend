@@ -1,6 +1,8 @@
 package com.smartorder.edu.agent.controller;
 
+import com.smartorder.edu.agent.mapper.AgentTraceEventMapper;
 import com.smartorder.edu.agent.model.dto.PlanConfirmRequest;
+import com.smartorder.edu.agent.model.entity.AgentTraceEvent;
 import com.smartorder.edu.agent.plan.PlanConfirmService;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import io.jsonwebtoken.Claims;
@@ -12,12 +14,13 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Agent 规划控制器——规划确认等非对话接口
+ * Agent 规划控制器——规划确认、trace 查询等非对话接口
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -27,6 +30,7 @@ import java.util.concurrent.Executors;
 public class AgentPlanController {
 
     private final PlanConfirmService planConfirmService;
+    private final AgentTraceEventMapper traceEventMapper;
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     @PostMapping(value = "/plan/confirm", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -50,6 +54,17 @@ public class AgentPlanController {
         emitter.onError(ex -> log.error("[PlanConfirm] SSE 错误: draftId={}", request.getDraftId(), ex));
 
         return emitter;
+    }
+
+    /**
+     * 按 traceId 查询追踪事件，支持前端重放 Agent 执行链路
+     */
+    @GetMapping("/traces/{traceId}")
+    @Operation(summary = "查询追踪事件列表",
+               description = "根据 traceId 查询某次 Agent 执行的完整追踪事件，按 seq 正序返回，支持前端回放执行链路。")
+    public List<AgentTraceEvent> getTraceEvents(@PathVariable String traceId) {
+        log.info("[TraceQuery] 查询追踪事件: traceId={}", traceId);
+        return traceEventMapper.selectByTraceId(traceId);
     }
 
     private Long getCurrentUserId() {

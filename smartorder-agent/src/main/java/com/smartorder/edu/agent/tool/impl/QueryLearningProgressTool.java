@@ -88,6 +88,7 @@ public class QueryLearningProgressTool implements ToolHandler {
 
     @Data
     public static class QueryLearningProgressRequest {
+        @dev.langchain4j.model.output.structured.Description("查询最近几天的学习记录，默认7天")
         private Integer recentDays;
     }
 }
