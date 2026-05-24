@@ -47,8 +47,10 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
             }
         }
 
-        // 2. 异步落库
-        asyncPersister.persistAsync(event);
+        // 2. 异步落库（高频 delta 事件不持久化，完整文本已存于 conversation_message）
+        if (eventType.isPersistable()) {
+            asyncPersister.persistAsync(event);
+        }
     }
 
     @Override
