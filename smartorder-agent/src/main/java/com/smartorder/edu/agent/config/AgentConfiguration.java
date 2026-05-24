@@ -1,5 +1,6 @@
 package com.smartorder.edu.agent.config;
 
+import com.smartorder.edu.common.config.JdkLangChain4jHttpClientBuilder;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
@@ -11,15 +12,17 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Agent 配置：LLM Bean + 对话记忆管理
+ * Agent LLM beans and conversation memory.
  *
- * LangChain4j 1.13.0 已原生支持 AiMessage.thinking() 和 onPartialThinking()，
- * 不再需要禁用 MIMO thinking mode。使用 @Primary 确保手动 Bean 优先于自动配置。
+ * <p>LLM calls explicitly use the JDK HTTP client. Do not route them through
+ * Spring RestClient: when Jetty is present on the classpath, Spring Boot can
+ * auto-select Jetty and trigger its default 30s idle timeout.
  */
 @Configuration
 public class AgentConfiguration {
@@ -39,11 +42,6 @@ public class AgentConfiguration {
     @Value("${agent.llm.reasoning-effort:high}")
     private String reasoningEffort;
 
-    /**
-     * 根据 thinking-mode 配置构建请求级自定义参数。
-     * DeepSeek V4 需要 {@code "thinking": {"type": "enabled"}} 才会返回 reasoning_content；
-     * MIMO 不需要此参数，默认 disabled 时返回空 Map。
-     */
     public Map<String, Object> buildThinkingCustomParameters() {
         if (!"deepseek-v4".equalsIgnoreCase(thinkingMode)) {
             return Map.of();
@@ -60,11 +58,13 @@ public class AgentConfiguration {
     @Bean
     public ChatModel chatLanguageModel() {
         return OpenAiChatModel.builder()
+                .httpClientBuilder(JdkLangChain4jHttpClientBuilder.withDefaults())
                 .apiKey(apiKey)
                 .baseUrl(baseUrl)
                 .modelName(modelName)
                 .returnThinking(true)
                 .sendThinking(true, "reasoning_content")
+                .timeout(Duration.ofSeconds(120))
                 .build();
     }
 
@@ -72,21 +72,23 @@ public class AgentConfiguration {
     @Bean
     public StreamingChatModel streamingChatLanguageModel() {
         return OpenAiStreamingChatModel.builder()
+                .httpClientBuilder(JdkLangChain4jHttpClientBuilder.withDefaults())
                 .apiKey(apiKey)
                 .baseUrl(baseUrl)
                 .modelName(modelName)
                 .returnThinking(true)
                 .sendThinking(true, "reasoning_content")
+                .timeout(Duration.ofSeconds(120))
                 .build();
     }
-
-    // ========== 对话记忆管理 ==========
 
     private final Map<String, ChatMemory> memoryStore = new ConcurrentHashMap<>();
 
     public ChatMemory getOrCreateMemory(String conversationId) {
-        return memoryStore.computeIfAbsent(conversationId,
-                id -> MessageWindowChatMemory.withMaxMessages(20));
+        return memoryStore.computeIfAbsent(
+                conversationId,
+                id -> MessageWindowChatMemory.withMaxMessages(20)
+        );
     }
 
     public void clearMemory(String conversationId) {
