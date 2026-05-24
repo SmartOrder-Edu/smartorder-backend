@@ -40,7 +40,6 @@ public class FileFolderController {
     private final IFileResourceService fileResourceService;
 
     // 文件夹
-    // todo
     @GetMapping("/folders/tree")
     @Operation(summary = "获取文件夹树", description = "获取当前用户的文件夹树形结构")
     public Result<FileFolderContentVO> getTree() {
