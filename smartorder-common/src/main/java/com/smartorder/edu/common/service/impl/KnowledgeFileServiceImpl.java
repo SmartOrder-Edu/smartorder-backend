@@ -3,7 +3,7 @@ package com.smartorder.edu.common.service.impl;
 import com.aliyun.oss.model.PartETag;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.smartorder.edu.common.config.RabbitMQConfig;
+import com.smartorder.edu.common.config .RabbitMQConfig;
 import com.smartorder.edu.common.mapper.*;
 import com.smartorder.edu.common.model.dto.ChunkUploadDTO;
 import com.smartorder.edu.common.model.dto.KnowledgeFileDTO;
@@ -43,6 +43,7 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
     private final RagReferenceMapper ragReferenceMapper;
     private final INeo4jKnowledgeGraphService neo4jKnowledgeGraphService;
     private final VectorIndexService vectorIndexService;
+    private final KnowledgeBaseServiceImpl knowledgeBaseService;
 
     private static final long REDIS_EXPIRE_HOURS = 24L;
 
@@ -53,6 +54,7 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
         KnowledgeFile existingFile = this.lambdaQuery()
                 .eq(KnowledgeFile::getFileHash, req.getFileHash())
                 .eq(KnowledgeFile::getStatus, "active")
+                .eq(KnowledgeFile::getUserId, userId)  // 【关键新增：过滤当前用户】
                 .last("LIMIT 1")
                 .one();
 
@@ -137,6 +139,7 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
 
         return fileUrl;
     }
+
     /**
      * 发送 MQ 消息，实现异步入库
      */
@@ -148,6 +151,7 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
         rabbitTemplate.convertAndSend(RabbitMQConfig.KNOWLEDGE_EXCHANGE, RabbitMQConfig.ROUTING_KEY_FILE_DB_SAVE, msg);
         log.info("异步文件入库消息已发送: fileHash={}", fileHash);
     }
+
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -179,15 +183,11 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
                 log.warn("删除 Milvus 向量失败，继续执行", e);
             }
 
-            // 4. 删除 OSS 中的文件
-            try {
-                if (existingFile.getFileUrl() != null && !existingFile.getFileUrl().isEmpty()) {
-                    aliOSSUtils.deleteFile(existingFile.getFileUrl());
-                    log.info("已删除 OSS 文件，fileId={}, url={}", fileId, existingFile.getFileUrl());
-                }
-            } catch (Exception e) {
-                log.warn("删除 OSS 文件失败，fileId={}", fileId, e);
-            }
+            // 4. 查询该文件关联的 chunk 数量，用于更新知识库统计
+            long chunkCount = knowledgeChunkMapper.selectCount(
+                    new LambdaQueryWrapper<KnowledgeChunk>()
+                            .eq(KnowledgeChunk::getFileId, fileId)
+            );
 
             // 5. 删除 MySQL 中的子表数据（按依赖顺序）
             // 5.1 删除 rag_references
@@ -218,6 +218,13 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
             existingFile.setStatus("deleted");
             existingFile.setUpdatedAt(LocalDateTime.now());
             this.updateById(existingFile);
+
+            // 7. 更新知识库统计
+            knowledgeBaseService.decrementFileStats(
+                    existingFile.getKnowledgeBaseId(),
+                    existingFile.getFileSize(),
+                    (int) chunkCount
+            );
 
             log.info("文件删除成功，fileId={}", fileId);
 

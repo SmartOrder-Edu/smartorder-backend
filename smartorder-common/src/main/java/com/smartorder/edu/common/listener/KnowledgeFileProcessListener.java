@@ -16,6 +16,7 @@ import com.smartorder.edu.common.rag.KnowledgeGraphBuildService;
 import com.smartorder.edu.common.rag.RagFileParserService;
 import com.smartorder.edu.common.rag.RagPersistService;
 import com.smartorder.edu.common.rag.VectorIndexService;
+import com.smartorder.edu.common.service.impl.KnowledgeBaseServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -44,6 +45,8 @@ public class KnowledgeFileProcessListener {
     private final VectorIndexService vectorIndexService;
 
     private final KnowledgeGraphBuildService knowledgeGraphBuildService;
+
+    private final KnowledgeBaseServiceImpl knowledgeBaseService;
 
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE_FILE_PROCESS, containerFactory = "rabbitListenerContainerFactory")
@@ -96,6 +99,9 @@ public class KnowledgeFileProcessListener {
             vectorIndexService.indexChunks(persistResult.chunks());
             markChunksEmbedded(persistResult.chunks());
             updateFileStatus(file.getId(), SUCCESS, SUCCESS, SUCCESS);
+
+            // 更新知识库文档和分块统计
+            knowledgeBaseService.incrementDocumentStats(file.getKnowledgeBaseId(), persistResult.chunks().size());
 
             updateJob(jobId, "处理完成", 100);
             markJobSuccess(jobId);

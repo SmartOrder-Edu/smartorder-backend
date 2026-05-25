@@ -35,6 +35,65 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KnowledgeBaseMapper, K
     private final INeo4jKnowledgeGraphService neo4jKnowledgeGraphService;
     private final VectorIndexService vectorIndexService;
     private final AliOSSUtils aliOSSUtils;
+
+    /**
+     * 文件上传成功时，更新知识库统计
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void incrementFileStats(Long knowledgeBaseId, long fileSize) {
+        KnowledgeBase kb = this.getById(knowledgeBaseId);
+        if (kb == null) {
+            log.warn("知识库不存在，无法更新统计: knowledgeBaseId={}", knowledgeBaseId);
+            return;
+        }
+        kb.setFileCount((kb.getFileCount() == null ? 0 : kb.getFileCount()) + 1);
+        kb.setTotalSize((kb.getTotalSize() == null ? 0L : kb.getTotalSize()) + fileSize);
+        kb.setUpdatedAt(LocalDateTime.now());
+        kb.setLastUpdatedAt(LocalDateTime.now());
+        this.updateById(kb);
+        log.info("知识库文件统计已更新: knowledgeBaseId={}, fileCount={}, totalSize={}", 
+                knowledgeBaseId, kb.getFileCount(), kb.getTotalSize());
+    }
+
+    /**
+     * 文件处理完成时，更新知识库文档和分块统计
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void incrementDocumentStats(Long knowledgeBaseId, int chunkCount) {
+        KnowledgeBase kb = this.getById(knowledgeBaseId);
+        if (kb == null) {
+            log.warn("知识库不存在，无法更新统计: knowledgeBaseId={}", knowledgeBaseId);
+            return;
+        }
+        kb.setDocumentCount((kb.getDocumentCount() == null ? 0 : kb.getDocumentCount()) + 1);
+        kb.setChunkCount((kb.getChunkCount() == null ? 0 : kb.getChunkCount()) + chunkCount);
+        kb.setUpdatedAt(LocalDateTime.now());
+        kb.setLastUpdatedAt(LocalDateTime.now());
+        this.updateById(kb);
+        log.info("知识库文档统计已更新: knowledgeBaseId={}, documentCount={}, chunkCount={}", 
+                knowledgeBaseId, kb.getDocumentCount(), kb.getChunkCount());
+    }
+
+    /**
+     * 文件删除时，更新知识库统计
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void decrementFileStats(Long knowledgeBaseId, long fileSize, int chunkCount) {
+        KnowledgeBase kb = this.getById(knowledgeBaseId);
+        if (kb == null) {
+            log.warn("知识库不存在，无法更新统计: knowledgeBaseId={}", knowledgeBaseId);
+            return;
+        }
+        kb.setFileCount(Math.max(0, (kb.getFileCount() == null ? 0 : kb.getFileCount()) - 1));
+        kb.setDocumentCount(Math.max(0, (kb.getDocumentCount() == null ? 0 : kb.getDocumentCount()) - 1));
+        kb.setChunkCount(Math.max(0, (kb.getChunkCount() == null ? 0 : kb.getChunkCount()) - chunkCount));
+        kb.setTotalSize(Math.max(0L, (kb.getTotalSize() == null ? 0L : kb.getTotalSize()) - fileSize));
+        kb.setUpdatedAt(LocalDateTime.now());
+        kb.setLastUpdatedAt(LocalDateTime.now());
+        this.updateById(kb);
+        log.info("知识库文件统计已减少: knowledgeBaseId={}, fileCount={}, documentCount={}, chunkCount={}, totalSize={}", 
+                knowledgeBaseId, kb.getFileCount(), kb.getDocumentCount(), kb.getChunkCount(), kb.getTotalSize());
+    }
     /**
      * 创建知识库
      */
