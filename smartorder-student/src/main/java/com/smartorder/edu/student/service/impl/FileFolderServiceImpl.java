@@ -185,11 +185,17 @@ public class FileFolderServiceImpl implements IFileFolderService {
         // 3-查询文件夹下面所有的文件资源
         List<FileResource> fileList = findAllChildFileIds(folderList, userId);
 
-        // 4-先删除OSS上的文件资源（失败不影响DB，可重试）
+        // 4-先删除OSS上的文件资源（仅当没有其他记录引用同一OSS文件时才删除，秒传场景下多个记录共享同一文件）
         fileList.forEach(file -> {
             try {
                 if (file.getFileUrl() != null && !file.getFileUrl().isEmpty()) {
-                    aliOSSUtils.deleteFile(file.getFileUrl());
+                    LambdaQueryWrapper<FileResource> refWrapper = new LambdaQueryWrapper<>();
+                    refWrapper.eq(FileResource::getFileUrl, file.getFileUrl())
+                            .ne(FileResource::getId, file.getId());
+                    Long refCount = fileResourceMapper.selectCount(refWrapper);
+                    if (refCount == 0) {
+                        aliOSSUtils.deleteFile(file.getFileUrl());
+                    }
                 }
             } catch (Exception e) {
                 log.error("删除OSS上的文件资源失败: {}", e.getMessage());

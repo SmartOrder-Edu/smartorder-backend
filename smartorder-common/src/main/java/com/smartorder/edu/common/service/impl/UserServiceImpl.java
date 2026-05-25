@@ -29,6 +29,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static com.smartorder.edu.common.config.YunPanMQConfig.MQ_ROUTING_KEY_FILE_QUOTE;
+import static com.smartorder.edu.common.config.YunPanMQConfig.MQ_YUN_PAN_EXCHANGE;
+
 /**
  * 用户服务实现类
  * @author 谢光湘
@@ -62,10 +65,6 @@ public class UserServiceImpl implements IUserService {
         }
         userMapper.insert(user);
 
-
-        String exchange = "smartOrder.user.file.quota.direct";
-        String routingKey = "user.file.quota";
-
         // 1.创建CorrelationData
         CorrelationData cd = new CorrelationData();
 
@@ -78,7 +77,7 @@ public class UserServiceImpl implements IUserService {
             }
         });
 
-        rabbitTemplate.convertAndSend(exchange, routingKey, userId, new MessagePostProcessor() {
+        rabbitTemplate.convertAndSend(MQ_YUN_PAN_EXCHANGE, MQ_ROUTING_KEY_FILE_QUOTE, userId, new MessagePostProcessor() {
             @Override
             public Message postProcessMessage(Message message) throws AmqpException {
                 message.getMessageProperties()
