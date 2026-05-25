@@ -75,7 +75,7 @@ public class LlmConfig {
         }
 
         return builder.build();
-    } q
+    }
 
     @Bean
     public EmbeddingModel embeddingModel() {
