@@ -197,7 +197,7 @@ milvus:
   host: 117.72.222.3
   port: 19530
   collection-name: rag_chunks  # 集合名称
-  dimension: 1024                           # bge-m3 模型的维度是 1024
+  dimension: 1024                           # text-embedding-v3 模型的维度
 
 # TF-IDF 稀疏向量配置
 tfidf:
@@ -235,6 +235,8 @@ langchain4j:
       model-name: mimo-v2.5-pro
       log-requests: true
       log-responses: true
+      timeout: PT120S
+      max-retries: 2
     streaming-chat-model:
       api-key: ${MIMO_API_KEY}
       # DeepSeek 提供了完全兼容 OpenAI 格式的接口，通常需要在 URL 后加上 /v1
@@ -246,9 +248,10 @@ langchain4j:
       log-requests: true
       log-responses: true
     embedding-model:
-      api-key: ${MIMO_API_KEY}
-      base-url: https://token-plan-cn.xiaomimimo.com/v1
-      model-name: bge-m3
+      api-key: ${DASHSCOPE_API_KEY}
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      model-name: text-embedding-v3
+      dimensions: 1024
 
 # =======================================================
 # Agent LLM 思考模式配置（DeepSeek V4 兼容）

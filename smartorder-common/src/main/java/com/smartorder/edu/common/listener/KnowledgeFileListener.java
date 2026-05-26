@@ -1,13 +1,16 @@
 package com.smartorder.edu.common.listener;
 
 import com.smartorder.edu.common.config.RabbitMQConfig;
+import com.smartorder.edu.common.mapper.KnowledgeChunkMapper;
 import com.smartorder.edu.common.mapper.KnowledgeFileJobMapper;
 import com.smartorder.edu.common.mapper.KnowledgeFileMapper;
 import com.smartorder.edu.common.model.dto.KnowledgeFileDTO;
 import com.smartorder.edu.common.model.dto.KnowledgeFileProcessMessage;
+import com.smartorder.edu.common.model.entity.KnowledgeChunk;
 import com.smartorder.edu.common.model.entity.KnowledgeFile;
 import com.smartorder.edu.common.model.entity.KnowledgeFileJob;
-import com.smartorder.edu.common.rag.OutboxService;
+import com.smartorder.edu.common.model.rag.RagParseResult;
+import com.smartorder.edu.common.rag.*;
 import com.smartorder.edu.common.util.IdGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,9 +19,14 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
-import static com.smartorder.edu.common.common.Constants.ACTIVE;
-import static com.smartorder.edu.common.common.Constants.PENDING;
+import static com.smartorder.edu.common.common.Constants.*;
+import static com.smartorder.edu.common.common.Constants.EMBEDDED;
+import static com.smartorder.edu.common.common.Constants.FAILED;
+import static com.smartorder.edu.common.common.Constants.PROCESSING;
+import static com.smartorder.edu.common.common.Constants.RUNNING;
+import static com.smartorder.edu.common.common.Constants.SUCCESS;
 
 @Slf4j
 @Component
@@ -29,8 +37,24 @@ public class KnowledgeFileListener {
     private final KnowledgeFileJobMapper knowledgeFileJobMapper;
     private final OutboxService outboxService;
 
+
+    private final KnowledgeFileMapper fileMapper;
+
+    private final KnowledgeFileJobMapper jobMapper;
+
+    private final KnowledgeChunkMapper chunkMapper;
+
+    private final RagFileParserService ragFileParserService;
+
+    private final RagPersistService ragPersistService;
+
+    private final VectorIndexService vectorIndexService;
+
+    private final KnowledgeGraphBuildService knowledgeGraphBuildService;
+
+
     @RabbitListener(queues = RabbitMQConfig.QUEUE_FILE_DB_SAVE)
-    public void handleFileDbSave(KnowledgeFileDTO msgDTO) {
+    public void handleFileDbSave(KnowledgeFileDTO msgDTO) throws Exception {
         try {
             log.info("收到文件入库消息: fileHash={}", msgDTO.getFileHash());
             KnowledgeFile file = saveFileAndCreateJob(msgDTO);
@@ -42,7 +66,7 @@ public class KnowledgeFileListener {
     }
 
     @Transactional
-    public KnowledgeFile saveFileAndCreateJob(KnowledgeFileDTO msg) {
+    public KnowledgeFile saveFileAndCreateJob(KnowledgeFileDTO msg) throws Exception {
         IdGenerator.setWorkerId(1);
         KnowledgeFile kFile = new KnowledgeFile();
         kFile.setId(IdGenerator.nextId());
@@ -93,6 +117,7 @@ public class KnowledgeFileListener {
                 processMessage
         );
 
+
         return kFile;
     }
 
@@ -125,4 +150,7 @@ public class KnowledgeFileListener {
             default -> kFile.setMimeType("application/octet-stream");
         }
     }
+
+
+
 }

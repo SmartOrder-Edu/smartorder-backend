@@ -42,6 +42,7 @@ public class OutboxService {
 
     @Scheduled(fixedDelay = 3000)
     public void flushPendingMessages() {
+        log.info("rag定时任务开始执行");
         LambdaQueryWrapper<MessageOutbox> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(MessageOutbox::getStatus,PENDING)
                 .lt(MessageOutbox::getRetryCount, 5)
@@ -52,6 +53,7 @@ public class OutboxService {
         for (MessageOutbox outbox : list) {
             try {
                 rabbitTemplate.convertAndSend(outbox.getExchangeName(), outbox.getRoutingKey(), outbox.getPayload());
+                log.info("rag定时任务执行成功");
                 outbox.setStatus("sent");
                 outbox.setUpdatedAt(LocalDateTime.now());
                 outboxMapper.updateById(outbox);

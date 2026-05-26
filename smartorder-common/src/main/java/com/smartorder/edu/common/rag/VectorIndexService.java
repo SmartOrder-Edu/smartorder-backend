@@ -34,7 +34,7 @@ public class VectorIndexService {
     private String collectionName;
 
     // 嵌入模型批量处理大小
-    private static final int EMBEDDING_BATCH_SIZE = 100;
+    private static final int EMBEDDING_BATCH_SIZE = 10;
 
     public VectorIndexService(MilvusClientV2 milvusClient,
                               @Qualifier("embeddingModel") EmbeddingModel embeddingModel,
@@ -149,11 +149,11 @@ public class VectorIndexService {
         metadata.put("knowledge_base_id", chunk.getKnowledgeBaseId());
         metadata.put("file_id", chunk.getFileId());
         metadata.put("document_id", chunk.getDocumentId());
-        metadata.put("chunk_index", chunk.getChunkIndex());
-        metadata.put("chunk_type", chunk.getChunkType());
+        metadata.put("chunk_index", chunk.getChunkIndex() != null ? chunk.getChunkIndex() : 0);
+        metadata.put("chunk_type", chunk.getChunkType() != null ? chunk.getChunkType() : "text");
         metadata.put("section_title", chunk.getSectionTitle());
         metadata.put("title_path", chunk.getTitlePath());
-        metadata.put("page_number", chunk.getPageNumber());
+        metadata.put("page_number", chunk.getPageNumber() != null ? chunk.getPageNumber() : 1);
         metadata.put("embedding_model", chunk.getEmbeddingModel());
         return metadata;
     }

@@ -1,0 +1,140 @@
+{
+  "user_id": "u_10001",
+  "profile_version": 4,
+
+  "core_profile": {
+    "identity_type": "undergraduate",
+    "major": "软件工程",
+    "grade": "大二",
+    "learning_domain": "计算机基础",
+    "target_course": "操作系统",
+    "primary_goal": "pass_exam",
+    "secondary_goal": "build_project",
+    "deadline": "2026-06-20",
+    "current_level": "basic"
+  },
+
+  "learning_preference": {
+    "preferred_explanation": "case_based",
+    "visual_need": "high",
+    "practice_orientation": "high",
+    "abstraction_tolerance": "medium",
+    "preferred_formats": ["mind_map", "quiz", "code_demo"],
+    "disliked_formats": ["long_text"],
+    "content_density": "medium",
+    "language_style": "plain"
+  },
+
+  "learning_constraints": {
+    "daily_available_time_minutes": 45,
+    "weekly_available_days": 5,
+    "preferred_study_time": "evening",
+    "deadline_pressure": "medium"
+  },
+
+  "learning_state": {
+    "current_stage": "exam_review",
+    "current_topic": "进程调度",
+    "current_task": "进程调度专项训练",
+    "priority_topics": ["进程调度", "死锁", "内存管理"],
+    "next_recommended_action": "完成进程调度计算题训练"
+  },
+
+  "topic_mastery": [
+    {
+      "topic": "进程与线程",
+      "mastery": 0.78,
+      "status": "learning",
+      "last_assessed_at": "2026-04-03",
+      "assessment_source": "quiz",
+      "evidence": "测试正确率80%"
+    },
+    {
+      "topic": "死锁",
+      "mastery": 0.32,
+      "status": "weak",
+      "last_assessed_at": "2026-04-03",
+      "assessment_source": "dialogue",
+      "evidence": "无法准确区分死锁产生的四个必要条件"
+    }
+  ],
+
+  "weakness_profile": {
+    "weak_points": [
+      {
+        "topic": "进程调度",
+        "weakness_type": "calculation_error",
+        "evidence": "平均等待时间计算题错误率较高",
+        "confidence": 0.82
+      },
+      {
+        "topic": "死锁",
+        "weakness_type": "concept_confusion",
+        "evidence": "用户无法准确区分死锁产生的四个必要条件",
+        "confidence": 0.76
+      }
+    ]
+  },
+
+  "behavior_profile": {
+    "activity_level": "new_user",
+    "question_frequency": "medium",
+    "quiz_completion_rate": 0.0,
+    "resource_completion_rate": 0.0
+  },
+
+  "risk_profile": {
+    "risk_level": "medium",
+    "risk_factors": ["prerequisite_gap", "deadline_pressure", "low_quiz_completion"],
+    "intervention_strategy": "short_explanation_with_more_practice"
+  },
+
+  "update_policy": {
+    "high_frequency_fields": [
+      "learning_state",
+      "emotion_profile",
+      "topic_mastery",
+      "weakness_profile",
+      "behavior_profile"
+    ],
+    "medium_frequency_fields": [
+      "personality_profile",
+      "risk_profile",
+      "learning_preference"
+    ],
+    "low_frequency_fields": [
+      "core_profile",
+      "learning_constraints"
+    ],
+    "update_trigger": [
+      "dialogue_summary",
+      "quiz_finished",
+      "resource_completed",
+      "plan_adjusted",
+      "emotion_detected",
+      "learning_behavior_changed"
+    ]
+  },
+
+  "emotion_profile": {
+    "current_mood": "anxious",
+    "mood_intensity": "medium",
+    "stress_level": "medium",
+    "motivation_level": "medium",
+    "frustration_points": ["进程调度计算题反复出错", "考试时间临近"],
+    "support_strategy": "encourage_with_small_steps",
+    "last_detected_at": "2026-04-03",
+    "confidence": 0.65
+  },
+
+  "personality_profile": {
+    "learning_persona": "practice_driven",
+    "self_regulation": "medium",
+    "persistence": "medium",
+    "exploration_tendency": "low",
+    "structure_need": "high",
+    "feedback_preference": "direct",
+    "collaboration_preference": "ai_guided",
+    "confidence": 0.55
+  }
+}

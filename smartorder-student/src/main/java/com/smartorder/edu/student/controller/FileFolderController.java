@@ -40,13 +40,12 @@ public class FileFolderController {
     private final IFileResourceService fileResourceService;
 
     // 文件夹
-    // todo
     @GetMapping("/folders/tree")
     @Operation(summary = "获取文件夹树", description = "获取当前用户的文件夹树形结构")
-    public Result<List<FileFolderContentVO>> getTree() {
+    public Result<FileFolderContentVO> getTree() {
         Claims claims = ThreadLocalUtils.get();
         Long userId = claims.get("userId", Long.class);
-        List<FileFolderContentVO> tree = fileFolderService.getFolderTree(userId);
+        FileFolderContentVO tree = fileFolderService.getFolderTree(userId);
         return Result.success(tree);
     }
 
@@ -94,6 +93,15 @@ public class FileFolderController {
         Long userId = claims.get("userId", Long.class);
         fileFolderService.moveFolder(id, targetParentId, userId);
         return Result.success("文件夹移动成功");
+    }
+
+    @PostMapping("/folders/batch-move")
+    @Operation(summary = "批量移动文件夹和文件", description = "将多个文件夹和文件批量移动到目标文件夹")
+    public Result<String> batchMoveToFolder(@RequestBody FileFolderContentVO vo) {
+        Claims claims = ThreadLocalUtils.get();
+        Long userId = claims.get("userId", Long.class);
+        fileFolderService.batchMoveToFolder(vo, userId);
+        return Result.success("批量移动成功");
     }
 
     // 文件资源
@@ -197,11 +205,12 @@ public class FileFolderController {
 
     @GetMapping("/download/{id}")
     @Operation(summary = "下载文件", description = "根据文件ID下载文件")
-    public void downloadFile(@PathVariable Long id, HttpServletResponse response) throws IOException {
+    public void downloadFile(@PathVariable String id, HttpServletResponse response) throws IOException {
+        Long downloadFileId = Long.parseLong(id);
         Claims claims = ThreadLocalUtils.get();
         Long userId = claims.get("userId", Long.class);
 
-        IFileResourceService.FileDownloadResult result = fileResourceService.downloadFile(id, userId);
+        IFileResourceService.FileDownloadResult result = fileResourceService.downloadFile(downloadFileId, userId);
         InputStream inputStream = null;
         try {
             inputStream = result.inputStream();
@@ -232,7 +241,7 @@ public class FileFolderController {
             }
             outputStream.flush();
         } catch (Exception e) {
-            log.error("文件下载失败, id={}", id, e);
+            log.error("文件下载失败, id={}", downloadFileId, e);
             if (!response.isCommitted()) {
                 response.reset();
                 response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
@@ -247,5 +256,96 @@ public class FileFolderController {
                 } catch (Exception ignored) {}
             }
         }
+    }
+
+    @GetMapping("/preview/{id}")
+    @Operation(summary = "预览文件", description = "根据文件ID在线预览文件")
+    public void previewFile(@PathVariable String id, HttpServletResponse response) throws IOException {
+        Long downloadFileId = Long.parseLong(id);
+        Claims claims = ThreadLocalUtils.get();
+        Long userId = claims.get("userId", Long.class);
+
+        IFileResourceService.FileDownloadResult result = fileResourceService.downloadFile(downloadFileId, userId);
+        InputStream inputStream = null;
+        try {
+            inputStream = result.inputStream();
+
+            response.reset();
+            
+            // 根据文件类型设置 Content-Type
+            String fileType = result.fileType() != null ? result.fileType().toLowerCase() : "";
+            String contentType = getContentType(fileType);
+            response.setContentType(contentType);
+            response.setCharacterEncoding("UTF-8");
+
+            String fileName = result.fileName() != null ? result.fileName() : "未命名文件";
+            if (fileType != null && !fileType.isEmpty()) {
+                String extension = "." + fileType;
+                if (!fileName.endsWith(extension)) {
+                    fileName += extension;
+                }
+            }
+            String encodedName = URLEncoder.encode(fileName, "UTF-8").replace("+", "%20");
+            
+            // 设置为 inline 在线预览，而非 attachment 下载
+            response.setHeader("Content-Disposition", "inline; filename*=UTF-8''" + encodedName);
+            response.setHeader("Content-Length", String.valueOf(result.fileSize()));
+            response.setHeader("Cache-Control", "no-cache");
+            response.setHeader("Access-Control-Expose-Headers", "Content-Disposition, Content-Length");
+
+            byte[] buffer = new byte[8192];
+            int len;
+            OutputStream outputStream = response.getOutputStream();
+            while ((len = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, len);
+            }
+            outputStream.flush();
+        } catch (Exception e) {
+            log.error("文件预览失败, id={}", downloadFileId, e);
+            if (!response.isCommitted()) {
+                response.reset();
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                response.setContentType("application/json");
+                response.setCharacterEncoding("UTF-8");
+                response.getWriter().write("{\"code\":500,\"msg\":\"文件预览失败\"}");
+            }
+        } finally {
+            if (inputStream != null) {
+                try {
+                    inputStream.close();
+                } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    private String getContentType(String fileType) {
+        if (fileType == null) {
+            return "application/octet-stream";
+        }
+        return switch (fileType.toLowerCase()) {
+            case "png" -> "image/png";
+            case "jpg", "jpeg" -> "image/jpeg";
+            case "gif" -> "image/gif";
+            case "webp" -> "image/webp";
+            case "pdf" -> "application/pdf";
+            case "mp4" -> "video/mp4";
+            case "webm" -> "video/webm";
+            case "mp3" -> "audio/mpeg";
+            case "wav" -> "audio/wav";
+            case "txt" -> "text/plain;charset=UTF-8";
+            case "html" -> "text/html;charset=UTF-8";
+            case "css" -> "text/css;charset=UTF-8";
+            case "js" -> "application/javascript;charset=UTF-8";
+            case "ts" -> "text/plain;charset=UTF-8";
+            case "json" -> "application/json;charset=UTF-8";
+            case "xml" -> "application/xml;charset=UTF-8";
+            case "java" -> "text/plain;charset=UTF-8";
+            case "py" -> "text/plain;charset=UTF-8";
+            case "md" -> "text/plain;charset=UTF-8";
+            case "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            case "xls" -> "application/vnd.ms-excel";
+            case "csv" -> "text/csv;charset=UTF-8";
+            default -> "application/octet-stream";
+        };
     }
 }

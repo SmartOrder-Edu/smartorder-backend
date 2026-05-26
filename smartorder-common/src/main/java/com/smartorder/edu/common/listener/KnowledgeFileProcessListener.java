@@ -76,11 +76,11 @@ public class KnowledgeFileProcessListener {
             updateFileStatus(file.getId(), PROCESSING, null, null);
             updateJob(jobId, "解析文件并生成Markdown", 20);
             RagParseResult parseResult = ragFileParserService.parseForRag(file);
-            updateFileStatus(file.getId(),SUCCESS,PROCESSING, null);
+            updateFileStatus(file.getId(), SUCCESS, PROCESSING, null);
 
             updateJob(jobId, "保存文档和分块", 50);
             RagPersistService.PersistResult persistResult = ragPersistService.saveParseResult(parseResult);
-            updateFileStatus(file.getId(),SUCCESS, SUCCESS, PROCESSING);
+            updateFileStatus(file.getId(), SUCCESS, SUCCESS, PROCESSING);
 
             updateJob(jobId, "构建知识图谱", 60);
             try {
@@ -92,6 +92,7 @@ public class KnowledgeFileProcessListener {
             }
 
             updateJob(jobId, "写入向量数据库", 75);
+
             vectorIndexService.indexChunks(persistResult.chunks());
             markChunksEmbedded(persistResult.chunks());
             updateFileStatus(file.getId(), SUCCESS, SUCCESS, SUCCESS);
@@ -181,4 +182,6 @@ public class KnowledgeFileProcessListener {
         file.setUpdatedAt(LocalDateTime.now());
         fileMapper.updateById(file);
     }
+
+
 }
