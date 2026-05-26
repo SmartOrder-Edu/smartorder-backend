@@ -57,4 +57,7 @@ public interface ConversationMessageMapper extends BaseMapper<ConversationMessag
 
     @Select("SELECT COUNT(*) FROM conversation_message WHERE conversation_id = #{conversationId} AND user_id = #{userId} AND is_deleted = 0")
     int countByConversationId(@Param("conversationId") String conversationId, @Param("userId") Long userId);
+
+    @Update("UPDATE conversation_message SET is_deleted = 1 WHERE conversation_id = #{conversationId} AND user_id = #{userId} AND is_deleted = 0")
+    int softDeleteByConversationId(@Param("conversationId") String conversationId, @Param("userId") Long userId);
 }
