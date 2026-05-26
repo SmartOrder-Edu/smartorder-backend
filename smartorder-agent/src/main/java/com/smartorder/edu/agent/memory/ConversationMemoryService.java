@@ -105,21 +105,22 @@ public class ConversationMemoryService {
      * 保存用户消息
      */
     public void saveUserMessage(String conversationId, Long userId, String content) {
-        save(conversationId, userId, "user", content, null, null, null);
+        save(conversationId, userId, "user", content, null, null, null, null);
     }
 
     /**
      * 保存助手消息（含 reasoning_content，thinking mode 必须回传给 API）
      */
-    public void saveAssistantMessage(String conversationId, Long userId, String content, String reasoningContent, String traceId) {
-        save(conversationId, userId, "assistant", content, null, reasoningContent, traceId);
+    public void saveAssistantMessage(String conversationId, Long userId, String content,
+                                      String reasoningContent, String traceId, String metadataJson) {
+        save(conversationId, userId, "assistant", content, null, reasoningContent, traceId, metadataJson);
     }
 
     /**
      * 保存工具消息
      */
     public void saveToolMessage(String conversationId, Long userId, String toolName, String content) {
-        save(conversationId, userId, "tool", content, toolName, null, null);
+        save(conversationId, userId, "tool", content, toolName, null, null, null);
     }
 
     /**
@@ -131,7 +132,8 @@ public class ConversationMemoryService {
 
     // ============ Private ============
 
-    private void save(String conversationId, Long userId, String role, String content, String toolName, String reasoningContent, String traceId) {
+    private void save(String conversationId, Long userId, String role, String content,
+                       String toolName, String reasoningContent, String traceId, String metadataJson) {
         ConversationMessage entity = new ConversationMessage();
         entity.setConversationId(conversationId);
         entity.setUserId(userId);
@@ -140,6 +142,7 @@ public class ConversationMemoryService {
         entity.setToolName(toolName);
         entity.setReasoningContent(reasoningContent);
         entity.setTraceId(traceId);
+        entity.setMetadataJson(metadataJson);
         entity.setIsCompressed(0);
         entity.setIsDeleted(0);
         messageMapper.insert(entity);

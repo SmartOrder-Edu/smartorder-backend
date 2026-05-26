@@ -57,6 +57,7 @@ public class ConversationController {
             vo.setToolName(e.getToolName());
             vo.setTraceId(e.getTraceId());
             vo.setReasoningContent(e.getReasoningContent());
+            vo.setReasoningSegments(e.getMetadataJson());
             vo.setCreateTime(e.getCreateTime());
             return vo;
         }).toList();

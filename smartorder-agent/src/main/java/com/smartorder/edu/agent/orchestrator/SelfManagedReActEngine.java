@@ -10,6 +10,7 @@ import com.smartorder.edu.agent.tool.ToolInvokeContext;
 import com.smartorder.edu.agent.trace.AgentEventType;
 import com.smartorder.edu.agent.trace.AgentRuntimeContext;
 import com.smartorder.edu.agent.trace.TraceEventDispatcher;
+import com.alibaba.fastjson.JSON;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
@@ -28,6 +29,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -74,7 +77,11 @@ public class SelfManagedReActEngine {
 
         // 4. ReAct 循环 — 每轮非流式 LLM 返回的 AiMessage.thinking() 即为真实思考过程
         String finalAnswer = null;
-        String finalThinking = null;
+        StringBuilder allThinkingBuilder = new StringBuilder();
+
+        // 追踪思考分段（与工具调用交错），用于前端还原实时展示效果
+        List<Map<String, Object>> reasoningSegments = new ArrayList<>();
+        StringBuilder currentThinkingBuilder = new StringBuilder();
 
         for (int round = 1; round <= MAX_TOOL_ROUNDS; round++) {
             log.info("[ReAct] 第{}轮开始, traceId={}, tools={}",
@@ -106,13 +113,23 @@ public class SelfManagedReActEngine {
                 dispatcher.emit(emitter, runtimeContext, AgentEventType.THINK_DELTA, Map.of(
                         "text", thinking
                 ));
+                allThinkingBuilder.append(thinking);
+                currentThinkingBuilder.append(thinking);
             }
 
             // 5. 检查是否有工具调用
             if (aiMessage.hasToolExecutionRequests()) {
                 messages.add(aiMessage);
 
-                for (ToolExecutionRequest toolRequest : aiMessage.toolExecutionRequests()) {
+                List<ToolExecutionRequest> toolRequests = aiMessage.toolExecutionRequests();
+                for (int i = 0; i < toolRequests.size(); i++) {
+                    ToolExecutionRequest toolRequest = toolRequests.get(i);
+
+                    // 第一个工具挂载到当前思考分段，后续工具创建空思考分段
+                    Map<String, Object> seg = new HashMap<>();
+                    seg.put("thinkingText", i == 0 ? currentThinkingBuilder.toString() : "");
+                    currentThinkingBuilder.setLength(0);
+
                     ToolInvokeContext toolContext = ToolInvokeContext.builder()
                             .userId(request.getUserId())
                             .conversationId(runtimeContext.getConversationId())
@@ -123,8 +140,18 @@ public class SelfManagedReActEngine {
                             .agentName("MainReActAgent")
                             .build();
 
+                    long toolStart = System.currentTimeMillis();
                     try {
                         String toolResult = toolAdapter.execute(toolRequest, toolContext);
+                        long durationMs = System.currentTimeMillis() - toolStart;
+
+                        Map<String, Object> toolCall = new HashMap<>();
+                        toolCall.put("toolName", toolRequest.name());
+                        toolCall.put("status", "completed");
+                        toolCall.put("arguments", toolRequest.arguments());
+                        toolCall.put("result", toolResult);
+                        toolCall.put("durationMs", durationMs);
+                        seg.put("toolCall", toolCall);
 
                         // 保存工具消息到 DB
                         memoryService.saveToolMessage(
@@ -135,18 +162,29 @@ public class SelfManagedReActEngine {
 
                     } catch (Exception e) {
                         log.error("[ReAct] 工具执行失败: tool={}", toolRequest.name(), e);
+                        long durationMs = System.currentTimeMillis() - toolStart;
+
+                        Map<String, Object> toolCall = new HashMap<>();
+                        toolCall.put("toolName", toolRequest.name());
+                        toolCall.put("status", "failed");
+                        toolCall.put("arguments", toolRequest.arguments());
+                        toolCall.put("durationMs", durationMs);
+                        seg.put("toolCall", toolCall);
+
                         messages.add(ToolExecutionResultMessage.from(toolRequest,
                                 "工具执行失败: " + e.getMessage()));
                     }
+
+                    reasoningSegments.add(seg);
                 }
 
                 continue;
             }
 
             // 6. 无工具调用 → 使用流式模型逐 token 输出最终回答
-            String[] result = streamFinalAnswer(messages, tools, emitter, runtimeContext);
+            String[] result = streamFinalAnswer(messages, tools, emitter, runtimeContext,
+                    allThinkingBuilder, currentThinkingBuilder, reasoningSegments);
             finalAnswer = result[0];
-            finalThinking = result[1];
 
             log.info("[ReAct] 完成, traceId={}, rounds={}", runtimeContext.getTraceId(), round);
             break;
@@ -161,10 +199,12 @@ public class SelfManagedReActEngine {
             ));
         }
 
-        // 8. 保存助手回复（含 reasoning_content，thinking mode 要求回传）
+        // 8. 保存助手回复（含 reasoning_content + 思考分段，用于前端还原实时展示效果）
+        String reasoningContent = allThinkingBuilder.length() > 0 ? allThinkingBuilder.toString() : null;
+        String segmentsJson = reasoningSegments.isEmpty() ? null : JSON.toJSONString(reasoningSegments);
         memoryService.saveAssistantMessage(
-                runtimeContext.getConversationId(), request.getUserId(), finalAnswer, finalThinking,
-                runtimeContext.getTraceId());
+                runtimeContext.getConversationId(), request.getUserId(), finalAnswer, reasoningContent,
+                runtimeContext.getTraceId(), segmentsJson);
 
         // 9. 异步检查是否需要压缩
         compressService.checkAndCompress(runtimeContext.getConversationId(), request.getUserId());
@@ -180,7 +220,10 @@ public class SelfManagedReActEngine {
             List<ChatMessage> messages,
             List<ToolSpecification> tools,
             SseEmitter emitter,
-            AgentRuntimeContext runtimeContext
+            AgentRuntimeContext runtimeContext,
+            StringBuilder allThinkingBuilder,
+            StringBuilder currentThinkingBuilder,
+            List<Map<String, Object>> reasoningSegments
     ) {
         StringBuilder answerBuilder = new StringBuilder();
         StringBuilder thinkingBuilder = new StringBuilder();
@@ -199,6 +242,8 @@ public class SelfManagedReActEngine {
             public void onPartialThinking(PartialThinking partialThinking) {
                 if (partialThinking != null && partialThinking.text() != null) {
                     thinkingBuilder.append(partialThinking.text());
+                    allThinkingBuilder.append(partialThinking.text());
+                    currentThinkingBuilder.append(partialThinking.text());
                     dispatcher.emit(emitter, runtimeContext, AgentEventType.THINK_DELTA, Map.of(
                             "text", partialThinking.text()
                     ));
@@ -241,6 +286,14 @@ public class SelfManagedReActEngine {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("[ReAct] 流式输出被中断, traceId={}", runtimeContext.getTraceId());
+        }
+
+        // 流式阶段结束后，将剩余的思考文本作为最后一个分段（无工具调用）
+        if (currentThinkingBuilder.length() > 0) {
+            Map<String, Object> finalSeg = new HashMap<>();
+            finalSeg.put("thinkingText", currentThinkingBuilder.toString());
+            reasoningSegments.add(finalSeg);
+            currentThinkingBuilder.setLength(0);
         }
 
         return new String[]{
