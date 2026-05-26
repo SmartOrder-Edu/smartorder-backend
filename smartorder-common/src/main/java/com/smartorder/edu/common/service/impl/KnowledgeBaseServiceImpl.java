@@ -5,6 +5,7 @@ import com.smartorder.edu.common.mapper.*;
 import com.smartorder.edu.common.model.dto.KnowledgeBaseReqDTO;
 import com.smartorder.edu.common.model.entity.*;
 import com.smartorder.edu.common.model.vo.KnowledgeBaseListRespVO;
+import com.smartorder.edu.common.model.vo.KnowledgeBaseStatsVO;
 import com.smartorder.edu.common.rag.VectorIndexService;
 import com.smartorder.edu.common.service.IKnowledgeBaseService;
 import com.smartorder.edu.common.service.INeo4jKnowledgeGraphService;
@@ -275,5 +276,35 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KnowledgeBaseMapper, K
             log.error("删除知识库失败，knowledgeBaseId={}", knowledgeBaseId, e);
             throw new RuntimeException("删除知识库失败: " + e.getMessage(), e);
         }
+    }
+
+    @Override
+    public KnowledgeBaseStatsVO getKnowledgeBaseStats(Long currentUserId) {
+        KnowledgeBaseStatsVO stats = new KnowledgeBaseStatsVO();
+
+        // 统计知识库数量（排除已删除的）
+        long knowledgeBaseCount = this.lambdaQuery()
+                .eq(KnowledgeBase::getUserId, currentUserId)
+                .ne(KnowledgeBase::getStatus, "deleted")
+                .count();
+        stats.setKnowledgeBaseCount((int) knowledgeBaseCount);
+
+        // 统计文件数量（排除已删除的）
+        long fileCount = knowledgeFileMapper.selectCount(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<KnowledgeFile>()
+                        .eq(KnowledgeFile::getUserId, currentUserId)
+                        .ne(KnowledgeFile::getStatus, "deleted")
+        );
+        stats.setFileCount((int) fileCount);
+
+        // 统计知识切片数量（排除已删除的）
+        long chunkCount = knowledgeChunkMapper.selectCount(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<KnowledgeChunk>()
+                        .eq(KnowledgeChunk::getUserId, currentUserId)
+                        .ne(KnowledgeChunk::getStatus, "deleted")
+        );
+        stats.setChunkCount((int) chunkCount);
+
+        return stats;
     }
 }
