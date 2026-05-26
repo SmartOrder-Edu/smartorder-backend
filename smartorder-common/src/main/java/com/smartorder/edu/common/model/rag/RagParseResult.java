@@ -20,6 +20,7 @@ public class RagParseResult {
     private String rawText;
     private String markdown;
     private String documentSummary;
+    private Integer pageCount;
     private List<RagParentChunk> parentChunks;
     private List<RagChildChunk> childChunks;
 }

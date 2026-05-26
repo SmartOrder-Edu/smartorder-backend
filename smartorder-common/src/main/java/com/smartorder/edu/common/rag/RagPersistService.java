@@ -6,6 +6,7 @@ import com.smartorder.edu.common.mapper.KnowledgeDocumentMapper;
 import com.smartorder.edu.common.model.entity.KnowledgeChunk;
 import com.smartorder.edu.common.model.entity.KnowledgeDocument;
 import com.smartorder.edu.common.model.rag.RagChildChunk;
+import com.smartorder.edu.common.model.rag.RagParentChunk;
 import com.smartorder.edu.common.model.rag.RagParseResult;
 import com.smartorder.edu.common.util.AliOSSUtils;
 import com.smartorder.edu.common.util.TextHashUtils;
@@ -20,7 +21,9 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static com.smartorder.edu.common.common.Constants.ACTIVE;
 import static com.smartorder.edu.common.common.Constants.PENDING;
@@ -68,6 +71,34 @@ public class RagPersistService {
 
         documentMapper.insert(document);
 
+        // 保存父块，建立 parentChunkKey -> 数据库ID 映射
+        Map<String, Long> parentKeyToIdMap = new HashMap<>();
+        if (result.getParentChunks() != null) {
+            for (RagParentChunk parent : result.getParentChunks()) {
+                KnowledgeChunk chunk = new KnowledgeChunk();
+                chunk.setUserId(result.getUserId());
+                chunk.setKnowledgeBaseId(result.getKnowledgeBaseId());
+                chunk.setFileId(result.getFileId());
+                chunk.setDocumentId(document.getId());
+                chunk.setChunkIndex(parent.getChunkIndex());
+                chunk.setChunkType("parent");
+                chunk.setContent(parent.getContent());
+                chunk.setContentPreview(TextHashUtils.preview(parent.getContent(), 500));
+                chunk.setContentHash(TextHashUtils.sha256(parent.getContent()));
+                chunk.setTitlePath(parent.getHeadingPath());
+                chunk.setSectionTitle(parent.getTitle());
+                chunk.setVectorCollection("rag_chunks");
+                chunk.setEmbeddingStatus(PENDING);
+                chunk.setStatus(ACTIVE);
+                chunk.setCreatedAt(LocalDateTime.now());
+                chunk.setUpdatedAt(LocalDateTime.now());
+                chunkMapper.insert(chunk);
+                chunk.setVectorId("chunk_" + chunk.getId());
+                chunkMapper.updateById(chunk);
+                parentKeyToIdMap.put(parent.getParentChunkKey(), chunk.getId());
+            }
+        }
+
         List<KnowledgeChunk> chunks = new ArrayList<>();
         int index = 0;
         for (RagChildChunk child : result.getChildChunks()) {
@@ -92,6 +123,7 @@ public class RagPersistService {
             chunk.setEmbeddingModel("bge-m3");
             chunk.setEmbeddingStatus(PENDING);
             chunk.setMetadata(JSON.toJSONString(child.getMetadata()));
+            chunk.setParentChunkId(parentKeyToIdMap.get(child.getParentChunkKey()));
             chunk.setStatus(ACTIVE);
             chunk.setCreatedAt(LocalDateTime.now());
             chunk.setUpdatedAt(LocalDateTime.now());

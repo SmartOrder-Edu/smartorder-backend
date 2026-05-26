@@ -69,6 +69,7 @@ public class RagFileParserService {
                     .rawText(rawText)
                     .markdown(markdown)
                     .documentSummary(chunkResult.getDocumentSummary())
+                    .pageCount(pageCount)
                     .parentChunks(chunkResult.getParentChunks())
                     .childChunks(chunkResult.getChildChunks())
                     .build();

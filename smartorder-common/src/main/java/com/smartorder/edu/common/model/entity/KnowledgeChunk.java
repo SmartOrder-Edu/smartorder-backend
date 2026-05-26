@@ -20,6 +20,13 @@ public class KnowledgeChunk {
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;
 
+
+    /**
+     * 父分块ID（你要的此字段已补上）
+     */
+    @TableField("parent_chunk_id")
+    private Long parentChunkId;
+
     /**
      * 所属用户ID，用于多用户数据隔离
      */

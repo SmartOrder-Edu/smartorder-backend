@@ -14,8 +14,11 @@ import dev.langchain4j.model.input.Prompt;
 import dev.langchain4j.model.input.PromptTemplate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
+
+import static com.smartorder.edu.common.config.LlmConfig.RAG_CHAT_MODEL_BEAN;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -34,6 +37,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class KnowledgeGraphBuildService {
 
+    @Qualifier(RAG_CHAT_MODEL_BEAN)
     private final ChatModel chatModel;
     private final INeo4jKnowledgeGraphService neo4jService;
 
