@@ -63,6 +63,21 @@ public class Neo4jKnowledgeGraphServiceImpl implements INeo4jKnowledgeGraphServi
             case "PART_OF":
                 sourceNode.getParentNodes().add(targetNode);
                 break;
+            case "CAUSE_EFFECT":
+                sourceNode.getCauseEffectNodes().add(targetNode);
+                break;
+            case "COMPARE_WITH":
+                sourceNode.getCompareNodes().add(targetNode);
+                break;
+            case "STEP_OF":
+                sourceNode.getStepOfNodes().add(targetNode);
+                break;
+            case "RECOMMEND":
+                sourceNode.getRecommendNodes().add(targetNode);
+                break;
+            case "DEPENDS_ON":
+                sourceNode.getDependsOnNodes().add(targetNode);
+                break;
             default:
                 sourceNode.getRelatedNodes().add(targetNode);
                 break;
@@ -182,6 +197,8 @@ public class Neo4jKnowledgeGraphServiceImpl implements INeo4jKnowledgeGraphServi
             edgeVO.setSource((String) rel.get("sourceId"));
             edgeVO.setTarget((String) rel.get("targetId"));
             edgeVO.setRelationType((String) rel.get("relationType"));
+            edgeVO.setWeight(rel.get("weight") != null ? ((Number) rel.get("weight")).doubleValue() : null);
+            edgeVO.setDescription((String) rel.get("description"));
             edgeVOs.add(edgeVO);
         }
         vo.setEdges(edgeVOs);

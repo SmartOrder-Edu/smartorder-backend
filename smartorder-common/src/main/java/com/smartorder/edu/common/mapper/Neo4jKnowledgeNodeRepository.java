@@ -109,7 +109,8 @@ public interface Neo4jKnowledgeNodeRepository extends Neo4jRepository<Neo4jKnowl
      */
     @Query("MATCH (n:KnowledgeNode {file_id: $fileId})-[r]-(m:KnowledgeNode {file_id: $fileId}) " +
            "WHERE id(n) < id(m) " +
-           "RETURN n.id AS sourceId, m.id AS targetId, type(r) AS relationType")
+           "RETURN n.id AS sourceId, m.id AS targetId, type(r) AS relationType, " +
+           "r.weight AS weight, r.description AS description")
     List<Map<String, Object>> findRelationshipsByFileId(@Param("fileId") Long fileId);
 
     /**
