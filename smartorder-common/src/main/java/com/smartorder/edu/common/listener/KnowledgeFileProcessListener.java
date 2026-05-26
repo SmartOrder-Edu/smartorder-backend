@@ -92,6 +92,10 @@ public class KnowledgeFileProcessListener {
             RagPersistService.PersistResult persistResult = ragPersistService.saveParseResult(parseResult);
             updateFileStatus(file.getId(), SUCCESS, SUCCESS, PROCESSING);
 
+            // 保存 chunk 数量到 KnowledgeFile 冗余字段
+            file.setChunkCount(persistResult.chunks().size());
+            fileMapper.updateById(file);
+
             updateJob(jobId, "构建知识图谱", 60);
             try {
                 int nodesCreated = knowledgeGraphBuildService.buildGraphFromChunks(

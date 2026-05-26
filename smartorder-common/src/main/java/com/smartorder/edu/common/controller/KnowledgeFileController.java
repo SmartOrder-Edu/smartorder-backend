@@ -1,6 +1,9 @@
 package com.smartorder.edu.common.controller;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.smartorder.edu.common.model.dto.ChunkUploadDTO;
+import com.smartorder.edu.common.model.vo.KnowledgeFilePageVO;
+import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.service.IKnowledgeFileService;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import io.jsonwebtoken.Claims;
@@ -62,5 +65,19 @@ public class KnowledgeFileController {
         Long userId = claims.get("userId", Long.class);
         knowledgeFileService.deleteKnowledgeFile(id, userId);
         return "文件删除成功";
+    }
+
+    /**
+     * 5. 分页查询知识库下的文件
+     */
+    @GetMapping("/list")
+    public Result<Page<KnowledgeFilePageVO>> getFilesByKnowledgeBaseId(
+            @RequestParam Long knowledgeBaseId,
+            @RequestParam(defaultValue = "1") Integer pageNum,
+            @RequestParam(defaultValue = "10") Integer pageSize) {
+        Claims claims = ThreadLocalUtils.get();
+        Long userId = claims.get("userId", Long.class);
+        Page<KnowledgeFilePageVO> page = knowledgeFileService.getFilesByKnowledgeBaseId(knowledgeBaseId, userId, pageNum, pageSize);
+        return Result.success(page);
     }
 }

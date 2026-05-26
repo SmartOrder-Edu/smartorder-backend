@@ -2,18 +2,21 @@ package com.smartorder.edu.common.service.impl;
 
 import com.aliyun.oss.model.PartETag;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.smartorder.edu.common.config .RabbitMQConfig;
 import com.smartorder.edu.common.mapper.*;
 import com.smartorder.edu.common.model.dto.ChunkUploadDTO;
 import com.smartorder.edu.common.model.dto.KnowledgeFileDTO;
 import com.smartorder.edu.common.model.entity.*;
+import com.smartorder.edu.common.model.vo.KnowledgeFilePageVO;
 import com.smartorder.edu.common.rag.VectorIndexService;
 import com.smartorder.edu.common.service.IKnowledgeFileService;
 import com.smartorder.edu.common.service.INeo4jKnowledgeGraphService;
 import com.smartorder.edu.common.util.AliOSSUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -26,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import static com.smartorder.edu.common.common.Constants.*;
 
@@ -232,5 +236,40 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
             log.error("删除文件失败，fileId={}", fileId, e);
             throw new RuntimeException("删除文件失败: " + e.getMessage(), e);
         }
+    }
+
+    @Override
+    public Page<KnowledgeFilePageVO> getFilesByKnowledgeBaseId(Long knowledgeBaseId, Long userId, Integer pageNum, Integer pageSize) {
+        // 校验知识库是否存在且属于当前用户
+        KnowledgeBase kb = knowledgeBaseService.lambdaQuery()
+                .eq(KnowledgeBase::getId, knowledgeBaseId)
+                .eq(KnowledgeBase::getUserId, userId)
+                .ne(KnowledgeBase::getStatus, "deleted")
+                .one();
+        if (kb == null) {
+            throw new RuntimeException("知识库不存在或无权访问");
+        }
+
+        // 分页查询文件
+        Page<KnowledgeFile> page = new Page<>(pageNum, pageSize);
+        LambdaQueryWrapper<KnowledgeFile> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(KnowledgeFile::getKnowledgeBaseId, knowledgeBaseId)
+                .ne(KnowledgeFile::getStatus, "deleted")
+                .orderByDesc(KnowledgeFile::getCreatedAt);
+
+        Page<KnowledgeFile> result = this.page(page, wrapper);
+
+        // 转换为 VO
+        List<KnowledgeFilePageVO> voList = result.getRecords().stream()
+                .map(file -> {
+                    KnowledgeFilePageVO vo = new KnowledgeFilePageVO();
+                    BeanUtils.copyProperties(file, vo);
+                    return vo;
+                })
+                .collect(Collectors.toList());
+
+        Page<KnowledgeFilePageVO> voPage = new Page<>(pageNum, pageSize, result.getTotal());
+        voPage.setRecords(voList);
+        return voPage;
     }
 }
