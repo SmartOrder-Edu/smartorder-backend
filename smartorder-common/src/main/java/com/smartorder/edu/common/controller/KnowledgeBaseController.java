@@ -1,6 +1,7 @@
 package com.smartorder.edu.common.controller;
 
 
+import com.smartorder.edu.common.model.vo.KnowledgeBaseDetailStatsVO;
 import com.smartorder.edu.common.model.vo.KnowledgeBaseListRespVO;
 import com.smartorder.edu.common.model.vo.KnowledgeBaseStatsVO;
 import com.smartorder.edu.common.service.IKnowledgeBaseService;
@@ -105,4 +106,15 @@ public class KnowledgeBaseController {
         Long currentUserId = claims.get("userId", Long.class);
         return knowledgeBaseService.getKnowledgeBaseStats(currentUserId);
     }
+
+    /**
+     * 获取指定知识库的详细统计信息
+     */
+    @GetMapping("/{id}/stats")
+    public KnowledgeBaseDetailStatsVO getKnowledgeBaseDetailStats(@PathVariable Long id) {
+        Claims claims = ThreadLocalUtils.get();
+        Long currentUserId = claims.get("userId", Long.class);
+        return knowledgeBaseService.getKnowledgeBaseDetailStats(id, currentUserId);
+    }
+
 }

@@ -5,6 +5,7 @@ import com.smartorder.edu.common.mapper.*;
 import com.smartorder.edu.common.model.dto.KnowledgeBaseReqDTO;
 import com.smartorder.edu.common.model.entity.*;
 import com.smartorder.edu.common.model.vo.KnowledgeBaseListRespVO;
+import com.smartorder.edu.common.model.vo.KnowledgeBaseDetailStatsVO;
 import com.smartorder.edu.common.model.vo.KnowledgeBaseStatsVO;
 import com.smartorder.edu.common.rag.VectorIndexService;
 import com.smartorder.edu.common.service.IKnowledgeBaseService;
@@ -304,6 +305,38 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KnowledgeBaseMapper, K
                         .ne(KnowledgeChunk::getStatus, "deleted")
         );
         stats.setChunkCount((int) chunkCount);
+
+        return stats;
+    }
+
+    @Override
+    public KnowledgeBaseDetailStatsVO getKnowledgeBaseDetailStats(Long knowledgeBaseId, Long currentUserId) {
+        // 校验知识库是否存在且属于当前用户
+        KnowledgeBase kb = this.lambdaQuery()
+                .eq(KnowledgeBase::getId, knowledgeBaseId)
+                .eq(KnowledgeBase::getUserId, currentUserId)
+                .ne(KnowledgeBase::getStatus, "deleted")
+                .one();
+        if (kb == null) {
+            throw new RuntimeException("知识库不存在或无权访问");
+        }
+
+        KnowledgeBaseDetailStatsVO stats = new KnowledgeBaseDetailStatsVO();
+
+        // 总文件数（使用冗余字段）
+        stats.setFileCount(kb.getFileCount() != null ? kb.getFileCount() : 0);
+
+        // 总切片数（使用冗余字段）
+        stats.setChunkCount(kb.getChunkCount() != null ? kb.getChunkCount() : 0);
+
+        // 向量化完成文件数（embedding_status = 'success'）
+        long embeddedCount = knowledgeFileMapper.selectCount(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<KnowledgeFile>()
+                        .eq(KnowledgeFile::getKnowledgeBaseId, knowledgeBaseId)
+                        .eq(KnowledgeFile::getEmbeddingStatus, "success")
+                        .ne(KnowledgeFile::getStatus, "deleted")
+        );
+        stats.setEmbeddedFileCount((int) embeddedCount);
 
         return stats;
     }

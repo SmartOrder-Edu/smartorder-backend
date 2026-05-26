@@ -79,6 +79,13 @@ public class KnowledgeFileProcessListener {
             updateFileStatus(file.getId(), PROCESSING, null, null);
             updateJob(jobId, "解析文件并生成Markdown", 20);
             RagParseResult parseResult = ragFileParserService.parseForRag(file);
+
+            // 保存页数到 KnowledgeFile
+            if (parseResult.getPageCount() != null) {
+                file.setPageCount(parseResult.getPageCount());
+                fileMapper.updateById(file);
+            }
+
             updateFileStatus(file.getId(), SUCCESS, PROCESSING, null);
 
             updateJob(jobId, "保存文档和分块", 50);
@@ -178,12 +185,16 @@ public class KnowledgeFileProcessListener {
         if (file == null) return;
         if (PROCESSING.equals(file.getParseStatus())) {
             file.setParseStatus(FAILED);
+            file.setParseError(errorMessage);
         } else if (PROCESSING.equals(file.getChunkStatus())) {
             file.setChunkStatus(FAILED);
+            file.setChunkError(errorMessage);
         } else if (PROCESSING.equals(file.getEmbeddingStatus())) {
             file.setEmbeddingStatus(FAILED);
+            file.setEmbeddingError(errorMessage);
         } else {
             file.setParseStatus(FAILED);
+            file.setParseError(errorMessage);
         }
         file.setUpdatedAt(LocalDateTime.now());
         fileMapper.updateById(file);
