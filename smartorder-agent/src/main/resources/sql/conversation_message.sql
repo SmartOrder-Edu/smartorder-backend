@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS `conversation_message` (
     `content`            MEDIUMTEXT    DEFAULT NULL             COMMENT '消息内容',
     `reasoning_content`  MEDIUMTEXT    DEFAULT NULL             COMMENT '模型推理过程(reasoning_content)，thinking mode 必须回传',
     `tool_name`          VARCHAR(100)  DEFAULT NULL             COMMENT '工具名称，如果是工具消息则记录',
+    `trace_id`         VARCHAR(36)   DEFAULT NULL             COMMENT '关联的执行追踪ID',
     `metadata_json`    JSON          DEFAULT NULL             COMMENT '元数据，例如模型名称、token数量、工具参数等',
     `is_compressed`    TINYINT       DEFAULT 0                COMMENT '是否已被摘要压缩：0否，1是',
     `is_deleted`       TINYINT       DEFAULT 0                COMMENT '逻辑删除：0未删除，1已删除',
@@ -14,5 +15,6 @@ CREATE TABLE IF NOT EXISTS `conversation_message` (
     PRIMARY KEY (`id`),
     INDEX `idx_conv` (`conversation_id`),
     INDEX `idx_user` (`user_id`),
+    INDEX `idx_trace` (`trace_id`),
     INDEX `idx_conv_time` (`conversation_id`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会话消息持久化表';

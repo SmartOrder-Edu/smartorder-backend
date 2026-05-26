@@ -55,16 +55,6 @@ public class AgentChatController {
         return emitter;
     }
 
-    /**
-     * 旧接口保留兼容，映射到新路径
-     */
-    @Deprecated
-    @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    @Operation(summary = "[已废弃] 旧版 Agent 对话", description = "请使用 /agent/chat/stream")
-    public SseEmitter chat(@RequestBody AgentChatRequest request) {
-        return chatStream(request);
-    }
-
     private Long getCurrentUserId() {
         Claims claims = ThreadLocalUtils.get();
         return claims.get("userId", Long.class);

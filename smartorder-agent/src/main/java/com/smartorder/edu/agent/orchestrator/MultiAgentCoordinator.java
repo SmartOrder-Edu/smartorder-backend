@@ -1,5 +1,6 @@
 package com.smartorder.edu.agent.orchestrator;
 
+import com.alibaba.fastjson.JSON;
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.route.IntentRouteResult;
@@ -12,6 +13,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -52,12 +55,19 @@ public class MultiAgentCoordinator {
             SseEmitter emitter
     ) {
         // 1. 推送初始思考
+        String initialThinking = "这是一个复杂资源生成任务，我会拆分给 3 个子智能体并行完成：\n" +
+                "• 资源生成智能体——生成学习资料大纲\n" +
+                "• 测评智能体——生成配套练习题\n" +
+                "• 知识图谱智能体——提取知识点依赖关系";
         dispatcher.emit(emitter, context, AgentEventType.THINK_DELTA, Map.of(
-                "text", "这是一个复杂资源生成任务，我会拆分给 3 个子智能体并行完成：\n" +
-                        "• 资源生成智能体——生成学习资料大纲\n" +
-                        "• 测评智能体——生成配套练习题\n" +
-                        "• 知识图谱智能体——提取知识点依赖关系"
+                "text", initialThinking
         ));
+
+        // 追踪思考分段
+        List<Map<String, Object>> reasoningSegments = new ArrayList<>();
+        Map<String, Object> initialSeg = new HashMap<>();
+        initialSeg.put("thinkingText", initialThinking);
+        reasoningSegments.add(initialSeg);
 
         String sessionKey = context.getTraceId();
 
@@ -87,9 +97,11 @@ public class MultiAgentCoordinator {
                 "text", finalAnswer
         ));
 
-        // 5. 保存助手回复到 DB
+        // 5. 保存助手回复到 DB（含思考分段）
+        String segmentsJson = JSON.toJSONString(reasoningSegments);
         memoryService.saveAssistantMessage(
-                context.getConversationId(), request.getUserId(), finalAnswer, null);
+                context.getConversationId(), request.getUserId(), finalAnswer, initialThinking,
+                context.getTraceId(), segmentsJson);
 
         // 6. 清理信箱
         mailbox.clear(sessionKey);

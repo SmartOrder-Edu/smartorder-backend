@@ -43,8 +43,9 @@ public class LlmConfig {
     private int embeddingDimensions;
 
     @Bean
-    public OpenAiChatModel chatLanguageModel() {
+    public OpenAiChatModel llmChatLanguageModel() {
         return OpenAiChatModel.builder()
+                .httpClientBuilder(JdkLangChain4jHttpClientBuilder.withDefaults())
                 .apiKey(apiKey)
                 .baseUrl(baseUrl)
                 .modelName(modelName)
@@ -57,6 +58,7 @@ public class LlmConfig {
     @Bean
     public EmbeddingModel embeddingModel() {
         return OpenAiEmbeddingModel.builder()
+                .httpClientBuilder(JdkLangChain4jHttpClientBuilder.withDefaults())
                 .apiKey(embeddingApiKey)
                 .baseUrl(embeddingBaseUrl)
                 .modelName(embeddingModelName)

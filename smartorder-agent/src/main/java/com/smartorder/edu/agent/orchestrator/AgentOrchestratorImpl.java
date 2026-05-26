@@ -5,6 +5,7 @@ import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.plan.PlanExecuteEngine;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentRouteService;
+import com.smartorder.edu.agent.route.RouteContext;
 import com.smartorder.edu.agent.trace.AgentEventType;
 import com.smartorder.edu.agent.trace.AgentRuntimeContext;
 import com.smartorder.edu.agent.trace.TraceEventDispatcher;
@@ -47,8 +48,13 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
             // 0. 统一保存用户消息（所有模式都落库）
             memoryService.saveUserMessage(conversationId, request.getUserId(), request.getMessage());
 
-            // 1. 意图路由
-            IntentRouteResult routeResult = intentRouteService.route(request.getMessage());
+            // 1. 意图路由（带会话上下文）
+            RouteContext routeCtx = RouteContext.builder()
+                    .message(request.getMessage())
+                    .conversationId(conversationId)
+                    .userId(request.getUserId())
+                    .build();
+            IntentRouteResult routeResult = intentRouteService.route(routeCtx);
             context.setMode(routeResult.getRunMode());
 
             // 2. 推送 TRACE_STARTED
@@ -56,12 +62,16 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                     "mode", routeResult.getRunMode().getCode()
             ));
 
-            // 3. 推送 ROUTE_COMPLETED
+            // 3. 推送 ROUTE_COMPLETED（含新增字段）
             dispatcher.emit(emitter, context, AgentEventType.ROUTE_COMPLETED, Map.of(
                     "intentType", routeResult.getIntentType(),
+                    "intentEnum", routeResult.getIntentEnum() != null ? routeResult.getIntentEnum().name() : "",
                     "complexity", routeResult.getComplexity(),
                     "runMode", routeResult.getRunMode().getCode(),
                     "requiredTools", routeResult.getRequiredTools(),
+                    "confidence", routeResult.getConfidence(),
+                    "source", routeResult.getSource().name(),
+                    "needsClarification", routeResult.isNeedsClarification(),
                     "reason", routeResult.getReason()
             ));
 

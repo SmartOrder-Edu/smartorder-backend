@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.smartorder.edu.agent.model.entity.AgentResourceLog;
 import com.smartorder.edu.agent.mapper.AgentResourceLogMapper;
+import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.trace.AgentEventType;
 import com.smartorder.edu.agent.trace.AgentRuntimeContext;
 import com.smartorder.edu.agent.trace.TraceEventDispatcher;
@@ -56,6 +57,7 @@ public class PlanConfirmService {
                 .traceId(traceId)
                 .conversationId(conversationId)
                 .userId(userId)
+                .mode(AgentRunMode.PLAN_EXECUTE)
                 .sequence(new AtomicInteger(0))
                 .build();
 

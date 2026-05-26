@@ -3,9 +3,9 @@ package com.smartorder.edu.agent.plan;
 import com.alibaba.fastjson.JSONObject;
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
+import com.smartorder.edu.agent.route.ConfirmationWords;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.tool.LangChain4jToolAdapter;
-import com.smartorder.edu.agent.tool.LearningPlanCreationTool;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
 import com.smartorder.edu.agent.tool.ToolRegistry;
 import com.smartorder.edu.agent.trace.AgentEventType;
@@ -25,8 +25,10 @@ import java.util.Map;
  * 规划执行引擎——负责规划阶段
  *
  * 流程：
- * 调用学生画像工具 → PlanAgent 生成 JSON → Schema 校验 → 保存 draft
- * → 调用 LearningPlanCreationTool 创建学习空间 → SSE 推送 agent.plan.created
+ * 调用学生画像工具 → PlanAgent 生成 JSON → Schema 校验 → 保存 draft → SSE 推送 agent.plan.created
+ *
+ * 注意：本引擎只生成规划草稿，不自动创建学习空间。
+ * 学习空间的创建必须经过用户确认，由 PlanConfirmService 执行。
  */
 @Slf4j
 @Service
@@ -40,10 +42,9 @@ public class PlanExecuteEngine {
     private final PlanDraftService draftService;
     private final TraceEventDispatcher dispatcher;
     private final ConversationMemoryService memoryService;
-    private final LearningPlanCreationTool planCreationTool;
 
     /**
-     * 规划阶段：生成规划草稿并自动创建学习空间
+     * 规划阶段：生成规划草稿（不自动创建学习空间）
      */
     public void runPlanning(
             AgentChatRequest request,
@@ -58,7 +59,6 @@ public class PlanExecuteEngine {
         ));
 
         // 2. 获取学生画像
-
         String profileJson = "{}";
         if (toolRegistry.contains("getStudentProfile")) {
             try {
@@ -104,7 +104,8 @@ public class PlanExecuteEngine {
                     "text", errorMsg
             ));
             memoryService.saveAssistantMessage(
-                    context.getConversationId(), request.getUserId(), errorMsg, null);
+                    context.getConversationId(), request.getUserId(), errorMsg, null,
+                    context.getTraceId(), null);
             return;
         }
 
@@ -119,11 +120,12 @@ public class PlanExecuteEngine {
                     "text", schemaMsg
             ));
             memoryService.saveAssistantMessage(
-                    context.getConversationId(), request.getUserId(), schemaMsg, null);
+                    context.getConversationId(), request.getUserId(), schemaMsg, null,
+                    context.getTraceId(), null);
             return;
         }
 
-        // 6. 保存草稿
+        // 6. 保存草稿（不创建学习空间，等用户确认后再创建）
         String draftId = draftService.saveDraft(
                 context.getConversationId(),
                 context.getTraceId(),
@@ -131,38 +133,27 @@ public class PlanExecuteEngine {
                 plan
         );
 
-        // 7. 自动创建学习空间（调用 LearningPlanCreationTool）
-        String creationResult;
-        try {
-            log.info("[PlanEngine] 自动创建学习空间: userId={}, draftId={}", request.getUserId(), draftId);
-            creationResult = planCreationTool.createLearningPlan(request.getUserId(), userGoal);
-        } catch (Exception e) {
-            log.error("[PlanEngine] 创建学习空间失败", e);
-            dispatcher.emit(emitter, context, AgentEventType.ERROR, Map.of(
-                    "message", "学习空间创建失败: " + e.getMessage()
-            ));
-            creationResult = null;
-        }
+        log.info("[PlanEngine] 规划草稿已保存: userId={}, draftId={}, 等待用户确认", request.getUserId(), draftId);
 
-        // 8. 推送 plan.created 事件
+        // 7. 推送 plan.created 事件
         dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
                 "draftId", draftId,
                 "plan", plan,
-                "creationResult", creationResult != null ? creationResult : "创建失败"
+                "needsConfirmation", true
         ));
 
-        // 9. 文本提示
+        // 8. 文本提示（告知用户需要确认）
         String spaceName = plan.getString("spaceName");
         int phaseCount = plan.getJSONArray("phases").size();
-        String resultMsg = creationResult != null
-                ? "学习空间「" + spaceName + "」已创建成功。" + phaseCount + " 个学习阶段已就绪。"
-                : "我已为你规划了「" + spaceName + "」的学习路径，包含 " + phaseCount + " 个学习阶段。";
+        String resultMsg = "我已为你规划了「" + spaceName + "」的学习路径，包含 " + phaseCount + " 个学习阶段。"
+                + "请确认是否创建该学习空间？";
 
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", resultMsg));
 
-        // 10. 保存助手回复到 DB
+        // 9. 保存助手回复到 DB
         memoryService.saveAssistantMessage(
-                context.getConversationId(), request.getUserId(), resultMsg, null);
+                context.getConversationId(), request.getUserId(), resultMsg, null,
+                context.getTraceId(), null);
     }
 
     /**
@@ -177,15 +168,7 @@ public class PlanExecuteEngine {
         }
 
         // 判断是否为确认类短消息
-        String trimmed = message.trim();
-        boolean isConfirmation = trimmed.length() <= 10 && (
-                trimmed.equals("好的") || trimmed.equals("可以") || trimmed.equals("是的") ||
-                trimmed.equals("行") || trimmed.equals("确认") || trimmed.equals("需要") ||
-                trimmed.equals("嗯") || trimmed.equals("对") || trimmed.equals("好") ||
-                trimmed.equals("创建吧") || trimmed.equals("开始吧") || trimmed.equals("没问题") ||
-                trimmed.equals("搞吧") || trimmed.equals("做吧") || trimmed.equals("弄吧") ||
-                trimmed.equalsIgnoreCase("ok") || trimmed.equalsIgnoreCase("yes")
-        );
+        boolean isConfirmation = ConfirmationWords.isConfirmationOnly(message);
 
         if (isConfirmation && request.getConversationId() != null) {
             String historicalGoal = memoryService.extractRecentGoal(request.getConversationId());
