@@ -55,6 +55,9 @@ public class ConversationController {
             vo.setRole(e.getRole());
             vo.setContent(e.getContent());
             vo.setToolName(e.getToolName());
+            vo.setTraceId(e.getTraceId());
+            vo.setReasoningContent(e.getReasoningContent());
+            vo.setReasoningSegments(e.getMetadataJson());
             vo.setCreateTime(e.getCreateTime());
             return vo;
         }).toList();

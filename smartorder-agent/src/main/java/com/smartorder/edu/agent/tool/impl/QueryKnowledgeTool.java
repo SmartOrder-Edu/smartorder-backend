@@ -88,7 +88,9 @@ public class QueryKnowledgeTool implements ToolHandler {
 
     @Data
     public static class QueryKnowledgeRequest {
+        @dev.langchain4j.model.output.structured.Description("学习空间ID，必填")
         private Long spaceId;
+        @dev.langchain4j.model.output.structured.Description("搜索关键字，可选")
         private String keyword;
     }
 }

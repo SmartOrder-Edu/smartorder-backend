@@ -97,9 +97,13 @@ public class GenerateResourceTool implements ToolHandler {
 
     @Data
     public static class GenerateResourceRequest {
+        @dev.langchain4j.model.output.structured.Description("学习空间ID")
         private Long spaceId;
+        @dev.langchain4j.model.output.structured.Description("知识点主题，必填，例如'进程调度算法'")
         private String topic;
+        @dev.langchain4j.model.output.structured.Description("资源类型，如 DOC、MIND_MAP、CASE_STUDY、QUIZ")
         private String resourceType;
+        @dev.langchain4j.model.output.structured.Description("学习阶段序号，从1开始")
         private Integer phaseIndex;
     }
 }

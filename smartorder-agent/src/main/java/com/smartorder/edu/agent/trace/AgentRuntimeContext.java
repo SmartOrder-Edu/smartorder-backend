@@ -23,7 +23,8 @@ public class AgentRuntimeContext {
 
     private Long userId;
 
-    private AgentRunMode mode;
+    @Builder.Default
+    private AgentRunMode mode = AgentRunMode.REACT;
 
     @Builder.Default
     private AtomicInteger sequence = new AtomicInteger(0);

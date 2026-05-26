@@ -44,19 +44,17 @@ public class GetStudentProfileTool implements ToolHandler {
     @Override
     public Object execute(Object request, ToolInvokeContext context) {
         GetStudentProfileRequest req = (GetStudentProfileRequest) request;
-        Long userId = req.getUserId() != null ? req.getUserId() : context.getUserId();
+        // 禁止模型传入 userId，统一使用上下文中的 userId
+        Long userId = context.getUserId();
 
         log.info("[GetStudentProfile] userId={}", userId);
-
-        if (context.getUserId() != null && !context.getUserId().equals(userId)) {
-            throw new IllegalArgumentException("不能查询其他用户的学生画像");
-        }
 
         return profileService.getByUserId(userId);
     }
 
     @Data
     public static class GetStudentProfileRequest {
-        private Long userId;
+        // 不再接受 userId 参数，统一使用 ToolInvokeContext.userId
+        // 保留空请求体即可
     }
 }

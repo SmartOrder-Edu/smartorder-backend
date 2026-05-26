@@ -10,33 +10,34 @@ import lombok.Getter;
 @AllArgsConstructor
 public enum AgentEventType {
 
-    TRACE_STARTED("agent.trace.started", "追踪开始"),
+    TRACE_STARTED("agent.trace.started", "追踪开始", true),
 
-    ROUTE_COMPLETED("agent.route.completed", "意图路由完成"),
+    ROUTE_COMPLETED("agent.route.completed", "意图路由完成", true),
 
-    THINK_DELTA("agent.think.delta", "智能体思考片段"),
+    THINK_DELTA("agent.think.delta", "智能体思考片段", false),
 
-    TOOL_STARTED("agent.tool.started", "工具调用开始"),
-    TOOL_COMPLETED("agent.tool.completed", "工具调用完成"),
-    TOOL_FAILED("agent.tool.failed", "工具调用失败"),
+    TOOL_STARTED("agent.tool.started", "工具调用开始", true),
+    TOOL_COMPLETED("agent.tool.completed", "工具调用完成", true),
+    TOOL_FAILED("agent.tool.failed", "工具调用失败", true),
 
-    TEXT_DELTA("agent.text.delta", "最终回复文本流"),
+    TEXT_DELTA("agent.text.delta", "最终回复文本流", false),
 
-    PLAN_CREATED("agent.plan.created", "规划草稿创建"),
-    PLAN_CONFIRMED("agent.plan.confirmed", "规划已确认"),
+    PLAN_CREATED("agent.plan.created", "规划草稿创建", true),
+    PLAN_CONFIRMED("agent.plan.confirmed", "规划已确认", true),
 
-    PHASE_CHANGE("agent.phase.change", "阶段切换"),
-    STATUS("agent.status", "状态提示"),
+    PHASE_CHANGE("agent.phase.change", "阶段切换", true),
+    STATUS("agent.status", "状态提示", true),
 
-    SUB_AGENT_STARTED("agent.sub_agent.started", "子智能体开始"),
-    SUB_AGENT_COMPLETED("agent.sub_agent.completed", "子智能体完成"),
-    SUB_AGENT_FAILED("agent.sub_agent.failed", "子智能体失败"),
+    SUB_AGENT_STARTED("agent.sub_agent.started", "子智能体开始", true),
+    SUB_AGENT_COMPLETED("agent.sub_agent.completed", "子智能体完成", true),
+    SUB_AGENT_FAILED("agent.sub_agent.failed", "子智能体失败", true),
 
-    ERROR("agent.error", "错误事件"),
+    ERROR("agent.error", "错误事件", true),
 
-    TRACE_COMPLETED("agent.trace.completed", "追踪完成"),
-    DONE("done", "SSE结束");
+    TRACE_COMPLETED("agent.trace.completed", "追踪完成", true),
+    DONE("done", "SSE结束", false);
 
     private final String eventName;
     private final String description;
+    private final boolean persistable;
 }

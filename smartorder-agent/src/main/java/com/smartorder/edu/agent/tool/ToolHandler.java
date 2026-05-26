@@ -19,6 +19,11 @@ public interface ToolHandler {
     /** 工具分类 */
     ToolCategory category();
 
+    /** 工具风险等级，默认取分类的风险等级 */
+    default ToolCategory.RiskLevel riskLevel() {
+        return category().getRiskLevel();
+    }
+
     /** 执行工具，返回结果 */
     Object execute(Object request, ToolInvokeContext context);
 }

@@ -86,7 +86,9 @@ public class QueryTasksTool implements ToolHandler {
 
     @Data
     public static class QueryTasksRequest {
+        @dev.langchain4j.model.output.structured.Description("学习空间ID，可选，不传则查询所有空间")
         private Long spaceId;
-        private String scope; // today, pending, overdue
+        @dev.langchain4j.model.output.structured.Description("查询范围：today/pending/overdue，默认today")
+        private String scope;
     }
 }

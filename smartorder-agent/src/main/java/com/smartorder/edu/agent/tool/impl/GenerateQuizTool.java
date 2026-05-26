@@ -116,11 +116,17 @@ public class GenerateQuizTool implements ToolHandler {
 
     @Data
     public static class GenerateQuizRequest {
+        @dev.langchain4j.model.output.structured.Description("学习空间ID")
         private Long spaceId;
+        @dev.langchain4j.model.output.structured.Description("学习路径节点ID")
         private Long pathNodeId;
+        @dev.langchain4j.model.output.structured.Description("知识点主题，必填，例如'进程调度算法'")
         private String topic;
+        @dev.langchain4j.model.output.structured.Description("题目数量，默认5")
         private int questionCount = 5;
+        @dev.langchain4j.model.output.structured.Description("题型：choice/fill_blank/short_answer/mixed")
         private String questionType;
+        @dev.langchain4j.model.output.structured.Description("难度等级，1-5")
         private Integer difficulty;
     }
 }

@@ -385,6 +385,21 @@
             <groupId>io.milvus</groupId>
             <artifactId>milvus-sdk-java</artifactId>
             <version>2.4.4</version>
+            <!-- 排除 Jetty 传递依赖（Hadoop → Jetty-Client 12），避免其 30s IdleTimeout 影响 LLM 长耗时调用 -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>jetty-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>jetty-io</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>jetty-http</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
 <!--        &lt;!&ndash; Milvus Java Client 最新版 &ndash;&gt;-->
