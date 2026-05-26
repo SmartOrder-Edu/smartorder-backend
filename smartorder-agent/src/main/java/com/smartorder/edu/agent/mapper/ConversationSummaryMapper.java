@@ -5,10 +5,14 @@ import com.smartorder.edu.agent.model.entity.ConversationSummary;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface ConversationSummaryMapper extends BaseMapper<ConversationSummary> {
 
     @Select("SELECT * FROM conversation_summary WHERE conversation_id = #{conversationId} AND is_deleted = 0")
     ConversationSummary selectByConversationId(@Param("conversationId") String conversationId);
+
+    @Update("UPDATE conversation_summary SET is_deleted = 1 WHERE conversation_id = #{conversationId} AND user_id = #{userId} AND is_deleted = 0")
+    int softDeleteByConversationId(@Param("conversationId") String conversationId, @Param("userId") Long userId);
 }

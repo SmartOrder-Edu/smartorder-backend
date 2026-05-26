@@ -1,6 +1,7 @@
 package com.smartorder.edu.agent.controller;
 
 import com.smartorder.edu.agent.mapper.ConversationMessageMapper;
+import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.entity.ConversationMessage;
 import com.smartorder.edu.agent.model.vo.ConversationVO;
 import com.smartorder.edu.agent.model.vo.MessageVO;
@@ -24,6 +25,7 @@ import java.util.Map;
 public class ConversationController {
 
     private final ConversationMessageMapper messageMapper;
+    private final ConversationMemoryService memoryService;
 
     @GetMapping("/conversations")
     @Operation(summary = "获取用户对话列表", description = "返回当前用户的所有对话会话，按最近活跃时间倒序")
@@ -73,5 +75,13 @@ public class ConversationController {
     private Long getCurrentUserId() {
         Claims claims = ThreadLocalUtils.get();
         return claims.get("userId", Long.class);
+    }
+
+    @DeleteMapping("/conversations/{conversationId}")
+    @Operation(summary = "删除对话", description = "删除指定对话的所有消息、摘要和追踪事件")
+    public Result<String> deleteConversation(@PathVariable String conversationId) {
+        Long userId = getCurrentUserId();
+        memoryService.deleteConversation(conversationId, userId);
+        return Result.success("对话删除成功");
     }
 }
