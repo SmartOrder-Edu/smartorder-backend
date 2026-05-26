@@ -104,7 +104,8 @@ public class PlanExecuteEngine {
                     "text", errorMsg
             ));
             memoryService.saveAssistantMessage(
-                    context.getConversationId(), request.getUserId(), errorMsg, null);
+                    context.getConversationId(), request.getUserId(), errorMsg, null,
+                    context.getTraceId());
             return;
         }
 
@@ -119,7 +120,8 @@ public class PlanExecuteEngine {
                     "text", schemaMsg
             ));
             memoryService.saveAssistantMessage(
-                    context.getConversationId(), request.getUserId(), schemaMsg, null);
+                    context.getConversationId(), request.getUserId(), schemaMsg, null,
+                    context.getTraceId());
             return;
         }
 
@@ -150,7 +152,8 @@ public class PlanExecuteEngine {
 
         // 9. 保存助手回复到 DB
         memoryService.saveAssistantMessage(
-                context.getConversationId(), request.getUserId(), resultMsg, null);
+                context.getConversationId(), request.getUserId(), resultMsg, null,
+                context.getTraceId());
     }
 
     /**

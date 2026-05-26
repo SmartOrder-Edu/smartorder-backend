@@ -163,7 +163,8 @@ public class SelfManagedReActEngine {
 
         // 8. 保存助手回复（含 reasoning_content，thinking mode 要求回传）
         memoryService.saveAssistantMessage(
-                runtimeContext.getConversationId(), request.getUserId(), finalAnswer, finalThinking);
+                runtimeContext.getConversationId(), request.getUserId(), finalAnswer, finalThinking,
+                runtimeContext.getTraceId());
 
         // 9. 异步检查是否需要压缩
         compressService.checkAndCompress(runtimeContext.getConversationId(), request.getUserId());

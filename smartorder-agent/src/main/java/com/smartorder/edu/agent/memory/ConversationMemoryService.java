@@ -105,21 +105,21 @@ public class ConversationMemoryService {
      * 保存用户消息
      */
     public void saveUserMessage(String conversationId, Long userId, String content) {
-        save(conversationId, userId, "user", content, null, null);
+        save(conversationId, userId, "user", content, null, null, null);
     }
 
     /**
      * 保存助手消息（含 reasoning_content，thinking mode 必须回传给 API）
      */
-    public void saveAssistantMessage(String conversationId, Long userId, String content, String reasoningContent) {
-        save(conversationId, userId, "assistant", content, null, reasoningContent);
+    public void saveAssistantMessage(String conversationId, Long userId, String content, String reasoningContent, String traceId) {
+        save(conversationId, userId, "assistant", content, null, reasoningContent, traceId);
     }
 
     /**
      * 保存工具消息
      */
     public void saveToolMessage(String conversationId, Long userId, String toolName, String content) {
-        save(conversationId, userId, "tool", content, toolName, null);
+        save(conversationId, userId, "tool", content, toolName, null, null);
     }
 
     /**
@@ -131,7 +131,7 @@ public class ConversationMemoryService {
 
     // ============ Private ============
 
-    private void save(String conversationId, Long userId, String role, String content, String toolName, String reasoningContent) {
+    private void save(String conversationId, Long userId, String role, String content, String toolName, String reasoningContent, String traceId) {
         ConversationMessage entity = new ConversationMessage();
         entity.setConversationId(conversationId);
         entity.setUserId(userId);
@@ -139,6 +139,7 @@ public class ConversationMemoryService {
         entity.setContent(content);
         entity.setToolName(toolName);
         entity.setReasoningContent(reasoningContent);
+        entity.setTraceId(traceId);
         entity.setIsCompressed(0);
         entity.setIsDeleted(0);
         messageMapper.insert(entity);

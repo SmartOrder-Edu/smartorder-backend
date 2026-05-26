@@ -89,7 +89,8 @@ public class MultiAgentCoordinator {
 
         // 5. 保存助手回复到 DB
         memoryService.saveAssistantMessage(
-                context.getConversationId(), request.getUserId(), finalAnswer, null);
+                context.getConversationId(), request.getUserId(), finalAnswer, null,
+                context.getTraceId());
 
         // 6. 清理信箱
         mailbox.clear(sessionKey);

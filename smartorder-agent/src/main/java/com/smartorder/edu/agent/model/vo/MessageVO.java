@@ -14,5 +14,7 @@ public class MessageVO {
     private String role;
     private String content;
     private String toolName;
+    private String traceId;
+    private String reasoningContent;
     private LocalDateTime createTime;
 }
