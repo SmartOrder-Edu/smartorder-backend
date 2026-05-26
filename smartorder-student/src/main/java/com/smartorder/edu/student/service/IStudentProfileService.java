@@ -1,7 +1,7 @@
 package com.smartorder.edu.student.service;
 
 import com.smartorder.edu.student.domain.entity.StudentProfile;
-import com.smartorder.edu.student.dto.ProfileInitDTO;
+import com.smartorder.edu.student.domain.dto.ProfileInitDTO;
 
 /**
  * 学生画像服务接口

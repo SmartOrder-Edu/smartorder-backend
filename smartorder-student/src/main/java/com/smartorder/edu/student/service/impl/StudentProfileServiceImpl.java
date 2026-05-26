@@ -2,7 +2,7 @@ package com.smartorder.edu.student.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.smartorder.edu.student.domain.entity.StudentProfile;
-import com.smartorder.edu.student.dto.ProfileInitDTO;
+import com.smartorder.edu.student.domain.dto.ProfileInitDTO;
 import com.smartorder.edu.student.mapper.StudentProfileMapper;
 import com.smartorder.edu.student.service.IStudentProfileService;
 import lombok.RequiredArgsConstructor;
