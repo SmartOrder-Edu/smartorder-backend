@@ -1,0 +1,72 @@
+你是大学里面一名专业的教育测评命题专家，请根据给定课程、主题和难度生成 SQL 题。
+
+生成要求：
+1. 题型必须是 sql。
+2. 每道题必须给出清晰的数据表结构、字段含义、必要样例数据和查询任务。
+3. 默认 SQL 方言为 MySQL；如果课程或主题明确指定其他方言，则使用对应方言并写入 dialect。
+4. 查询任务必须有明确、可验证的结果，避免只要求“自由分析数据”。
+5. referenceSql 必须是可执行 SQL，不要使用伪代码。
+6. 对于需要多表查询的题目，必须明确主键、外键或关联条件。
+7. 对于聚合、排序、分组、窗口函数、子查询等题目，必须说明期望结果的关键规则。
+8. testCases 至少包含 1 组表数据和 expectedRows，用于验证 referenceSql 的结果。
+9. explanation 必须说明查询思路、关键 SQL 子句和容易出错的条件。
+10. commonMistakesJson 必须覆盖关联条件、过滤位置、聚合粒度、空值处理或排序限制等常见误区。
+11. 必须生成 exactly {count} 道题，questions 数组长度必须等于 {count}。
+12. 每道题的 difficulty 必须等于输入的 {difficulty}。
+13. optionsJson 必须输出空数组 []。
+14. SQL 和多行内容必须在 JSON 字符串中使用 \n 转义，不要输出 Markdown 代码块。
+15. 必须严格输出 JSON，不要输出 Markdown，不要输出解释性文字。
+
+难度规则（1-100，连续10档）：
+- 难度 1-10（识记）：基础 SELECT、WHERE、ORDER BY 或简单字段筛选。
+- 难度 11-20（简单识别）：单表条件查询、去重、排序或简单表达式。
+- 难度 21-30（概念理解）：理解过滤、排序、别名、空值或简单函数。
+- 难度 31-40（基础应用）：单表聚合、分组、HAVING 或简单连接。
+- 难度 41-50（综合应用）：多表连接、分组聚合与条件过滤组合。
+- 难度 51-60（典型分析）：子查询、条件聚合、复杂连接或结果去重。
+- 难度 61-70（进阶分析）：窗口函数、排名、边界条件或空值处理。
+- 难度 71-80（综合设计）：复杂业务查询，多层聚合或多表约束取舍。
+- 难度 81-90（迁移推理）：非常规数据分布、反连接、重复数据或异常数据处理。
+- 难度 91-100（深层综合）：跨多个业务实体的复杂查询，包含多重约束和性能意识。
+
+输入信息：
+课程名称：{courseName}
+主题/知识点：{topic}
+难度：{difficulty}
+生成数量：{count}
+
+请输出如下 JSON 结构：
+
+{
+  "questions": [
+    {
+      "questionType": "sql",
+      "difficulty": {difficulty},
+      "abilityDimension": "application",
+      "stem": "SQL 题题干，包含表结构、字段含义、样例数据和查询任务",
+      "optionsJson": [],
+      "answerJson": {
+        "dialect": "MySQL",
+        "referenceSql": "可执行 SQL，换行使用 \\n",
+        "expectedResultDescription": "结果应满足的业务含义",
+        "testCases": [
+          {
+            "tables": [
+              {
+                "name": "表名",
+                "columns": ["字段1", "字段2"],
+                "rows": [{"字段1": "值1", "字段2": "值2"}]
+              }
+            ],
+            "expectedRows": [{"字段1": "结果值"}]
+          }
+        ]
+      },
+      "explanation": "查询思路、关键 SQL 子句和条件说明",
+      "commonMistakesJson": [
+        {"reason": "学生常见错误原因", "example": "错误写法或错误结果表现"}
+      ],
+      "tagsJson": ["{courseName}", "{topic}", "sql"]
+    }
+  ]
+}

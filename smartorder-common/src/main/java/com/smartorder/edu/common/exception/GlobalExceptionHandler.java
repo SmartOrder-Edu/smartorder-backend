@@ -3,9 +3,11 @@ package com.smartorder.edu.common.exception;
 
 import com.smartorder.edu.common.constant.ResultCode;
 import com.smartorder.edu.common.model.vo.Result;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -125,6 +127,22 @@ public class GlobalExceptionHandler {
     }
 
 
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public Result<String> handleValidatedException(MethodArgumentNotValidException e) {
+        // 在这里可以添加日志记录等操作
+        log.error("参数为空的异常: {}", e.getMessage(), e);
+        return Result.fail(ResultCode.SYSTEM_ERROR, e.getMessage());
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public Result<String> handleValidatedException(ConstraintViolationException e) {
+        // 在这里可以添加日志记录等操作
+        log.error("参数为空的异常: {}", e.getMessage(), e);
+        return Result.fail(ResultCode.SYSTEM_ERROR, e.getMessage());
+    }
+
+
 //    /**
 //     * 忽略客户端主动断开连接引发的异常，避免与 SSE 响应类型冲突
 //     */
@@ -136,4 +154,6 @@ public class GlobalExceptionHandler {
 //                , ex.getMessage());
 //        // 直接返回 void，千万不要返回 Result 对象！
 //    }
+
+
 }
