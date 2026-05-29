@@ -27,7 +27,7 @@ public class GenerateQuestionDTO {
     /** 课程名称，例如：数据结构、数据库 */
     private String courseName;
 
-    /** 出题主题，例如：图与拓扑排序 */
+    /** 出题主题，例如：冒泡排序 */
     private String topic;
 
     @Valid
@@ -45,6 +45,9 @@ public class GenerateQuestionDTO {
         @Min(value = 1, message = "难度不能小于1")
         @Max(value = 10, message = "难度不能大于10")
         private Integer difficulty;
+
+        /** 选项数量（仅选择题有效，默认4） */
+        private Integer optionCount;
 
         private Integer sort;
     }

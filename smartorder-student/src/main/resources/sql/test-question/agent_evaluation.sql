@@ -6,7 +6,7 @@ CREATE TABLE evaluation_question
     chapter_id           BIGINT               DEFAULT NULL COMMENT '章节ID',
     knowledge_point_id   BIGINT               DEFAULT NULL COMMENT '知识点ID',
     question_type        VARCHAR(32) NOT NULL COMMENT '题型：single_choice/multiple_choice/judge/fill_blank/short_answer/code/scenario/sql/multimodal',
-    difficulty           INT         NOT NULL DEFAULT 1 COMMENT '难度等级：1-5',
+    difficulty           INT         NOT NULL DEFAULT 1 COMMENT '难度等级：1-10',
     score                DECIMAL(6, 2) NOT NULL DEFAULT 5.00 COMMENT '题目分值',
     ability_dimension    VARCHAR(64)          DEFAULT NULL COMMENT '能力维度：concept/application/analysis/design/debug',
     stem                 TEXT        NOT NULL COMMENT '题干',

@@ -1,67 +1,72 @@
-你是大学里面一名专业的教育测评命题专家，请根据给定课程、主题和难度生成编程题。
+请根据给定课程、主题和难度生成编程题。
 
 生成要求：
 1. 题型必须是 code。
-2. 每道题必须包含清晰的问题背景、输入格式、输出格式、约束条件和至少 2 组样例。
-3. 题目应能通过自动评测判分，答案必须包含完整参考代码和测试用例。
-4. 如果课程或主题明确指定语言，则 language 使用对应语言；否则优先使用 Java。
+2. 编程语言使用 {{programmingLanguage}}。
+3. 每道题必须包含清晰的问题背景、输入格式、输出格式、约束条件和至少 2 组样例。
+4. 题目应能通过自动评测判分，答案必须包含完整参考代码和测试用例。
 5. 参考代码必须是完整可运行程序或完整函数，不能只给伪代码。
 6. testCases 至少包含 2 个公开用例和 1 个隐藏用例，hidden 使用 JSON 布尔值 true 或 false。
 7. 题干不得泄露解法核心代码，但可以说明输入输出和边界约束。
 8. explanation 必须说明算法思路、复杂度和关键边界情况。
 9. commonMistakesJson 必须包含学生在算法、边界、输入输出或复杂度方面的真实误区。
-10. 必须生成 exactly {count} 道题，questions 数组长度必须等于 {count}。
-11. 每道题的 difficulty 必须等于输入的 {difficulty}。
+10. 必须生成 exactly {{count}} 道题，questions 数组长度必须等于 {{count}}。
+11. 每道题的 difficulty 必须等于输入的 {{difficulty}}。
 12. optionsJson 必须输出空数组 []。
 13. 代码和多行内容必须在 JSON 字符串中使用 \n 转义，不要输出 Markdown 代码块。
 14. 必须严格输出 JSON，不要输出 Markdown，不要输出解释性文字。
 
-难度规则（1-100，连续10档）：
-- 难度 1-10（识记）：实现基础语法、简单输入输出或固定公式。
-- 难度 11-20（简单识别）：实现单一基础结构或直接模拟规则。
-- 难度 21-30（概念理解）：正确使用数组、字符串、集合、函数等基础概念。
-- 难度 31-40（基础应用）：完成简单算法或数据结构应用，包含少量边界处理。
-- 难度 41-50（综合应用）：联合2-3个知识点，需要清晰流程和多步处理。
-- 难度 51-60（典型分析）：需要选择合适算法并分析复杂度，如排序、搜索、哈希。
-- 难度 61-70（进阶分析）：涉及边界条件、状态转移、图遍历或复杂数据结构。
-- 难度 71-80（综合设计）：需要设计较完整算法方案，兼顾正确性和性能。
-- 难度 81-90（迁移推理）：非常规输入或约束下的算法迁移、优化或反例规避。
-- 难度 91-100（深层综合）：跨知识点综合设计算法，包含多重约束和复杂边界。
-
-输入信息：
-课程名称：{courseName}
-主题/知识点：{topic}
-难度：{difficulty}
-生成数量：{count}
-
-请输出如下 JSON 结构：
+请输出类似于如下 JSON 结构：
 
 {
   "questions": [
     {
       "questionType": "code",
-      "difficulty": {difficulty},
+      "difficulty": 4,
       "abilityDimension": "application",
-      "stem": "编程题题干，包含问题背景、输入格式、输出格式、约束条件和样例",
+      "stem": "给定一个无序整数数组 nums 和一个整数 k，请找到数组中第 k 小的元素。\n\n输入格式：\n第一行包含两个整数 n 和 k，分别表示数组长度和目标排名。\n第二行包含 n 个整数，表示数组元素。\n\n输出格式：\n输出一个整数，表示第 k 小的元素。\n\n约束条件：\n1 <= k <= n <= 100000\n-1000000000 <= nums[i] <= 1000000000\n要求平均时间复杂度优于直接排序。",
       "optionsJson": [],
       "answerJson": {
         "language": "Java",
-        "referenceSolution": "完整可运行参考代码，换行使用 \\n",
-        "inputFormat": "输入格式说明",
-        "outputFormat": "输出格式说明",
+        "referenceSolution": "import java.util.*;\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        int n = sc.nextInt();\n        int k = sc.nextInt();\n        int[] nums = new int[n];\n        for (int i = 0; i < n; i++) nums[i] = sc.nextInt();\n        System.out.println(quickSelect(nums, 0, n - 1, k - 1));\n    }\n    static int quickSelect(int[] nums, int left, int right, int target) {\n        Random random = new Random();\n        while (left <= right) {\n            int pivot = nums[left + random.nextInt(right - left + 1)];\n            int i = left, j = right;\n            while (i <= j) {\n                while (nums[i] < pivot) i++;\n                while (nums[j] > pivot) j--;\n                if (i <= j) {\n                    int temp = nums[i];\n                    nums[i] = nums[j];\n                    nums[j] = temp;\n                    i++;\n                    j--;\n                }\n            }\n            if (target <= j) right = j;\n            else if (target >= i) left = i;\n            else return nums[target];\n        }\n        return nums[target];\n    }\n}",
+        "inputFormat": "第一行两个整数 n 和 k；第二行 n 个整数",
+        "outputFormat": "一个整数，表示第 k 小的元素",
         "testCases": [
-          {"input": "样例输入1", "expectedOutput": "样例输出1", "hidden": false},
-          {"input": "样例输入2", "expectedOutput": "样例输出2", "hidden": false},
-          {"input": "隐藏测试输入", "expectedOutput": "隐藏测试输出", "hidden": true}
+          {
+            "input": "5 3\n3 1 5 2 4",
+            "expectedOutput": "3",
+            "hidden": false
+          },
+          {
+            "input": "1 1\n42",
+            "expectedOutput": "42",
+            "hidden": false
+          },
+          {
+            "input": "6 4\n-5 10 0 10 -5 3",
+            "expectedOutput": "3",
+            "hidden": true
+          }
         ],
-        "timeComplexity": "O(n)",
-        "spaceComplexity": "O(n)"
+        "timeComplexity": "O(n) 平均，O(n²) 最坏",
+        "spaceComplexity": "O(1) 额外空间"
       },
-      "explanation": "算法思路、正确性说明、复杂度和边界情况解析",
+      "explanation": "快速选择基于快速排序的划分思想。每轮选择一个枢轴，将数组划分为小于、等于和大于枢轴的部分，再根据第 k 小元素所在区间继续处理一侧。随机选择枢轴可以降低退化概率，平均时间复杂度为 O(n)。需要注意第 k 小对应数组下标 k-1，以及重复元素和单元素数组等边界情况。",
       "commonMistakesJson": [
-        {"reason": "学生常见错误原因", "case": "会出错的典型输入或场景"}
+        {
+          "reason": "混淆第 k 小与数组下标，未将 k 转换为 k-1",
+          "example": "输入 k=3 时直接访问下标 3，实际取到了第 4 小附近的元素"
+        },
+        {
+          "reason": "分区边界处理错误，遇到重复元素时可能死循环",
+          "example": "只在 nums[i] < pivot 时移动 i，却没有在交换后同时移动两个指针"
+        }
       ],
-      "tagsJson": ["{courseName}", "{topic}", "code"]
+      "tagsJson": [
+        "数据结构",
+        "快速选择",
+        "code"
+      ]
     }
   ]
 }

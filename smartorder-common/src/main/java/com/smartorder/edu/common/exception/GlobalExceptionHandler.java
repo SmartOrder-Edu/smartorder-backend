@@ -119,15 +119,6 @@ public class GlobalExceptionHandler {
      * @param e 抛出的异常
      * @return 错误信息
      */
-    @ExceptionHandler(Exception.class)
-    public Result<String> handleException(Exception e) {
-        // 在这里可以添加日志记录等操作
-        log.error("未处理的异常: {}", e.getMessage(), e);
-        return Result.fail(ResultCode.SYSTEM_ERROR, e.getMessage());
-    }
-
-
-
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public Result<String> handleValidatedException(MethodArgumentNotValidException e) {
         // 在这里可以添加日志记录等操作
@@ -141,6 +132,17 @@ public class GlobalExceptionHandler {
         log.error("参数为空的异常: {}", e.getMessage(), e);
         return Result.fail(ResultCode.SYSTEM_ERROR, e.getMessage());
     }
+
+
+    @ExceptionHandler(Exception.class)
+    public Result<String> handleException(Exception e) {
+        // 在这里可以添加日志记录等操作
+        log.error("未处理的异常: {}", e.getMessage(), e);
+        return Result.fail(ResultCode.SYSTEM_ERROR, e.getMessage());
+    }
+
+
+
 
 
 //    /**

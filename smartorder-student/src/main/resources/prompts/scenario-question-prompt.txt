@@ -1,4 +1,4 @@
-你是大学里面一名专业的教育测评命题专家，请根据给定课程、主题和难度生成场景题。
+请根据给定课程、主题和难度生成场景题。
 
 生成要求：
 1. 题型必须是 scenario。
@@ -8,55 +8,70 @@
 5. 不要生成泛泛而谈的开放讨论题，必须围绕输入课程和主题进行测评。
 6. answerJson.referenceAnswer 必须包含推荐结论或标准分析路径。
 7. answerJson.scoringRubric 中每个评分项必须可独立判分，scoreRatio 总和必须等于 1.0。
-8. explanation 必须说明为什么该分析或方案合理，并指出关键知识点。
-9. commonMistakesJson 必须覆盖场景理解、条件遗漏、方案选择或论证逻辑方面的常见错误。
-10. 必须生成 exactly {count} 道题，questions 数组长度必须等于 {count}。
-11. 每道题的 difficulty 必须等于输入的 {difficulty}。
-12. optionsJson 必须输出空数组 []。
-13. 多行内容必须在 JSON 字符串中使用 \n 转义，不要输出 Markdown 代码块。
-14. 必须严格输出 JSON，不要输出 Markdown，不要输出解释性文字。
+8. answerJson.keyPoints 必须列出标准分析中必须覆盖的关键点。
+9. explanation 必须说明为什么该分析或方案合理，并指出关键知识点。
+10. commonMistakesJson 必须覆盖场景理解、条件遗漏、方案选择或论证逻辑方面的常见错误。
+11. 必须生成 exactly {{count}} 道题，questions 数组长度必须等于 {{count}}。
+12. 每道题的 difficulty 必须等于输入的 {{difficulty}}。
+13. optionsJson 必须输出空数组 []。
+14. 多行内容必须在 JSON 字符串中使用 \n 转义，不要输出 Markdown 代码块。
+15. 必须严格输出 JSON，不要输出 Markdown，不要输出解释性文字。
 
-难度规则（1-100，连续10档）：
-- 难度 1-10（识记）：场景仅用于识别基础概念或术语。
-- 难度 11-20（简单识别）：根据简单场景判断适用概念或基本步骤。
-- 难度 21-30（概念理解）：在场景中区分相近概念和适用条件。
-- 难度 31-40（基础应用）：基于典型场景应用单一知识点解决问题。
-- 难度 41-50（综合应用）：联合2-3个知识点完成分析或简单方案选择。
-- 难度 51-60（典型分析）：比较多个方案优劣并说明适用条件。
-- 难度 61-70（进阶分析）：处理边界条件、异常情况或隐藏约束。
-- 难度 71-80（综合设计）：在多约束场景中设计方案并论证取舍。
-- 难度 81-90（迁移推理）：将知识迁移到不常见场景，识别干扰信息。
-- 难度 91-100（深层综合）：跨章节综合设计，处理多目标、多约束和隐含条件。
-
-输入信息：
-课程名称：{courseName}
-主题/知识点：{topic}
-难度：{difficulty}
-生成数量：{count}
-
-请输出如下 JSON 结构：
+请输出类似于如下 JSON 结构：
 
 {
   "questions": [
     {
       "questionType": "scenario",
-      "difficulty": {difficulty},
-      "abilityDimension": "design",
-      "stem": "场景题题干，包含背景、目标、约束和任务要求",
+      "difficulty": 5,
+      "abilityDimension": "application",
+      "stem": "某电商平台的热门商品推荐系统需要实现一个 LRU 缓存模块。系统要求：\n- 缓存容量固定为 1000 条商品记录\n- 支持 O(1) 时间复杂度的查找和更新\n- 当缓存满时淘汰最久未被访问的商品记录\n- 需要支持按访问顺序维护记录\n\n请分析应选择什么数据结构组合实现该缓存模块，并说明每种数据结构在方案中的作用。",
       "optionsJson": [],
       "answerJson": {
-        "referenceAnswer": "参考分析或推荐方案",
+        "referenceAnswer": "推荐使用哈希表 + 双向链表。哈希表保存 key 到链表节点的映射，用于 O(1) 查找；双向链表维护访问顺序，最近访问的节点移动到头部，淘汰时删除尾部节点。双向链表支持 O(1) 删除和插入，因此能满足查找、更新和淘汰都接近 O(1) 的要求。",
         "scoringRubric": [
-          {"criterion": "评分标准1", "scoreRatio": 0.4},
-          {"criterion": "评分标准2", "scoreRatio": 0.6}
+          {
+            "criterion": "正确提出哈希表 + 双向链表的组合方案",
+            "scoreRatio": 0.35
+          },
+          {
+            "criterion": "说明哈希表用于 O(1) 定位节点",
+            "scoreRatio": 0.2
+          },
+          {
+            "criterion": "说明双向链表用于维护访问顺序并支持 O(1) 增删",
+            "scoreRatio": 0.25
+          },
+          {
+            "criterion": "解释为什么单独使用哈希表或链表无法同时满足所有约束",
+            "scoreRatio": 0.2
+          }
         ],
-        "keyPoints": ["关键点1", "关键点2"]
+        "keyPoints": [
+          "哈希表",
+          "双向链表",
+          "O(1) 查找",
+          "O(1) 增删",
+          "访问顺序",
+          "LRU 淘汰"
+        ]
       },
-      "explanation": "说明参考方案的理由、知识点和取舍依据",
+      "explanation": "LRU 缓存需要同时解决快速定位和顺序维护两个问题。哈希表擅长按 key 查找，但不能表达访问顺序；链表能维护顺序，但单独查找需要 O(n)。哈希表与双向链表结合后，可以在访问、插入、删除和淘汰时都避免线性扫描。",
       "commonMistakesJson": [
-        {"reason": "学生常见错误原因", "impact": "该错误会导致的问题"}
+        {
+          "reason": "只回答使用 HashMap，但忽略访问顺序和淘汰顺序的维护",
+          "example": "认为 HashMap 查询是 O(1)，所以单独使用 HashMap 就能完成 LRU"
+        },
+        {
+          "reason": "提出单向链表方案，忽略删除中间节点时需要快速找到前驱节点",
+          "example": "只用单向链表维护顺序，更新命中节点时需要 O(n) 查找前驱"
+        }
       ],
-      "tagsJson": ["{courseName}", "{topic}", "scenario"]
+      "tagsJson": [
+        "数据结构",
+        "缓存设计",
+        "scenario"
+      ]
     }
   ]
 }
