@@ -23,7 +23,7 @@ public interface INeo4jKnowledgeGraphService {
     /**
      * 创建关系
      */
-    void createRelation(String sourceNodeId, String targetNodeId, String relationType, Double weight, Long spaceId);
+    void createRelation(String sourceNodeId, String targetNodeId, String relationType, Double weight, Long spaceId, String description);
 
     /**
      * 根据空间ID查找所有节点

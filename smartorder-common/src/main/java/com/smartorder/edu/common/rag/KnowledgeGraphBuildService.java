@@ -389,8 +389,9 @@ public class KnowledgeGraphBuildService {
                     String relationType = relation.getRelationType() != null ?
                             relation.getRelationType() : "RELATED_TO";
                     Double weight = relation.getWeight() != null ? relation.getWeight() : 0.5;
+                    String description = relation.getDescription() != null ? relation.getDescription() : "";
 
-                    neo4jService.createRelation(sourceId, targetId, relationType, weight, knowledgeBaseId);
+                    neo4jService.createRelation(sourceId, targetId, relationType, weight, knowledgeBaseId, description);
                     log.debug("创建关系: {} -> {} ({})", relation.getSourceName(), relation.getTargetName(), relationType);
                 } catch (Exception e) {
                     log.warn("创建关系失败: {} -> {}, 错误: {}",
