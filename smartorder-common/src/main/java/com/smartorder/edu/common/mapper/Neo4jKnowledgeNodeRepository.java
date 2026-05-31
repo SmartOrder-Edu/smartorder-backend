@@ -1,5 +1,6 @@
 package com.smartorder.edu.common.mapper;
 
+import com.smartorder.edu.common.model.dto.RelationshipResult;
 import com.smartorder.edu.common.model.entity.Neo4jKnowledgeNode;
 import org.springframework.data.neo4j.repository.Neo4jRepository;
 import org.springframework.data.neo4j.repository.query.Query;
@@ -7,7 +8,6 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -111,7 +111,7 @@ public interface Neo4jKnowledgeNodeRepository extends Neo4jRepository<Neo4jKnowl
            "WHERE id(n) < id(m) " +
            "RETURN n.id AS sourceId, m.id AS targetId, type(r) AS relationType, " +
            "COALESCE(r.weight, 0.5) AS weight, COALESCE(r.description, '') AS description")
-    List<Map<String, Object>> findRelationshipsByFileId(@Param("fileId") Long fileId);
+    List<RelationshipResult> findRelationshipsByFileId(@Param("fileId") Long fileId);
 
     /**
      * 根据知识库ID删除所有节点及其关系

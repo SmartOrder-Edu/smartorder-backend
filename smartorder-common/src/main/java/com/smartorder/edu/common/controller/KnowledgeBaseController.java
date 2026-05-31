@@ -4,6 +4,7 @@ package com.smartorder.edu.common.controller;
 import com.smartorder.edu.common.model.vo.KnowledgeBaseDetailStatsVO;
 import com.smartorder.edu.common.model.vo.KnowledgeBaseListRespVO;
 import com.smartorder.edu.common.model.vo.KnowledgeBaseStatsVO;
+import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.service.IKnowledgeBaseService;
 import com.smartorder.edu.common.util.AliOSSUtils;
 import com.smartorder.edu.common.model.dto.KnowledgeBaseReqDTO;
@@ -87,14 +88,14 @@ public class KnowledgeBaseController {
      * 删除知识库（级联删除所有相关数据）
      */
     @DeleteMapping("delete/{id}")
-    public String deleteKnowledgeBase(@PathVariable Long id) {
+    public Result deleteKnowledgeBase(@PathVariable Long id) {
         // 获取当前登录用户 ID
         Claims claims = ThreadLocalUtils.get();
         Long currentUserId = claims.get("userId", Long.class);
 
         // 调用 Service 执行删除
         knowledgeBaseService.deleteKnowledgeBase(id, currentUserId);
-        return "知识库删除成功";
+        return Result.success("删除知识库成功");
     }
 
     /**

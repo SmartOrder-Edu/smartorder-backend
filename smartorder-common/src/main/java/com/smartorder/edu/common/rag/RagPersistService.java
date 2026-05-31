@@ -88,6 +88,7 @@ public class RagPersistService {
                 chunk.setTitlePath(parent.getHeadingPath());
                 chunk.setSectionTitle(parent.getTitle());
                 chunk.setVectorCollection("rag_chunks");
+                chunk.setVectorId("chunk_pending");
                 chunk.setEmbeddingStatus(PENDING);
                 chunk.setStatus(ACTIVE);
                 chunk.setCreatedAt(LocalDateTime.now());
