@@ -1,45 +1,27 @@
-请根据给定课程、主题和难度生成判断题。
+生成判断题，题型代码固定为 judge。
 
-生成要求：
-1. 题型必须是 judge。
-2. 每道题只能判断"正确"或"错误"，不能出现部分正确、视情况而定、无法判断的题目。
-3. 题干必须是一个可被明确判定真假的陈述句，不要写成疑问句。
-4. 题干中不要出现"通常""可能""大多数情况下"等容易造成争议的模糊限定词，除非这些限定词本身就是考查点且答案可被明确判定。
-5. 正确题和错误题都要有，不要整批题目全为 true 或全为 false。如果生成数量 >= 4，正确题和错误题的数量差不得大于 1。
-6. 错误题的错误点必须清晰，不能靠文字陷阱、罕见例外或过度细节制造歧义。
-7. 解析必须说明该陈述为什么正确或错误，并指出关键判断依据。
-8. commonMistakesJson 必须说明学生可能误判的原因。
-9. 必须生成 exactly {{count}} 道题，questions 数组长度必须等于 {{count}}。
-10. 每道题的 difficulty 必须等于输入的 {{difficulty}}。
-11. optionsJson 必须输出空数组 []。
-12. answerJson.correctValue 必须是 JSON 布尔值 true 或 false，不要输出字符串。
-13. 必须严格输出 JSON，不要输出 Markdown，不要输出解释性文字。
+约束：
+1. stem 必须是可明确判断真假的陈述句，不写疑问句。
+2. 避免“通常”“可能”等易争议表述，除非答案仍可明确判定。
+3. optionsJson 必须是空数组 []。
+4. answerJson 格式：{"correctValue":true} 或 {"correctValue":false}，correctValue 必须是 JSON 布尔值。
+5. 同一批题目中正确题和错误题都要有；如果 {{count}} >= 4，二者数量差不超过 1。
+6. explanation 说明判断依据。
 
-请输出类似于如下 JSON 结构：
+# 最终输出
+只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
 
+# 短示例
 {
-  "questions": [
-    {
-      "questionType": "judge",
-      "difficulty": 2,
-      "abilityDimension": "concept",
-      "stem": "用邻接矩阵存储一个具有 n 个顶点的无向图时，矩阵中非零元素的个数等于图中边的数量。",
-      "optionsJson": [],
-      "answerJson": {
-        "correctValue": false
-      },
-      "explanation": "无向图的邻接矩阵是对称矩阵，每条边 (i,j) 会在 matrix[i][j] 和 matrix[j][i] 两个位置产生非零元素。因此非零元素个数通常是边数的 2 倍，而不是等于边数。",
-      "commonMistakesJson": [
-        {
-          "reason": "忽略无向图邻接矩阵的对称性，把有向图和无向图的存储性质混淆",
-          "example": "认为一条边只对应矩阵中的一个非零位置"
-        }
-      ],
-      "tagsJson": [
-        "数据结构",
-        "图",
-        "judge"
-      ]
-    }
-  ]
+  "questions": [{
+    "questionType": "judge",
+    "difficulty": 2,
+    "abilityDimension": "concept",
+    "stem": "在数据结构中，普通队列的删除操作一般发生在队头。",
+    "optionsJson": [],
+    "answerJson": {"correctValue": true},
+    "explanation": "普通队列从队尾入队、队头出队，符合先进先出。",
+    "commonMistakesJson": [{"reason":"把入队端和出队端混淆","example":"认为删除发生在队尾"}],
+    "tagsJson": ["数据结构","队列","judge"]
+  }]
 }

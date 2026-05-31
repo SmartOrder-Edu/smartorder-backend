@@ -1,71 +1,27 @@
-请根据给定课程、主题和难度生成单选题。
+生成单选题，题型代码固定为 single_choice。
 
-生成要求：
-1. 题型必须是 single_choice。
-2. 每道题只有 1 个正确答案。
-3. 每道题必须有 {{optionCount}} 个选项，标签从 A 开始连续递增。
-4. 正确选项必须唯一且无争议，不能存在多个选项在严格意义下都成立。
-5. 干扰项必须合理、有迷惑性，并贴近学生常见误区，不能明显错误或与题干无关。
-6. 题干不能泄露正确答案，不要使用"下列说法错误的是"这类容易反向误导的表述，除非主题明确要求辨析错误。
-7. 不要出现"以上都对""以上都不对""无法判断"等选项。
-8. 解析要说明正确选项为什么正确，并简要说明每个错误选项为什么不合适。
-9. 必须生成 exactly {{count}} 道题，questions 数组长度必须等于 {{count}}。
-10. 每道题的 difficulty 必须等于输入的 {{difficulty}}。
-11. optionsJson 必须按标签字母排序，label 不得重复。
-12. answerJson.correctOptions 必须且只能包含 1 个选项 label。
-13. commonMistakesJson 至少覆盖 2 个错误选项，并说明学生为什么容易误选。
-14. 必须严格输出 JSON，不要输出 Markdown，不要输出解释性文字。
+约束：
+1. 每题必须有 {{optionCount}} 个选项，label 从 A 开始连续递增。
+2. answerJson 格式：{"correctOptions":["A"]}，且只能有 1 个正确选项。
+3. optionsJson 按 label 排序，不要出现“以上都对”“以上都不对”“无法判断”。
+4. 干扰项要合理、有迷惑性，但严格意义下不能成立。
+5. explanation 简短说明正确项依据。
+6. commonMistakesJson 至少覆盖 2 个错误选项。
 
-请输出类似于如下 JSON 结构：
+# 最终输出
+只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
 
+# 短示例
 {
-  "questions": [
-    {
-      "questionType": "single_choice",
-      "difficulty": 3,
-      "abilityDimension": "concept",
-      "stem": "在对 n 个元素进行快速排序时，若每次选取的枢轴恰好都是当前子数组的最大元素，则快速排序的时间复杂度会退化为多少？",
-      "optionsJson": [
-        {
-          "label": "A",
-          "content": "O(nlogn)"
-        },
-        {
-          "label": "B",
-          "content": "O(n²)"
-        },
-        {
-          "label": "C",
-          "content": "O(n)"
-        },
-        {
-          "label": "D",
-          "content": "O(logn)"
-        }
-      ],
-      "answerJson": {
-        "correctOptions": [
-          "B"
-        ]
-      },
-      "explanation": "当每次选取的枢轴都是当前子数组的最大元素时，每次划分只能得到一个长度为 n-1 的子数组和一个空子数组，递归深度变为 n 层，每层划分需要 O(n) 级别的比较，因此总时间复杂度退化为 O(n²)。A 是快速排序的平均时间复杂度，C 只是单次划分的复杂度，D 是二分查找等算法常见的复杂度。",
-      "commonMistakesJson": [
-        {
-          "option": "A",
-          "reason": "只记住快速排序平均时间复杂度为 O(nlogn)，忽略了枢轴选择不均衡时会退化",
-          "example": "认为快速排序在任何输入下都是 O(nlogn)"
-        },
-        {
-          "option": "C",
-          "reason": "把一次划分的线性扫描复杂度误认为整个递归过程的复杂度",
-          "example": "看到每轮只扫描数组一次，就误选 O(n)"
-        }
-      ],
-      "tagsJson": [
-        "数据结构",
-        "排序算法",
-        "single_choice"
-      ]
-    }
-  ]
+  "questions": [{
+    "questionType": "single_choice",
+    "difficulty": 3,
+    "abilityDimension": "concept",
+    "stem": "数据结构中，栈的访问特点是什么？",
+    "optionsJson": [{"label":"A","content":"先进先出"},{"label":"B","content":"后进先出"},{"label":"C","content":"随机访问"},{"label":"D","content":"按优先级访问"}],
+    "answerJson": {"correctOptions":["B"]},
+    "explanation": "栈遵循后进先出，最后入栈的元素最先出栈。",
+    "commonMistakesJson": [{"option":"A","reason":"把栈和队列混淆","example":"认为先进入的元素先出来"},{"option":"C","reason":"误以为栈可任意下标访问","example":"把栈当数组使用"}],
+    "tagsJson": ["数据结构","栈","single_choice"]
+  }]
 }

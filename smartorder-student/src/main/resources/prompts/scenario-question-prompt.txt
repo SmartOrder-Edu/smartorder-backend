@@ -1,77 +1,27 @@
-请根据给定课程、主题和难度生成场景题。
+生成场景题，题型代码固定为 scenario。
 
-生成要求：
-1. 题型必须是 scenario。
-2. 每道题必须给出具体业务、工程、学习或实验场景，要求学生基于场景进行分析、判断或方案设计。
-3. 场景信息必须足够完整，包括背景、目标、约束和需要解决的问题。
-4. 题目可以有多个合理表达方式，但参考答案必须给出明确判分要点，不能完全依赖主观喜好。
-5. 不要生成泛泛而谈的开放讨论题，必须围绕输入课程和主题进行测评。
-6. answerJson.referenceAnswer 必须包含推荐结论或标准分析路径。
-7. answerJson.scoringRubric 中每个评分项必须可独立判分，scoreRatio 总和必须等于 1.0。
-8. answerJson.keyPoints 必须列出标准分析中必须覆盖的关键点。
-9. explanation 必须说明为什么该分析或方案合理，并指出关键知识点。
-10. commonMistakesJson 必须覆盖场景理解、条件遗漏、方案选择或论证逻辑方面的常见错误。
-11. 必须生成 exactly {{count}} 道题，questions 数组长度必须等于 {{count}}。
-12. 每道题的 difficulty 必须等于输入的 {{difficulty}}。
-13. optionsJson 必须输出空数组 []。
-14. 多行内容必须在 JSON 字符串中使用 \n 转义，不要输出 Markdown 代码块。
-15. 必须严格输出 JSON，不要输出 Markdown，不要输出解释性文字。
+约束：
+1. optionsJson 必须是空数组 []。
+2. stem 给出具体业务、工程、学习或实验场景，包含背景、目标、约束和待解决问题。
+3. 不生成泛泛开放讨论题，必须围绕课程和主题测评。
+4. answerJson 格式：{"referenceAnswer":"标准分析或推荐结论","scoringRubric":[{"criterion":"评分项","scoreRatio":0.5}],"keyPoints":["关键点"]}。
+5. scoringRubric 中每个评分项可独立判分，scoreRatio 总和必须等于 1.0。
+6. 多行内容必须在 JSON 字符串中使用 \n 转义。
 
-请输出类似于如下 JSON 结构：
+# 最终输出
+只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
 
+# 短示例
 {
-  "questions": [
-    {
-      "questionType": "scenario",
-      "difficulty": 5,
-      "abilityDimension": "application",
-      "stem": "某电商平台的热门商品推荐系统需要实现一个 LRU 缓存模块。系统要求：\n- 缓存容量固定为 1000 条商品记录\n- 支持 O(1) 时间复杂度的查找和更新\n- 当缓存满时淘汰最久未被访问的商品记录\n- 需要支持按访问顺序维护记录\n\n请分析应选择什么数据结构组合实现该缓存模块，并说明每种数据结构在方案中的作用。",
-      "optionsJson": [],
-      "answerJson": {
-        "referenceAnswer": "推荐使用哈希表 + 双向链表。哈希表保存 key 到链表节点的映射，用于 O(1) 查找；双向链表维护访问顺序，最近访问的节点移动到头部，淘汰时删除尾部节点。双向链表支持 O(1) 删除和插入，因此能满足查找、更新和淘汰都接近 O(1) 的要求。",
-        "scoringRubric": [
-          {
-            "criterion": "正确提出哈希表 + 双向链表的组合方案",
-            "scoreRatio": 0.35
-          },
-          {
-            "criterion": "说明哈希表用于 O(1) 定位节点",
-            "scoreRatio": 0.2
-          },
-          {
-            "criterion": "说明双向链表用于维护访问顺序并支持 O(1) 增删",
-            "scoreRatio": 0.25
-          },
-          {
-            "criterion": "解释为什么单独使用哈希表或链表无法同时满足所有约束",
-            "scoreRatio": 0.2
-          }
-        ],
-        "keyPoints": [
-          "哈希表",
-          "双向链表",
-          "O(1) 查找",
-          "O(1) 增删",
-          "访问顺序",
-          "LRU 淘汰"
-        ]
-      },
-      "explanation": "LRU 缓存需要同时解决快速定位和顺序维护两个问题。哈希表擅长按 key 查找，但不能表达访问顺序；链表能维护顺序，但单独查找需要 O(n)。哈希表与双向链表结合后，可以在访问、插入、删除和淘汰时都避免线性扫描。",
-      "commonMistakesJson": [
-        {
-          "reason": "只回答使用 HashMap，但忽略访问顺序和淘汰顺序的维护",
-          "example": "认为 HashMap 查询是 O(1)，所以单独使用 HashMap 就能完成 LRU"
-        },
-        {
-          "reason": "提出单向链表方案，忽略删除中间节点时需要快速找到前驱节点",
-          "example": "只用单向链表维护顺序，更新命中节点时需要 O(n) 查找前驱"
-        }
-      ],
-      "tagsJson": [
-        "数据结构",
-        "缓存设计",
-        "scenario"
-      ]
-    }
-  ]
+  "questions": [{
+    "questionType": "scenario",
+    "difficulty": 5,
+    "abilityDimension": "analysis",
+    "stem": "某系统需要缓存最近访问的 100 条数据，要求查找、更新和淘汰都尽量接近 O(1)。请从数据结构角度选择方案并说明原因。",
+    "optionsJson": [],
+    "answerJson": {"referenceAnswer":"可使用哈希表加双向链表。哈希表用于 O(1) 定位节点，双向链表维护访问顺序并支持 O(1) 移动和删除尾部节点。","scoringRubric":[{"criterion":"提出哈希表加双向链表","scoreRatio":0.4},{"criterion":"说明哈希表定位作用","scoreRatio":0.3},{"criterion":"说明链表维护顺序和淘汰","scoreRatio":0.3}],"keyPoints":["哈希表","双向链表","LRU","O(1)"]},
+    "explanation": "该场景同时需要快速定位和顺序维护，单一结构难以满足。",
+    "commonMistakesJson": [{"reason":"只使用数组或链表导致查找慢","example":"每次淘汰前线性扫描"}],
+    "tagsJson": ["数据结构","缓存","scenario"]
+  }]
 }

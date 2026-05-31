@@ -1,77 +1,27 @@
-请根据给定课程、主题和难度生成简答题。
+生成简答题，题型代码固定为 short_answer。
 
-生成要求：
-1. 题型必须是 short_answer。
-2. 每道题必须有明确的参考答案和可拆分的评分要点，避免只有开放讨论、无法判分的问题。
-3. 题干应聚焦一个核心问题，可要求解释原因、比较差异、说明步骤或分析机制。
-4. 不要把选择题、判断题或填空题简单改写成简答题，必须体现简答题对概念组织和推理表达的考查价值。
-5. 参考答案必须完整但精炼，能够作为教师判分依据。
-6. answerJson.scoringPoints 中每个评分要点必须可独立判分，scoreRatio 总和必须等于 1.0。
-7. answerJson.keywords 必须列出判分时应关注的核心术语或关键表达。
-8. explanation 必须说明参考答案的关键知识点和判断依据。
-9. commonMistakesJson 必须指出学生真实可能出现的误区，并给出简短示例。
-10. 必须生成 exactly {{count}} 道题，questions 数组长度必须等于 {{count}}。
-11. 每道题的 difficulty 必须等于输入的 {{difficulty}}。
-12. optionsJson 必须输出空数组 []。
-13. 多行内容必须在 JSON 字符串中使用 \n 转义，不要输出 Markdown 代码块。
-14. 必须严格输出 JSON，不要输出 Markdown，不要输出解释性文字。
+约束：
+1. optionsJson 必须是空数组 []。
+2. 题干聚焦一个核心问题，可要求解释原因、比较差异、说明步骤或分析机制。
+3. answerJson 格式：{"referenceAnswer":"精炼参考答案","scoringPoints":[{"point":"评分点","scoreRatio":0.5}],"keywords":["关键词"]}。
+4. scoringPoints 中每个评分点必须可独立判分，scoreRatio 总和必须等于 1.0。
+5. referenceAnswer 完整但精炼，能作为教师判分依据。
+6. 多行内容必须在 JSON 字符串中使用 \n 转义。
 
-请输出类似于如下 JSON 结构：
+# 最终输出
+只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
 
+# 短示例
 {
-  "questions": [
-    {
-      "questionType": "short_answer",
-      "difficulty": 4,
-      "abilityDimension": "application",
-      "stem": "请从稳定性、空间复杂度、时间复杂度三个维度比较快速排序和归并排序，并说明在什么场景下应优先选择归并排序。",
-      "optionsJson": [],
-      "answerJson": {
-        "referenceAnswer": "快速排序通常不稳定，平均时间复杂度为 O(nlogn)，最坏情况下可能退化为 O(n²)，递归栈平均空间复杂度为 O(logn)。归并排序稳定，最好、平均、最坏时间复杂度均为 O(nlogn)，但需要 O(n) 辅助空间。当业务需要稳定排序，或对最坏情况时间复杂度有严格要求时，应优先选择归并排序。",
-        "scoringPoints": [
-          {
-            "point": "正确说明快速排序不稳定、归并排序稳定",
-            "scoreRatio": 0.25
-          },
-          {
-            "point": "正确比较两者的时间复杂度，指出快速排序最坏可退化为 O(n²)，归并排序始终为 O(nlogn)",
-            "scoreRatio": 0.3
-          },
-          {
-            "point": "正确比较空间复杂度：快速排序主要消耗递归栈，归并排序需要 O(n) 辅助数组",
-            "scoreRatio": 0.25
-          },
-          {
-            "point": "给出优先选择归并排序的合理场景，如稳定性要求或最坏情况约束",
-            "scoreRatio": 0.2
-          }
-        ],
-        "keywords": [
-          "稳定性",
-          "时间复杂度",
-          "空间复杂度",
-          "O(nlogn)",
-          "O(n²)",
-          "递归栈",
-          "辅助数组"
-        ]
-      },
-      "explanation": "本题考查对两种经典排序算法性质的组织性表达。快速排序性能依赖划分是否均衡，平均效率高但最坏情况会退化；归并排序通过稳定的合并过程保证稳定性和稳定的 O(nlogn) 时间复杂度，但需要额外数组空间。",
-      "commonMistakesJson": [
-        {
-          "reason": "只记住两者平均时间复杂度都是 O(nlogn)，遗漏最坏情况、稳定性和空间复杂度差异",
-          "example": "回答'两者都是 O(nlogn)'后就结束"
-        },
-        {
-          "reason": "误认为快速排序完全不需要额外空间，忽略递归调用栈",
-          "example": "写成快速排序空间复杂度恒为 O(1)"
-        }
-      ],
-      "tagsJson": [
-        "数据结构",
-        "排序算法",
-        "short_answer"
-      ]
-    }
-  ]
+  "questions": [{
+    "questionType": "short_answer",
+    "difficulty": 4,
+    "abilityDimension": "application",
+    "stem": "简述数据结构中栈和队列的主要区别，并各举一个典型应用。",
+    "optionsJson": [],
+    "answerJson": {"referenceAnswer":"栈遵循后进先出，常用于函数调用栈；队列遵循先进先出，常用于任务排队。","scoringPoints":[{"point":"说明栈是后进先出","scoreRatio":0.3},{"point":"说明队列是先进先出","scoreRatio":0.3},{"point":"给出合理应用","scoreRatio":0.4}],"keywords":["栈","队列","后进先出","先进先出"]},
+    "explanation": "本题考查两种线性结构的访问顺序和使用场景。",
+    "commonMistakesJson": [{"reason":"只写名称不说明访问规则","example":"回答栈和队列都是线性表"}],
+    "tagsJson": ["数据结构","线性结构","short_answer"]
+  }]
 }

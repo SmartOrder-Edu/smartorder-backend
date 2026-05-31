@@ -1,16 +1,20 @@
 package com.smartorder.edu.student.service.impl;
 
+import com.alibaba.fastjson.JSON;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.common.util.IdGenerator;
 import com.smartorder.edu.learning.domain.entity.LearningSpace;
 import com.smartorder.edu.learning.mapper.LearningSpaceMapper;
-import com.smartorder.edu.student.aiservice.QuestionAiService;
 import com.smartorder.edu.student.domain.dto.GenerateQuestionDTO;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestion;
+import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationItem;
+import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationJob;
 import com.smartorder.edu.student.domain.enums.PromptFile;
 import com.smartorder.edu.student.domain.enums.QuestionScore;
+import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationItemMapper;
+import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationJobMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
 import com.smartorder.edu.student.service.IEvaluationQuestionService;
 import com.smartorder.edu.student.util.PromptLoader;
@@ -24,9 +28,8 @@ import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Sinks;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -34,118 +37,216 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
+import java.util.Set;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+
+import static com.smartorder.edu.common.util.ThreadLocalUtils.getCurrentUserId;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService {
-    private final QuestionAiService questionAiService;
+    private static final AtomicInteger THREAD_COUNTER = new AtomicInteger(1);
+
+    private final ExecutorService executor = Executors.newCachedThreadPool(runnable -> {
+        Thread thread = new Thread(runnable, "evaluation-question-generator-" + THREAD_COUNTER.getAndIncrement());
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private final PromptLoader promptLoader;
     private final OpenAiStreamingChatModel streamingChatModel;
     private final EvaluationQuestionMapper evaluationQuestionMapper;
     private final LearningSpaceMapper learningSpaceMapper;
     private final ObjectMapper objectMapper;
+    private final EvaluationQuestionGenerationJobMapper generationJobMapper;
+    private final EvaluationQuestionGenerationItemMapper generationItemMapper;
+    private final TransactionTemplate transactionTemplate;
 
     private static final int DEFAULT_COUNT = 5;
     private static final int DEFAULT_DIFFICULTY = 5;
     private static final int DEFAULT_OPTION_COUNT = 4;
+    private static final int DEFAULT_MAX_RETRY_COUNT = 3;
     private static final String DEFAULT_PROGRAMMING_LANGUAGE = "Java";
     private static final String DEFAULT_SQL_DIALECT = "MySQL";
-    // 提示词文件目录和公共规则文件
     private static final String PROMPTS_DIR = "prompts/";
     private static final String COMMON_RULES_FILE = "prompts/all-evaluation-rules.txt";
 
     @Override
     public void generateQuestions(GenerateQuestionDTO dto, SseEmitter emitter) {
-        // 异步启动后台 Agent 任务，放心地让 Tomcat 主线程秒级返回
-        CompletableFuture.runAsync(() -> {
-            try {
-                log.info("开始生成测评题目，输入参数: {}", dto);
-                String courseName = dto.getCourseName();
-                if (courseName == null || courseName.isBlank()) {
-                    LearningSpace learningSpace = learningSpaceMapper.selectById(dto.getLearningSpaceId());
-                    courseName = learningSpace.getName();
-                }
-                String topic = trimTextOrDefault(dto.getTopic(), "基础知识");
-
-                List<EvaluationQuestion> allQuestions = new ArrayList<>();
-                int sequence = 1;
-
-                for (GenerateQuestionDTO.QuestionTypeCountDTO typeCount : dto.getQuestionTypeCountList()) {
-                    String questionType = typeCount.getQuestionType();
-                    int count = typeCount.getCount() != null ? typeCount.getCount() : DEFAULT_COUNT;
-                    int difficulty = typeCount.getDifficulty() != null ? typeCount.getDifficulty() : DEFAULT_DIFFICULTY;
-
-                    log.info("准备生成题型={}，难度={}，数量={} 的题目", questionType, difficulty, count);
-                    if (QuestionScore.fromCode(questionType) == QuestionScore.UNKNOWN) {
-                        throw new BusinessException("暂不支持的题型: " + questionType);
-                    }
-
-                    String buildUserPrompt = buildUserPrompt(
-                            courseName,
-                            topic,
-                            questionType,
-                            count,
-                            difficulty,
-                            DEFAULT_OPTION_COUNT
-                    );
-                    log.info("合并后的提示词：{}", buildUserPrompt);
-
-                    String llmJson = callStreamingModelAndWait(buildUserPrompt,emitter);
-                    log.info("LLM完整返回内容 JSON: {}", llmJson);
-
-                    JsonNode questionsNode = parseLlmResponse(llmJson);
-
-                    if (questionsNode.size() != count) {
-                        throw new BusinessException(
-                                "LLM 返回题目数量不正确，期望 " + count + " 道，实际 " + questionsNode.size() + " 道"
-                        );
-                    }
-
-                    for (int i = 0; i < questionsNode.size(); i++) {
-                        JsonNode q = questionsNode.get(i);
-
-                        EvaluationQuestion question = mapJsonToQuestion(
-                                q,
-                                dto,
-                                courseName,
-                                questionType,
-                                difficulty,
-                                sequence++
-                        );
-
-                        evaluationQuestionMapper.insert(question);
-                        allQuestions.add(question);
+        GenerationContext context = transactionTemplate.execute(
+                status -> {
+                    try {
+                        return createGenerationContext(dto);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
                     }
                 }
+        );
+        if (context == null) {
+            throw new BusinessException("Failed to create question generation job");
+        }
+        sendEvent(emitter, "job-created", Map.of(
+                "jobId", context.job().getId(),
+                "jobNo", context.job().getJobNo(),
+                "totalCount", context.job().getTotalCount(),
+                "description", "问题开始生成"
+        ));
 
-                log.info("题目生成完成，总数量={}", allQuestions.size());
-                // 【核心】：所有题型大循环全部平平安安走完了，主动通知前端通道关闭
-                try {
-                    emitter.complete();
-                } catch (Exception e) {
-                    // 说明前端可能早就关闭了网页，没关系，后台任务成功了就行
-                }
-
-            } catch (Exception e) {
-                log.error("后台异步出题并落库失败: ", e);
-                // 发生业务致命异常时，通知前端
-                try {
-                    emitter.completeWithError(e);
-                } catch (Exception ex) {
-                    // 忽略连接早已断开的异常
-                }
-            }
-        });
+        CompletableFuture.runAsync(() -> runGeneration(context, emitter), executor);
     }
 
-    /**
-     * 3. 构建 prompt
-     */
+    private GenerationContext createGenerationContext(GenerateQuestionDTO dto) throws Exception {
+        if (dto.getQuestionTypeCountList() == null || dto.getQuestionTypeCountList().isEmpty()) {
+            throw new BusinessException("questionTypeCountList cannot be empty");
+        }
+
+        String courseName = resolveCourseName(dto);
+        String topic = trimTextOrDefault(dto.getTopic(), "basic knowledge");
+        LocalDateTime now = LocalDateTime.now();
+        int totalCount = dto.getQuestionTypeCountList().stream()
+                .mapToInt(typeCount -> resolveCount(typeCount.getCount()))
+                .sum();
+
+        long id = IdGenerator.nextId();
+        EvaluationQuestionGenerationJob job = EvaluationQuestionGenerationJob.builder()
+                .id(id)
+                .jobNo("QG-" + id)
+                .userId(getCurrentUserId())
+                .learningSpaceId(dto.getLearningSpaceId())
+                .chapterId(dto.getChapterId())
+                .knowledgePointId(dto.getKnowledgePointId())
+                .courseName(courseName)
+                .topic(topic)
+                .requestPayload(toJson(dto))
+                .status("pending")
+                .totalCount(totalCount)
+                .successCount(0)
+                .failedCount(0)
+                .progress(0)
+                .currentStep("created")
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        generationJobMapper.insert(job);
+
+        List<EvaluationQuestionGenerationItem> items = createGenerationItems(job.getId(), dto, now);
+        generationItemMapper.insertBatch(items);
+
+
+        return new GenerationContext(dto, courseName, topic, job, items);
+    }
+
+    private List<EvaluationQuestionGenerationItem> createGenerationItems(Long jobId, GenerateQuestionDTO dto, LocalDateTime now) {
+        List<EvaluationQuestionGenerationItem> items = new ArrayList<>();
+        int sequenceNo = 1;
+
+        for (GenerateQuestionDTO.QuestionTypeCountDTO typeCount : dto.getQuestionTypeCountList()) {
+            int count = resolveCount(typeCount.getCount());
+            int difficulty = resolveDifficulty(typeCount.getDifficulty());
+            int optionCount = resolveOptionCount(typeCount.getOptionCount());
+
+            for (int i = 0; i < count; i++) {
+                EvaluationQuestionGenerationItem item = EvaluationQuestionGenerationItem.builder()
+                        .id(IdGenerator.nextId())
+                        .jobId(jobId)
+                        .questionType(typeCount.getQuestionType())
+                        .difficulty(difficulty)
+                        .optionCount(optionCount)
+                        .sequenceNo(sequenceNo++)
+                        .status("pending")
+                        .retryCount(0)
+                        .maxRetryCount(DEFAULT_MAX_RETRY_COUNT)
+                        .createdAt(now)
+                        .updatedAt(now)
+                        .build();
+                items.add(item);
+            }
+        }
+        return items;
+    }
+
+    private void runGeneration(GenerationContext context, SseEmitter emitter) {
+        int successCount = 0;
+        Set<Long> successfulItemIds = ConcurrentHashMap.newKeySet();
+        int itemCursor = 0;
+
+        updateJobRunning(context.job().getId());
+
+        try {
+            for (GenerateQuestionDTO.QuestionTypeCountDTO typeCount : context.dto().getQuestionTypeCountList()) {
+                String questionType = typeCount.getQuestionType();
+                int count = resolveCount(typeCount.getCount());
+                int difficulty = resolveDifficulty(typeCount.getDifficulty());
+                int optionCount = resolveOptionCount(typeCount.getOptionCount());
+                List<EvaluationQuestionGenerationItem> batchItems =
+                        context.items().subList(itemCursor, itemCursor + count);
+                itemCursor += count;
+
+                markItemsRunning(batchItems);
+
+                log.info("Preparing question generation: jobId={}, questionType={}, difficulty={}, count={}",
+                        context.job().getId(), questionType, difficulty, count);
+                if (QuestionScore.fromCode(questionType) == QuestionScore.UNKNOWN) {
+                    throw new BusinessException("Unsupported question type: " + questionType);
+                }
+
+                String userPrompt = buildUserPrompt(
+                        context.courseName(),
+                        context.topic(),
+                        questionType,
+                        count,
+                        difficulty,
+                        optionCount
+                );
+                log.debug("Built question prompt: jobId={}, questionType={}, length={}",
+                        context.job().getId(), questionType, userPrompt.length());
+
+                updateJobStep(context.job().getId(), "generating " + questionType);
+                String llmJson = callStreamingModelAndWait(userPrompt, emitter, questionType, context.job().getId());
+                JsonNode questionsNode = parseLlmResponse(llmJson);
+
+                if (questionsNode.size() != count) {
+                    throw new BusinessException("LLM returned " + questionsNode.size()
+                            + " questions, expected " + count);
+                }
+
+                for (int i = 0; i < questionsNode.size(); i++) {
+                    EvaluationQuestionGenerationItem item = batchItems.get(i);
+                    Long questionId = IdGenerator.nextId();
+                    EvaluationQuestion question = mapJsonToQuestion(
+                            questionId,
+                            questionsNode.get(i),
+                            context.dto(),
+                            context.courseName(),
+                            questionType,
+                            difficulty,
+                            item.getSequenceNo()
+                    );
+
+                    evaluationQuestionMapper.insert(question);
+                    markItemSuccess(item.getId(), questionId, llmJson);
+                    successfulItemIds.add(item.getId());
+                    successCount++;
+                    updateJobProgress(context.job().getId(), successCount, 0, context.job().getTotalCount(),
+                            "generated " + successCount + "/" + context.job().getTotalCount());
+                }
+            }
+
+            updateJobFinished(context.job().getId(), "success", successCount, 0, null);
+            completeEmitter(emitter);
+        } catch (Exception e) {
+            int failedCount = context.job().getTotalCount() - successfulItemIds.size();
+            markUnfinishedItemsFailed(context.items(), successfulItemIds, e);
+            updateJobFinished(context.job().getId(), resolveTerminalStatus(successfulItemIds.size(), failedCount),
+                    successfulItemIds.size(), failedCount, e.getMessage());
+            log.error("Async question generation failed: jobId={}", context.job().getId(), e);
+            completeEmitterWithError(emitter, e);
+        }
+    }
+
     private String buildUserPrompt(String courseName,
                                    String topic,
                                    String questionType,
@@ -154,10 +255,8 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                                    int optionCount) {
 
         PromptFile promptFile = PromptFile.fromCode(questionType);
-
         String commonPrompt = promptLoader.load(COMMON_RULES_FILE);
         String typeRulePrompt = promptLoader.load(PROMPTS_DIR + promptFile.getPromptFileName());
-
         String mergedPrompt = commonPrompt.replace("{{questionTypeRules}}", typeRulePrompt);
 
         return PromptTemplate.from(mergedPrompt)
@@ -166,7 +265,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                         "topic", topic,
                         "difficulty", difficulty,
                         "count", count,
-                        "language", "中文",
+                        "language", "zh-CN",
                         "optionCount", optionCount,
                         "programmingLanguage", DEFAULT_PROGRAMMING_LANGUAGE,
                         "sqlDialect", DEFAULT_SQL_DIALECT
@@ -174,23 +273,12 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                 .text();
     }
 
-    /**
-     * 4. 调用 StreamingChatModel，并等待流式输出完成
-     * <p>
-     * 注意：
-     * StreamingChatModel.chat(...) 返回值是 void。
-     * 所以这里用 StringBuilder 接收 partial token。
-     * 再用 CountDownLatch 等待 onCompleteResponse 或 onError 执行。
-     */
-    private String callStreamingModelAndWait(String userPrompt, SseEmitter emitter) {
-
+    private String callStreamingModelAndWait(String userPrompt, SseEmitter emitter, String questionType, Long jobId) {
         ChatRequest request = ChatRequest.builder()
                 .messages(List.of(
                         SystemMessage.from("""
-                                你是一个专业的练习题生成专家。
-                                你必须严格按照用户要求生成 JSON。
-                                不要输出 Markdown。
-                                不要输出解释性文字。
+                                You are a professional practice question generation expert.
+                                Return valid JSON only. Do not output Markdown, explanation, or reasoning.
                                 """),
                         UserMessage.from(userPrompt)
                 ))
@@ -204,25 +292,24 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
             @Override
             public void onPartialResponse(String partialResponse) {
-                // 这里就是流式返回的一小段文本
                 log.debug("LLM partial: {}", partialResponse);
                 fullContent.append(partialResponse);
-                try{
-                    emitter.send(partialResponse);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
+                sendEvent(emitter, "quiz-token", Map.of(
+                        "jobId", jobId,
+                        "questionType", questionType,
+                        "chunk", partialResponse
+                ));
             }
 
             @Override
             public void onCompleteResponse(ChatResponse completeResponse) {
-                log.info("LLM 流式生成完成");
+                log.info("LLM streaming generation completed");
                 latch.countDown();
             }
 
             @Override
             public void onError(Throwable error) {
-                log.error("LLM 流式生成失败", error);
+                log.error("LLM streaming generation failed", error);
                 errorRef.set(error);
                 latch.countDown();
             }
@@ -232,27 +319,23 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
             latch.await();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new BusinessException("等待 LLM 返回时线程被中断");
+            throw new BusinessException("Interrupted while waiting for LLM response");
         }
 
         if (errorRef.get() != null) {
-            throw new BusinessException("LLM 生成失败: " + errorRef.get().getMessage());
+            throw new BusinessException("LLM generation failed: " + errorRef.get().getMessage());
         }
 
         String result = fullContent.toString().strip();
-
         if (result.isBlank()) {
-            throw new BusinessException("LLM 返回内容为空");
+            throw new BusinessException("LLM response is empty");
         }
 
         return result;
     }
 
-
-    /**
-     * 7. 把每一个 JsonNode 题目节点转成 EvaluationQuestion 实体
-     */
-    private EvaluationQuestion mapJsonToQuestion(JsonNode q,
+    private EvaluationQuestion mapJsonToQuestion(Long questionId,
+                                                 JsonNode q,
                                                  GenerateQuestionDTO dto,
                                                  String courseName,
                                                  String questionType,
@@ -260,37 +343,23 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                                                  int sequence) {
 
         LocalDateTime now = LocalDateTime.now();
-
         EvaluationQuestion question = new EvaluationQuestion();
 
-        question.setId(IdGenerator.nextId());
-        question.setQuestionCode("buildQuestionCode(courseName, questionType, sequence)");
-
+        question.setId(questionId);
+        question.setQuestionCode(buildQuestionCode(courseName, questionType, sequence, questionId));
         question.setLearningSpaceId(dto.getLearningSpaceId());
         question.setChapterId(dto.getChapterId());
         question.setKnowledgePointId(dto.getKnowledgePointId());
-
         question.setQuestionType(readText(q, "questionType", questionType));
         question.setDifficulty(readInt(q, "difficulty", difficulty));
-
         question.setScore(BigDecimal.valueOf(1));
-
         question.setStem(readRequiredText(q, "stem"));
-
         question.setOptionsJson(readJsonArrayAsList(q, "optionsJson"));
         question.setAnswerJson(readJsonObjectAsMap(q, "answerJson"));
-
         question.setExplanation(readText(q, "explanation", ""));
-
-        /**
-         * 如果你的 EvaluationQuestion 实体里面有这些字段，
-         * 可以打开下面这几行。
-         *
-         * question.setAbilityDimension(readText(q, "abilityDimension", ""));
-         * question.setCommonMistakesJson(readJsonArrayAsList(q, "commonMistakesJson"));
-         * question.setTagsJson(readJsonArrayAsList(q, "tagsJson"));
-         */
-
+        question.setAbilityDimension(readText(q, "abilityDimension", null));
+        question.setCommonMistakesJson(readJsonArrayAsList(q, "commonMistakesJson"));
+        question.setTagsJson(readJsonArrayAsStringList(q, "tagsJson"));
         question.setGenerationSource("agent_generated");
         question.setStatus(1);
         question.setCreatedAt(now);
@@ -299,28 +368,168 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         return question;
     }
 
-    private String trimTextOrDefault(String topic, String secondTopic) {
+    private void updateJobRunning(Long jobId) {
+        updateJobStep(jobId, "running");
+    }
+
+    private void updateJobStep(Long jobId, String currentStep) {
+        EvaluationQuestionGenerationJob update = new EvaluationQuestionGenerationJob();
+        update.setId(jobId);
+        update.setCurrentStep(currentStep);
+        update.setUpdatedAt(LocalDateTime.now());
+        generationJobMapper.updateById(update);
+    }
+
+    private void updateJobProgress(Long jobId, int successCount, int failedCount, int totalCount, String currentStep) {
+        EvaluationQuestionGenerationJob update = new EvaluationQuestionGenerationJob();
+        update.setId(jobId);
+        update.setSuccessCount(successCount);
+        update.setFailedCount(failedCount);
+        update.setProgress(calculateProgress(successCount, failedCount, totalCount));
+        update.setCurrentStep(currentStep);
+        update.setUpdatedAt(LocalDateTime.now());
+        generationJobMapper.updateById(update);
+    }
+
+    private void updateJobFinished(Long jobId, String status, int successCount, int failedCount, String errorMessage) {
+        EvaluationQuestionGenerationJob update = new EvaluationQuestionGenerationJob();
+        update.setId(jobId);
+        update.setStatus(status);
+        update.setSuccessCount(successCount);
+        update.setFailedCount(failedCount);
+        update.setProgress(calculateProgress(successCount, failedCount, successCount + failedCount));
+        update.setCurrentStep("finished");
+        update.setErrorMessage(errorMessage);
+        update.setFinishedAt(LocalDateTime.now());
+        update.setUpdatedAt(LocalDateTime.now());
+        generationJobMapper.updateById(update);
+    }
+
+    private void markItemsRunning(List<EvaluationQuestionGenerationItem> items) {
+        for (EvaluationQuestionGenerationItem item : items) {
+            EvaluationQuestionGenerationItem update = new EvaluationQuestionGenerationItem();
+            update.setId(item.getId());
+            update.setStatus("running");
+            update.setStartedAt(LocalDateTime.now());
+            update.setUpdatedAt(LocalDateTime.now());
+            generationItemMapper.updateById(update);
+        }
+    }
+
+    private void markItemSuccess(Long itemId, Long questionId, String rawResponse) {
+        EvaluationQuestionGenerationItem update = new EvaluationQuestionGenerationItem();
+        update.setId(itemId);
+        update.setQuestionId(questionId);
+        update.setStatus("success");
+        update.setRawResponse(rawResponse);
+        update.setFinishedAt(LocalDateTime.now());
+        update.setUpdatedAt(LocalDateTime.now());
+        generationItemMapper.updateById(update);
+    }
+
+    private void markUnfinishedItemsFailed(List<EvaluationQuestionGenerationItem> items, Set<Long> successfulItemIds, Exception e) {
+        for (EvaluationQuestionGenerationItem item : items) {
+            if (successfulItemIds.contains(item.getId())) {
+                continue;
+            }
+            EvaluationQuestionGenerationItem update = new EvaluationQuestionGenerationItem();
+            update.setId(item.getId());
+            update.setStatus("failed");
+            update.setErrorMessage(e.getMessage());
+            update.setFinishedAt(LocalDateTime.now());
+            update.setUpdatedAt(LocalDateTime.now());
+            generationItemMapper.updateById(update);
+        }
+    }
+
+    private String resolveCourseName(GenerateQuestionDTO dto) {
+        if (dto.getCourseName() != null && !dto.getCourseName().isBlank()) {
+            return dto.getCourseName().strip();
+        }
+
+        LearningSpace learningSpace = learningSpaceMapper.selectById(dto.getLearningSpaceId());
+        if (learningSpace == null || learningSpace.getName() == null || learningSpace.getName().isBlank()) {
+            return "unknown course";
+        }
+        return learningSpace.getName();
+    }
+
+    private String toJson(GenerateQuestionDTO dto) {
+        try {
+            return objectMapper.writeValueAsString(dto);
+        } catch (Exception e) {
+            throw new BusinessException("Failed to serialize generation request");
+        }
+    }
+
+    private int resolveCount(Integer count) {
+        return count == null ? DEFAULT_COUNT : count;
+    }
+
+    private int resolveDifficulty(Integer difficulty) {
+        return difficulty == null ? DEFAULT_DIFFICULTY : difficulty;
+    }
+
+    private int resolveOptionCount(Integer optionCount) {
+        return optionCount == null ? DEFAULT_OPTION_COUNT : optionCount;
+    }
+
+    private int calculateProgress(int successCount, int failedCount, int totalCount) {
+        if (totalCount <= 0) {
+            return 100;
+        }
+        return Math.min(100, (successCount + failedCount) * 100 / totalCount);
+    }
+
+    private String resolveTerminalStatus(int successCount, int failedCount) {
+        if (failedCount == 0) {
+            return "success";
+        }
+        return successCount > 0 ? "partial_success" : "failed";
+    }
+
+    private String trimTextOrDefault(String topic, String defaultTopic) {
         if (topic == null || topic.isBlank()) {
-            return secondTopic;
+            return defaultTopic;
         }
         return topic.strip();
     }
 
-    /**
-     * 5. 解析 LLM 返回的 JSON
-     * <p>
-     * 期望格式：
-     * {
-     * "questions": []
-     * }
-     */
+    private String buildQuestionCode(String courseName, String questionType, int sequence, Long questionId) {
+        String normalizedCourse = courseName == null ? "course" : courseName.strip().replaceAll("\\s+", "-");
+        return normalizedCourse + "-" + questionType + "-" + sequence + "-" + questionId;
+    }
+
+    private void sendEvent(SseEmitter emitter, String name, Object data) {
+        try {
+            emitter.send(SseEmitter.event().name(name).data(JSON.toJSONString(data)));
+        } catch (IOException | IllegalStateException e) {
+            log.debug("SSE send skipped: event={}, reason={}", name, e.getMessage());
+        }
+    }
+
+    private void completeEmitter(SseEmitter emitter) {
+        try {
+            emitter.complete();
+        } catch (Exception e) {
+            log.debug("SSE complete skipped: {}", e.getMessage());
+        }
+    }
+
+    private void completeEmitterWithError(SseEmitter emitter, Exception error) {
+        try {
+            emitter.completeWithError(error);
+        } catch (Exception e) {
+            log.debug("SSE error completion skipped: {}", e.getMessage());
+        }
+    }
+
     private JsonNode parseLlmResponse(String response) {
         if (response == null) {
-            throw new BusinessException("LLM 返回内容为空");
+            throw new BusinessException("LLM response is empty");
         }
 
         String json = response.strip();
-
         if (json.startsWith("```")) {
             int firstNewline = json.indexOf('\n');
             int lastFence = json.lastIndexOf("```");
@@ -332,27 +541,21 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
         try {
             JsonNode root = objectMapper.readTree(json);
-
             JsonNode questions = root.get("questions");
             if (questions == null || !questions.isArray()) {
-                throw new BusinessException("LLM 返回 JSON 缺少 questions 数组");
+                throw new BusinessException("LLM response JSON lacks questions array");
             }
-
             return questions;
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
-            log.error("解析 LLM 响应失败，原始内容: {}", response, e);
-            throw new BusinessException("解析 LLM 响应失败，请检查模型是否返回了合法 JSON");
+            log.error("Failed to parse LLM response: {}", response, e);
+            throw new BusinessException("Failed to parse LLM response as valid JSON");
         }
     }
 
-    /**
-     * JsonNode 读取字符串，有默认值
-     */
     private String readText(JsonNode node, String fieldName, String defaultValue) {
         JsonNode value = node.get(fieldName);
-
         if (value == null || value.isNull()) {
             return defaultValue;
         }
@@ -361,12 +564,8 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         return text == null || text.isBlank() ? defaultValue : text;
     }
 
-    /**
-     * JsonNode 读取 int，有默认值
-     */
     private int readInt(JsonNode node, String fieldName, int defaultValue) {
         JsonNode value = node.get(fieldName);
-
         if (value == null || value.isNull()) {
             return defaultValue;
         }
@@ -386,69 +585,68 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         return defaultValue;
     }
 
-    /**
-     * 读取 JSON 数组字段，转成 List<Map<String, Object>>
-     * <p>
-     * 例如：
-     * "optionsJson": [
-     * {"key": "A", "content": "选项A"}
-     * ]
-     */
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> readJsonArrayAsList(JsonNode node, String fieldName) {
         JsonNode value = node.get(fieldName);
-
         if (value == null || value.isNull()) {
             return List.of();
         }
 
         if (!value.isArray()) {
-            throw new BusinessException("字段 " + fieldName + " 必须是 JSON 数组");
+            throw new BusinessException("Field " + fieldName + " must be a JSON array");
         }
 
         return objectMapper.convertValue(value, List.class);
     }
 
-    /**
-     * 读取 JSON 对象字段，转成 Map<String, Object>
-     * <p>
-     * 例如：
-     * "answerJson": {
-     * "referenceAnswer": "...",
-     * "scoringPoints": []
-     * }
-     */
+    @SuppressWarnings("unchecked")
+    private List<String> readJsonArrayAsStringList(JsonNode node, String fieldName) {
+        JsonNode value = node.get(fieldName);
+        if (value == null || value.isNull()) {
+            return List.of();
+        }
+
+        if (!value.isArray()) {
+            throw new BusinessException("Field " + fieldName + " must be a JSON array");
+        }
+
+        return objectMapper.convertValue(value, List.class);
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, Object> readJsonObjectAsMap(JsonNode node, String fieldName) {
         JsonNode value = node.get(fieldName);
-
         if (value == null || value.isNull()) {
             return Map.of();
         }
 
         if (!value.isObject()) {
-            throw new BusinessException("字段 " + fieldName + " 必须是 JSON 对象");
+            throw new BusinessException("Field " + fieldName + " must be a JSON object");
         }
 
         return objectMapper.convertValue(value, Map.class);
     }
 
-    /**
-     * JsonNode 读取必填字符串
-     */
     private String readRequiredText(JsonNode node, String fieldName) {
         JsonNode value = node.get(fieldName);
-
         if (value == null || value.isNull()) {
-            throw new BusinessException("LLM 返回题目缺少必填字段: " + fieldName);
+            throw new BusinessException("LLM question lacks required field: " + fieldName);
         }
 
         String text = value.asText();
-
         if (text == null || text.isBlank()) {
-            throw new BusinessException("LLM 返回题目字段为空: " + fieldName);
+            throw new BusinessException("LLM question field is empty: " + fieldName);
         }
 
         return text;
+    }
+
+    private record GenerationContext(
+            GenerateQuestionDTO dto,
+            String courseName,
+            String topic,
+            EvaluationQuestionGenerationJob job,
+            List<EvaluationQuestionGenerationItem> items
+    ) {
     }
 }

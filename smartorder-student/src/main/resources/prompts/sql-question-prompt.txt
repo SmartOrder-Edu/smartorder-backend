@@ -1,143 +1,28 @@
-请根据给定课程、主题和难度生成 SQL 题。
+生成 SQL 题，题型代码固定为 sql，SQL 方言使用 {{sqlDialect}}。
 
-生成要求：
-1. 题型必须是 sql。
-2. SQL 方言使用 {{sqlDialect}}。
-3. 每道题必须给出清晰的数据表结构、字段含义、必要样例数据和查询任务。
-4. 查询任务必须有明确、可验证的结果，避免只要求"自由分析数据"。
-5. answerJson.referenceSql 必须是可执行 SQL，不要使用伪代码。
-6. 对于需要多表查询的题目，必须明确主键、外键或关联条件。
-7. 对于聚合、排序、分组、窗口函数、子查询等题目，必须说明期望结果的关键规则。
-8. answerJson.testCases 至少包含 1 组表数据和 expectedRows，用于验证 referenceSql 的结果。
-9. explanation 必须说明查询思路、关键 SQL 子句和容易出错的条件。
-10. commonMistakesJson 必须覆盖关联条件、过滤位置、聚合粒度、空值处理或排序限制等常见误区。
-11. 必须生成 exactly {{count}} 道题，questions 数组长度必须等于 {{count}}。
-12. 每道题的 difficulty 必须等于输入的 {{difficulty}}。
-13. optionsJson 必须输出空数组 []。
-14. SQL 和多行内容必须在 JSON 字符串中使用 \n 转义，不要输出 Markdown 代码块。
-15. 必须严格输出 JSON，不要输出 Markdown，不要输出解释性文字。
+约束：
+1. optionsJson 必须是空数组 []。
+2. stem 给出表结构、字段含义、必要样例数据和明确查询任务。
+3. 多表查询必须明确主键、外键或关联条件。
+4. answerJson 格式：{"dialect":"{{sqlDialect}}","referenceSql":"可执行 SQL","expectedResultDescription":"期望结果说明","testCases":[{"tables":[],"expectedRows":[]}]}。
+5. referenceSql 必须可执行，不写伪代码。
+6. testCases 至少 1 组表数据和 expectedRows，用于验证 SQL 结果。
+7. SQL 和多行内容必须在 JSON 字符串中使用 \n 转义。
 
-请输出类似于如下 JSON 结构：
+# 最终输出
+只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
 
+# 短示例
 {
-  "questions": [
-    {
-      "questionType": "sql",
-      "difficulty": 4,
-      "abilityDimension": "application",
-      "stem": "现有如下数据库表结构：\n\n学生表 students：\n- student_id INT，主键\n- name VARCHAR(50)，学生姓名\n- class_id INT，班级ID\n\n成绩表 scores：\n- id INT，主键\n- student_id INT，学生ID，外键关联 students.student_id\n- subject VARCHAR(30)，科目\n- score DECIMAL(5,1)，成绩\n\n请编写 SQL 查询：找出每个班级中平均成绩最高的学生，输出 class_id、name、avg_score。如果有并列最高，全部输出。",
-      "optionsJson": [],
-      "answerJson": {
-        "dialect": "MySQL",
-        "referenceSql": "WITH student_avg AS (\n  SELECT s.student_id, s.name, s.class_id, AVG(sc.score) AS avg_score\n  FROM students s\n  JOIN scores sc ON s.student_id = sc.student_id\n  GROUP BY s.student_id, s.name, s.class_id\n), ranked AS (\n  SELECT student_id, name, class_id, avg_score,\n         RANK() OVER (PARTITION BY class_id ORDER BY avg_score DESC) AS ranking\n  FROM student_avg\n)\nSELECT class_id, name, avg_score\nFROM ranked\nWHERE ranking = 1\nORDER BY class_id, name",
-        "expectedResultDescription": "每个班级平均成绩最高的学生记录，包含 class_id、name、avg_score；并列最高全部返回",
-        "testCases": [
-          {
-            "tables": [
-              {
-                "name": "students",
-                "columns": [
-                  "student_id",
-                  "name",
-                  "class_id"
-                ],
-                "rows": [
-                  {
-                    "student_id": 1,
-                    "name": "张三",
-                    "class_id": 1
-                  },
-                  {
-                    "student_id": 2,
-                    "name": "李四",
-                    "class_id": 1
-                  },
-                  {
-                    "student_id": 3,
-                    "name": "王五",
-                    "class_id": 2
-                  }
-                ]
-              },
-              {
-                "name": "scores",
-                "columns": [
-                  "id",
-                  "student_id",
-                  "subject",
-                  "score"
-                ],
-                "rows": [
-                  {
-                    "id": 1,
-                    "student_id": 1,
-                    "subject": "数学",
-                    "score": 90
-                  },
-                  {
-                    "id": 2,
-                    "student_id": 1,
-                    "subject": "英语",
-                    "score": 80
-                  },
-                  {
-                    "id": 3,
-                    "student_id": 2,
-                    "subject": "数学",
-                    "score": 70
-                  },
-                  {
-                    "id": 4,
-                    "student_id": 2,
-                    "subject": "英语",
-                    "score": 95
-                  },
-                  {
-                    "id": 5,
-                    "student_id": 3,
-                    "subject": "数学",
-                    "score": 85
-                  },
-                  {
-                    "id": 6,
-                    "student_id": 3,
-                    "subject": "英语",
-                    "score": 90
-                  }
-                ]
-              }
-            ],
-            "expectedRows": [
-              {
-                "class_id": 1,
-                "name": "张三",
-                "avg_score": 85.0
-              },
-              {
-                "class_id": 2,
-                "name": "王五",
-                "avg_score": 87.5
-              }
-            ]
-          }
-        ]
-      },
-      "explanation": "先关联 students 与 scores，并按学生维度计算平均分；再使用窗口函数 RANK() 按班级分组、平均分降序排名；最后筛选 ranking=1 的记录。使用 RANK() 可以保留并列第一的学生，避免只返回一条记录。",
-      "commonMistakesJson": [
-        {
-          "reason": "按 class_id 直接分组导致只能得到班级平均分，无法得到每个学生的平均分",
-          "example": "GROUP BY class_id 后 SELECT name，结果姓名不确定或语法错误"
-        },
-        {
-          "reason": "使用 LIMIT 1 或 ROW_NUMBER() 只保留一个学生，漏掉并列最高的情况",
-          "example": "每个班级有两个学生平均分相同时，只输出其中一个"
-        }
-      ],
-      "tagsJson": [
-        "数据库",
-        "聚合查询",
-        "sql"
-      ]
-    }
-  ]
+  "questions": [{
+    "questionType": "sql",
+    "difficulty": 4,
+    "abilityDimension": "application",
+    "stem": "表 stack_ops(id INT, op VARCHAR(10)) 记录栈操作。请查询 op='push' 的记录数量，输出 push_count。",
+    "optionsJson": [],
+    "answerJson": {"dialect":"MySQL","referenceSql":"SELECT COUNT(*) AS push_count FROM stack_ops WHERE op = 'push'","expectedResultDescription":"返回 push 操作数量","testCases":[{"tables":[{"name":"stack_ops","columns":["id","op"],"rows":[{"id":1,"op":"push"},{"id":2,"op":"pop"},{"id":3,"op":"push"}]}],"expectedRows":[{"push_count":2}]}]},
+    "explanation": "使用 WHERE 过滤 push 操作，再用 COUNT 聚合计数。",
+    "commonMistakesJson": [{"reason":"忘记过滤 op 条件","example":"统计了所有操作数量"}],
+    "tagsJson": ["数据结构","SQL","sql"]
+  }]
 }

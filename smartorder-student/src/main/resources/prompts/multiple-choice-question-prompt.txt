@@ -1,73 +1,27 @@
-请根据给定课程、主题和难度生成多选题。
+生成多选题，题型代码固定为 multiple_choice。
 
-生成要求：
-1. 题型必须是 multiple_choice。
-2. 每道题至少有 2 个正确答案，最多有 3 个正确答案。
-3. 每道题必须有 A、B、C、D 四个选项。
-4. 正确选项之间必须互相独立，不要把同一个答案拆成多个近义表达。
-5. 错误选项必须有迷惑性，但不能在严格意义下也成立。
-6. 题干必须明确提示"多选"，并说明"至少有两个正确答案"。
-7. 不要出现"以上都对""以上都不对""无法判断"等选项。
-8. 解析要逐项说明每个选项为什么正确或错误。
-9. 必须生成 exactly {{count}} 道题，questions 数组长度必须等于 {{count}}。
-10. 每道题的 difficulty 必须等于输入的 {{difficulty}}。
-11. optionsJson 必须按 A、B、C、D 排序，label 不得重复。
-12. answerJson.correctOptions 必须包含 2 到 3 个选项 label，不能只有 1 个。
-13. commonMistakesJson 至少覆盖 1 个误选项和 1 个漏选项。
-14. 必须严格输出 JSON，不要输出 Markdown，不要输出解释性文字。
+约束：
+1. 每题必须有 A、B、C、D 四个选项。
+2. 题干必须明确提示“多选，至少有两个正确答案”。
+3. answerJson 格式：{"correctOptions":["A","C"]}，正确选项必须为 2 到 3 个。
+4. 正确选项相互独立，错误选项有迷惑性但严格意义下不能成立。
+5. explanation 逐项简述判断依据。
+6. commonMistakesJson 至少覆盖 1 个误选项和 1 个漏选项。
 
-请输出类似于如下 JSON 结构：
+# 最终输出
+只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
 
+# 短示例
 {
-  "questions": [
-    {
-      "questionType": "multiple_choice",
-      "difficulty": 3,
-      "abilityDimension": "概念理解与性质辨析",
-      "stem": "关于常见排序算法的特性与复杂度，以下说法正确的有哪些？（多选，至少有两个正确答案）",
-      "optionsJson": [
-        {
-          "label": "A",
-          "content": "快速排序在最坏情况下的时间复杂度为O(n²)，但可通过随机化枢轴选择来降低最坏情况发生的概率"
-        },
-        {
-          "label": "B",
-          "content": "归并排序是稳定的排序算法，且在任何情况下的时间复杂度均为O(nlogn)"
-        },
-        {
-          "label": "C",
-          "content": "堆排序是不稳定的排序算法，但其空间复杂度为O(1)，优于归并排序的O(n)"
-        },
-        {
-          "label": "D",
-          "content": "冒泡排序在最好的情况下（已有序）时间复杂度为O(n²)，与最坏情况相同"
-        }
-      ],
-      "answerJson": {
-        "correctOptions": [
-          "A",
-          "B",
-          "C"
-        ]
-      },
-      "explanation": "A选项正确，快速排序在每次选取最大或最小元素作为枢轴时退化为O(n²)，随机化枢轴能有效降低此概率；B选项正确，归并排序在合并过程中保证相等元素的相对顺序不变，且分治策略保证了O(nlogn)的时间复杂度；C选项正确，堆排序在筛选过程中可能交换相等元素导致不稳定，且只需常数额外空间，而归并排序需要O(n)的辅助数组；D选项错误，冒泡排序可通过设置标志位优化，在已有序的情况下只需一趟扫描即可结束，最好时间复杂度为O(n)。",
-      "commonMistakesJson": [
-        {
-          "option": "D",
-          "reason": "忽略了冒泡排序的经典优化（带标志位的提前终止），误认为任何情况下都需要完整的n-1趟比较",
-          "example": "认为冒泡排序无论如何都要进行完整的嵌套循环，从而误以为最好情况也是O(n²)"
-        },
-        {
-          "option": "B",
-          "reason": "对排序稳定性的判断标准不清晰，混淆了归并排序与快速排序的稳定性",
-          "example": "认为归并排序在合并时会改变相等元素的顺序，从而漏选B"
-        }
-      ],
-      "tagsJson": [
-        "数据结构",
-        "排序算法",
-        "multiple_choice"
-      ]
-    }
-  ]
+  "questions": [{
+    "questionType": "multiple_choice",
+    "difficulty": 4,
+    "abilityDimension": "application",
+    "stem": "关于数据结构中的队列，以下说法正确的是哪些？（多选，至少有两个正确答案）",
+    "optionsJson": [{"label":"A","content":"普通队列通常先进先出"},{"label":"B","content":"入队一般发生在队尾"},{"label":"C","content":"出队一般发生在队尾"},{"label":"D","content":"循环队列可复用数组空间"}],
+    "answerJson": {"correctOptions":["A","B","D"]},
+    "explanation": "A、B、D 符合队列和循环队列特点；C 错在普通队列通常从队头出队。",
+    "commonMistakesJson": [{"option":"C","reason":"混淆队头和队尾","example":"认为删除也在队尾进行"},{"option":"D","reason":"不了解循环队列空间复用","example":"漏选 D"}],
+    "tagsJson": ["数据结构","队列","multiple_choice"]
+  }]
 }

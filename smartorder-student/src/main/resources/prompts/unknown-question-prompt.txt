@@ -1,76 +1,26 @@
-当前题型未被明确识别，请根据给定课程、主题和难度生成通用诊断题。
+生成通用测评题，题型代码固定为 unknown。仅在题型未明确时使用。
 
-生成要求：
-1. 题型必须是 unknown。
-2. 仅在上游无法识别题型时使用该提示词，题目应尽量保持通用、可判分、低歧义。
-3. 每道题应以简答形式呈现，要求学生说明概念、步骤、原因、差异或应用判断。
-4. 不要生成选择题、判断题或填空题结构。
-5. 参考答案必须明确，评分要点必须可拆分判分。
-6. answerJson.scoringPoints 中每个评分要点必须可独立判分，scoreRatio 总和必须等于 1.0。
-7. answerJson.keywords 必须列出判分时应关注的核心术语或关键表达。
-8. explanation 必须说明参考答案的关键知识点和判断依据。
-9. commonMista9. 必须生成 exactly {{count}} 道题，questions 数组长度必须等于 {{count}}。
-10. 每道题的 difficulty 必须等于输入的 {{difficulty}}。
-11. optionsJson 必须输出空数组 []。
-12. optionsJson 必须输出空数组 []。
-13. 多行内容必须在 JSON 字符串中使用 \n 转义，不要输出 Markdown 代码块。
-14. 必须严格输出 JSON，不要输出 Markdown，不要输出解释性文字。
+约束：
+1. 优先生成可自动判分的题目，避免开放讨论。
+2. optionsJson 和 answerJson 必须与题干含义匹配。
+3. explanation 简短说明答案依据。
+4. commonMistakesJson 至少说明 1 个真实误区。
+5. 如果输入能推断具体题型，应在 questionType 中使用更具体的题型代码。
 
-请输出类似于如下 JSON 结构：
+# 最终输出
+只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
 
+# 短示例
 {
-  "questions": [
-    {
-      "questionType": "unknown",
-      "difficulty": 3,
-      "abilityDimension": "concept",
-      "stem": "什么是哈希冲突？请列举至少两种解决哈希冲突的方法，并简要说明各自的优缺点。",
-      "optionsJson": [],
-      "answerJson": {
-        "referenceAnswer": "哈希冲突是指不同关键字通过哈希函数计算后映射到同一个哈希地址。常见解决方法包括链地址法和开放地址法。链地址法把冲突元素组织在同一个桶的链表或其他结构中，优点是实现直观、删除方便，缺点是需要额外指针空间。开放地址法在冲突时按探测规则寻找下一个可用位置，优点是数据更紧凑，缺点是容易产生堆积，删除处理更复杂。",
-        "scoringPoints": [
-          {
-            "point": "正确定义哈希冲突",
-            "scoreRatio": 0.25
-          },
-          {
-            "point": "列出链地址法并说明基本原理和优缺点",
-            "scoreRatio": 0.3
-          },
-          {
-            "point": "列出开放地址法或其他有效方法，并说明基本原理和优缺点",
-            "scoreRatio": 0.3
-          },
-          {
-            "point": "表达清晰，能结合具体例子或应用场景说明",
-            "scoreRatio": 0.15
-          }
-        ],
-        "keywords": [
-          "哈希冲突",
-          "链地址法",
-          "开放地址法",
-          "哈希地址",
-          "探测",
-          "哈希桶"
-        ]
-      },
-      "explanation": "哈希冲突是哈希表必须处理的核心问题。链地址法通过桶内链式结构容纳多个元素，开放地址法通过探测寻找空槽。二者在空间占用、删除复杂度和装载因子敏感性方面存在差异，理解这些差异有助于判断不同实现的适用场景。",
-      "commonMistakesJson": [
-        {
-          "reason": "只写方法名称，不能说明方法如何处理冲突",
-          "example": "答案只写'链地址法、开放地址法'，没有解释桶或探测过程"
-        },
-        {
-          "reason": "混淆哈希函数设计和冲突解决策略",
-          "example": "把'选择更好的哈希函数'当成唯一解决方案，忽略冲突无法完全避免"
-        }
-      ],
-      "tagsJson": [
-        "数据结构",
-        "哈希表",
-        "unknown"
-      ]
-    }
-  ]
+  "questions": [{
+    "questionType": "unknown",
+    "difficulty": 3,
+    "abilityDimension": "concept",
+    "stem": "数据结构中，线性表的元素之间主要是什么关系？",
+    "optionsJson": [{"label":"A","content":"一对一"},{"label":"B","content":"一对多"},{"label":"C","content":"多对多"},{"label":"D","content":"无关系"}],
+    "answerJson": {"correctOptions":["A"]},
+    "explanation": "线性表中除首尾元素外，每个元素有唯一前驱和唯一后继，体现一对一关系。",
+    "commonMistakesJson": [{"option":"B","reason":"把树结构关系误认为线性表关系","example":"认为一个元素可直接连接多个后继"}],
+    "tagsJson": ["数据结构","线性表","unknown"]
+  }]
 }

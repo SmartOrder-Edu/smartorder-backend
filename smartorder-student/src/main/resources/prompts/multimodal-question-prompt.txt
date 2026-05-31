@@ -1,78 +1,28 @@
-请根据给定课程、主题和难度生成多模态题。
+生成多模态题，题型代码固定为 multimodal。
 
-生成要求：
-1. 题型必须是 multimodal。
-2. 题干必须包含可被文本表达的素材信息，例如图表数据、流程图描述、代码片段、实验现象、日志片段或界面截图描述。
-3. 题目必须要求学生结合素材进行观察、分析、判断或解释，不能只考查脱离素材的记忆性知识。
-4. 素材描述必须完整到足以独立作答，不能依赖真实图片文件或外部链接。
-5. answerJson.referenceAnswer 必须给出标准分析路径或推荐结论。
-6. answerJson.scoringPoints 中每个评分要点必须可独立判分，scoreRatio 总和必须等于 1.0。
-7. answerJson.mediaElements 必须列出题干中使用的素材类型和关键信息。
-8. explanation 必须说明如何从素材信息推导答案，并指出关键知识点。
-9. commonMistakesJson 必须覆盖观察遗漏、图表误读、代码片段误解或条件忽略等真实误区。
-10. 必须生成 exactly {{count}} 道题，questions 数组长度必须等于 {{count}}。
-11. 每道题的 difficulty 必须等于输入的 {{difficulty}}。
-12. optionsJson 必须输出空数组 []。
-13. 多行素材、代码和表格必须在 JSON 字符串中使用 \n 转义，不要输出 Markdown 代码块。
-14. 必须严格输出 JSON，不要输出 Markdown，不要输出解释性文字。
+约束：
+1. optionsJson 必须是空数组 []。
+2. stem 必须包含可用文本表达的素材信息，如图表数据、流程描述、代码片段、实验现象、日志片段或界面截图描述。
+3. 素材描述必须完整到足以独立作答，不依赖真实图片文件或外部链接。
+4. 题目要求学生结合素材观察、分析、判断或解释。
+5. answerJson 格式：{"referenceAnswer":"标准分析或结论","scoringPoints":[{"point":"评分点","scoreRatio":0.5}],"mediaElements":[{"type":"素材类型","description":"关键信息"}]}。
+6. scoringPoints 中每个评分点可独立判分，scoreRatio 总和必须等于 1.0。
+7. 多行素材、代码和表格必须在 JSON 字符串中使用 \n 转义。
 
-请输出类似于如下 JSON 结构：
+# 最终输出
+只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
 
+# 短示例
 {
-  "questions": [
-    {
-      "questionType": "multimodal",
-      "difficulty": 5,
-      "abilityDimension": "analysis",
-      "stem": "阅读下面的缓存访问序列图表描述，并判断 LRU 缓存最终保留哪些页面。\n\n素材描述：\n- 缓存容量为 3\n- 访问序列依次为：A, B, C, A, D, E\n- 每次访问命中时，该页面会更新为最近访问\n- 每次访问未命中且缓存已满时，淘汰最久未被访问的页面\n\n请写出每一步访问后的缓存状态，并给出最终缓存中的页面。",
-      "optionsJson": [],
-      "answerJson": {
-        "referenceAnswer": "访问 A 后缓存为 [A]；访问 B 后为 [A,B]；访问 C 后为 [A,B,C]；再次访问 A 命中，A 更新为最近访问，顺序可表示为 [B,C,A]；访问 D 未命中且缓存满，淘汰 B，得到 [C,A,D]；访问 E 未命中且缓存满，淘汰 C，得到 [A,D,E]。最终缓存保留 A、D、E。",
-        "scoringPoints": [
-          {
-            "point": "正确识别 A 的第二次访问是命中，并将 A 更新为最近访问",
-            "scoreRatio": 0.25
-          },
-          {
-            "point": "访问 D 时正确淘汰最久未访问的 B",
-            "scoreRatio": 0.25
-          },
-          {
-            "point": "访问 E 时正确淘汰最久未访问的 C",
-            "scoreRatio": 0.25
-          },
-          {
-            "point": "给出最终缓存页面 A、D、E，并能说明访问顺序变化",
-            "scoreRatio": 0.25
-          }
-        ],
-        "mediaElements": [
-          {
-            "type": "sequence",
-            "description": "缓存容量为 3，访问序列为 A, B, C, A, D, E"
-          },
-          {
-            "type": "rule",
-            "description": "LRU 命中更新访问顺序，未命中且满容量时淘汰最久未访问页面"
-          }
-        ]
-      },
-      "explanation": "LRU 的关键是维护最近访问顺序。第二次访问 A 后，A 不应被淘汰，因为它已经变成最近访问；随后 D 到来时最久未访问的是 B，E 到来时最久未访问的是 C。因此最终缓存中是 A、D、E。",
-      "commonMistakesJson": [
-        {
-          "reason": "只按首次进入缓存的先后顺序淘汰，忽略命中后会更新访问顺序",
-          "example": "访问 D 时错误淘汰 A，而不是淘汰 B"
-        },
-        {
-          "reason": "把缓存容量理解为最多访问次数，提前丢弃仍在缓存中的页面",
-          "example": "访问 C 后错误地认为 A 已经过期"
-        }
-      ],
-      "tagsJson": [
-        "数据结构",
-        "LRU缓存",
-        "multimodal"
-      ]
-    }
-  ]
+  "questions": [{
+    "questionType": "multimodal",
+    "difficulty": 5,
+    "abilityDimension": "analysis",
+    "stem": "阅读栈操作序列图表描述：容量为 3，操作依次为 push A、push B、pop、push C。请写出每步后栈内元素和最终栈顶。",
+    "optionsJson": [],
+    "answerJson": {"referenceAnswer":"push A 后 [A]；push B 后 [A,B]；pop 弹出 B 后 [A]；push C 后 [A,C]，最终栈顶为 C。","scoringPoints":[{"point":"正确处理 pop 弹出 B","scoreRatio":0.4},{"point":"给出最终栈顶 C","scoreRatio":0.3},{"point":"步骤顺序完整","scoreRatio":0.3}],"mediaElements":[{"type":"sequence","description":"push A, push B, pop, push C"}]},
+    "explanation": "栈是后进先出，pop 删除最近入栈的 B。",
+    "commonMistakesJson": [{"reason":"把栈当队列处理","example":"pop 时错误弹出 A"}],
+    "tagsJson": ["数据结构","栈","multimodal"]
+  }]
 }
