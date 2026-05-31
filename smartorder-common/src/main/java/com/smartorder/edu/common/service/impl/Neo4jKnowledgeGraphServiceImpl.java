@@ -1,6 +1,7 @@
 package com.smartorder.edu.common.service.impl;
 
 import com.smartorder.edu.common.mapper.Neo4jKnowledgeNodeRepository;
+import com.smartorder.edu.common.model.dto.RelationshipResult;
 import com.smartorder.edu.common.model.entity.Neo4jKnowledgeNode;
 import com.smartorder.edu.common.model.entity.Neo4jKnowledgeRelation;
 import com.smartorder.edu.common.model.vo.KnowledgeGraphVO;
@@ -10,9 +11,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.annotation.PostConstruct;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -24,6 +25,64 @@ import java.util.UUID;
 public class Neo4jKnowledgeGraphServiceImpl implements INeo4jKnowledgeGraphService {
 
     private final Neo4jKnowledgeNodeRepository neo4jRepository;
+
+    /**
+     * 应用启动时初始化所有关系类型
+     * 目的：确保数据库中存在所有关系类型，避免 Spring Data Neo4j 查询时的警告
+     */
+    @PostConstruct
+    public void initRelationshipTypes() {
+        log.info("开始初始化 Neo4j 关系类型...");
+
+        try {
+            // 定义所有关系类型
+            String[] relationTypes = {
+                "PREREQUISITE_OF", "RELATED_TO", "PART_OF", "CAUSE_EFFECT",
+                "COMPARE_WITH", "STEP_OF", "RECOMMEND", "DEPENDS_ON"
+            };
+
+            // 检查是否已存在测试节点
+            Neo4jKnowledgeNode existingNode = neo4jRepository.findById("test_init_node_1").orElse(null);
+            if (existingNode != null) {
+                log.info("关系类型初始化已完成，跳过...");
+                return;
+            }
+
+            // 创建测试节点
+            Neo4jKnowledgeNode node1 = new Neo4jKnowledgeNode();
+            node1.setId("test_init_node_1");
+            node1.setName("测试初始化节点1");
+            node1.setDescription("用于初始化关系类型的测试节点");
+            node1.setSpaceId(0L);
+            node1.setKnowledgeBaseId(0L);
+            node1.setFileId(0L);
+            neo4jRepository.save(node1);
+
+            Neo4jKnowledgeNode node2 = new Neo4jKnowledgeNode();
+            node2.setId("test_init_node_2");
+            node2.setName("测试初始化节点2");
+            node2.setDescription("用于初始化关系类型的测试节点");
+            node2.setSpaceId(0L);
+            node2.setKnowledgeBaseId(0L);
+            node2.setFileId(0L);
+            neo4jRepository.save(node2);
+
+            // 为每种关系类型创建测试关系
+            for (String relationType : relationTypes) {
+                try {
+                    createRelation("test_init_node_1", "test_init_node_2", relationType, 0.5, 0L, "测试" + relationType + "关系");
+                    log.info("创建关系类型: {}", relationType);
+                } catch (Exception e) {
+                    log.warn("创建关系类型 {} 失败: {}", relationType, e.getMessage());
+                }
+            }
+
+            log.info("Neo4j 关系类型初始化完成");
+
+        } catch (Exception e) {
+            log.error("初始化 Neo4j 关系类型失败", e);
+        }
+    }
 
     @Override
     @Transactional
@@ -194,15 +253,15 @@ public class Neo4jKnowledgeGraphServiceImpl implements INeo4jKnowledgeGraphServi
         vo.setNodes(nodeVOs);
 
         // 查询节点之间的关系
-        List<Map<String, Object>> relationships = neo4jRepository.findRelationshipsByFileId(fileId);
+        List<RelationshipResult> relationships = neo4jRepository.findRelationshipsByFileId(fileId);
         List<KnowledgeGraphVO.EdgeVO> edgeVOs = new ArrayList<>();
-        for (Map<String, Object> rel : relationships) {
+        for (RelationshipResult rel : relationships) {
             KnowledgeGraphVO.EdgeVO edgeVO = new KnowledgeGraphVO.EdgeVO();
-            edgeVO.setSource((String) rel.get("sourceId"));
-            edgeVO.setTarget((String) rel.get("targetId"));
-            edgeVO.setRelationType((String) rel.get("relationType"));
-            edgeVO.setWeight(rel.get("weight") != null ? ((Number) rel.get("weight")).doubleValue() : null);
-            edgeVO.setDescription((String) rel.get("description"));
+            edgeVO.setSource(rel.getSourceId());
+            edgeVO.setTarget(rel.getTargetId());
+            edgeVO.setRelationType(rel.getRelationType());
+            edgeVO.setWeight(rel.getWeight());
+            edgeVO.setDescription(rel.getDescription());
             edgeVOs.add(edgeVO);
         }
         vo.setEdges(edgeVOs);
