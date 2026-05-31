@@ -2,6 +2,7 @@ package com.smartorder.edu.common.service.impl;
 
 import com.smartorder.edu.common.mapper.Neo4jKnowledgeNodeRepository;
 import com.smartorder.edu.common.model.entity.Neo4jKnowledgeNode;
+import com.smartorder.edu.common.model.entity.Neo4jKnowledgeRelation;
 import com.smartorder.edu.common.model.vo.KnowledgeGraphVO;
 import com.smartorder.edu.common.service.INeo4jKnowledgeGraphService;
 import lombok.RequiredArgsConstructor;
@@ -47,39 +48,42 @@ public class Neo4jKnowledgeGraphServiceImpl implements INeo4jKnowledgeGraphServi
     @Override
     @Transactional
     public void createRelation(String sourceNodeId, String targetNodeId, String relationType,
-                               Double weight, Long spaceId) {
+                               Double weight, Long spaceId, String description) {
         Neo4jKnowledgeNode sourceNode = neo4jRepository.findById(sourceNodeId)
                 .orElseThrow(() -> new RuntimeException("源节点不存在: " + sourceNodeId));
         Neo4jKnowledgeNode targetNode = neo4jRepository.findById(targetNodeId)
                 .orElseThrow(() -> new RuntimeException("目标节点不存在: " + targetNodeId));
 
+        Neo4jKnowledgeRelation relation = new Neo4jKnowledgeRelation(
+                UUID.randomUUID().toString(), targetNode, relationType, weight, spaceId, description);
+
         switch (relationType.toUpperCase()) {
             case "PREREQUISITE_OF":
-                sourceNode.getPrerequisites().add(targetNode);
+                sourceNode.getPrerequisites().add(relation);
                 break;
             case "RELATED_TO":
-                sourceNode.getRelatedNodes().add(targetNode);
+                sourceNode.getRelatedNodes().add(relation);
                 break;
             case "PART_OF":
-                sourceNode.getParentNodes().add(targetNode);
+                sourceNode.getParentNodes().add(relation);
                 break;
             case "CAUSE_EFFECT":
-                sourceNode.getCauseEffectNodes().add(targetNode);
+                sourceNode.getCauseEffectNodes().add(relation);
                 break;
             case "COMPARE_WITH":
-                sourceNode.getCompareNodes().add(targetNode);
+                sourceNode.getCompareNodes().add(relation);
                 break;
             case "STEP_OF":
-                sourceNode.getStepOfNodes().add(targetNode);
+                sourceNode.getStepOfNodes().add(relation);
                 break;
             case "RECOMMEND":
-                sourceNode.getRecommendNodes().add(targetNode);
+                sourceNode.getRecommendNodes().add(relation);
                 break;
             case "DEPENDS_ON":
-                sourceNode.getDependsOnNodes().add(targetNode);
+                sourceNode.getDependsOnNodes().add(relation);
                 break;
             default:
-                sourceNode.getRelatedNodes().add(targetNode);
+                sourceNode.getRelatedNodes().add(relation);
                 break;
         }
 
