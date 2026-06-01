@@ -1,12 +1,14 @@
 package com.smartorder.edu.student.service.impl;
 
 import com.alibaba.fastjson.JSON;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.common.util.IdGenerator;
 import com.smartorder.edu.learning.domain.entity.LearningSpace;
 import com.smartorder.edu.learning.mapper.LearningSpaceMapper;
+import com.smartorder.edu.student.aiservice.QuestionAiService;
 import com.smartorder.edu.student.domain.dto.GenerateQuestionDTO;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestion;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationItem;
@@ -18,13 +20,7 @@ import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationJobMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
 import com.smartorder.edu.student.service.IEvaluationQuestionService;
 import com.smartorder.edu.student.util.PromptLoader;
-import dev.langchain4j.data.message.SystemMessage;
-import dev.langchain4j.data.message.UserMessage;
-import dev.langchain4j.model.chat.request.ChatRequest;
-import dev.langchain4j.model.chat.response.ChatResponse;
-import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.input.PromptTemplate;
-import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -41,6 +37,7 @@ import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import static com.smartorder.edu.common.util.ThreadLocalUtils.getCurrentUserId;
 
@@ -57,13 +54,13 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     });
 
     private final PromptLoader promptLoader;
-    private final OpenAiStreamingChatModel streamingChatModel;
     private final EvaluationQuestionMapper evaluationQuestionMapper;
     private final LearningSpaceMapper learningSpaceMapper;
     private final ObjectMapper objectMapper;
     private final EvaluationQuestionGenerationJobMapper generationJobMapper;
     private final EvaluationQuestionGenerationItemMapper generationItemMapper;
     private final TransactionTemplate transactionTemplate;
+    private final QuestionAiService questionAiService;
 
     private static final int DEFAULT_COUNT = 5;
     private static final int DEFAULT_DIFFICULTY = 5;
@@ -86,8 +83,10 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                 }
         );
         if (context == null) {
-            throw new BusinessException("Failed to create question generation job");
+            throw new BusinessException("生成问题失败");
         }
+        log.info("生成问题任务开始: jobId={}, jobNo={}, totalCount={}",
+                context.job().getId(), context.job().getJobNo(), context.job().getTotalCount());
         sendEvent(emitter, "job-created", Map.of(
                 "jobId", context.job().getId(),
                 "jobNo", context.job().getJobNo(),
@@ -100,7 +99,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
     private GenerationContext createGenerationContext(GenerateQuestionDTO dto) throws Exception {
         if (dto.getQuestionTypeCountList() == null || dto.getQuestionTypeCountList().isEmpty()) {
-            throw new BusinessException("questionTypeCountList cannot be empty");
+            throw new BusinessException("问题类型数量列表不能为空");
         }
 
         String courseName = resolveCourseName(dto);
@@ -169,82 +168,142 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     }
 
     private void runGeneration(GenerationContext context, SseEmitter emitter) {
-        int successCount = 0;
+        AtomicInteger successCount = new AtomicInteger(0);
         Set<Long> successfulItemIds = ConcurrentHashMap.newKeySet();
-        int itemCursor = 0;
 
         updateJobRunning(context.job().getId());
 
         try {
-            for (GenerateQuestionDTO.QuestionTypeCountDTO typeCount : context.dto().getQuestionTypeCountList()) {
-                String questionType = typeCount.getQuestionType();
-                int count = resolveCount(typeCount.getCount());
-                int difficulty = resolveDifficulty(typeCount.getDifficulty());
-                int optionCount = resolveOptionCount(typeCount.getOptionCount());
-                List<EvaluationQuestionGenerationItem> batchItems =
-                        context.items().subList(itemCursor, itemCursor + count);
-                itemCursor += count;
+            List<GenerationBatch> batches = createGenerationBatches(context);
+            validateGenerationBatches(batches);
+            log.info("并行生成问题开始: jobId={}, batchCount={}, totalCount={}",
+                    context.job().getId(), batches.size(), context.job().getTotalCount());
+            List<CompletableFuture<Void>> futures = batches.stream()
+                    .map(batch -> CompletableFuture.runAsync(
+                            () -> generateBatch(context, batch, emitter, successCount, successfulItemIds),
+                            executor
+                    ))
+                    .toList();
+            waitForBatches(futures);
 
-                markItemsRunning(batchItems);
-
-                log.info("Preparing question generation: jobId={}, questionType={}, difficulty={}, count={}",
-                        context.job().getId(), questionType, difficulty, count);
-                if (QuestionScore.fromCode(questionType) == QuestionScore.UNKNOWN) {
-                    throw new BusinessException("Unsupported question type: " + questionType);
-                }
-
-                String userPrompt = buildUserPrompt(
-                        context.courseName(),
-                        context.topic(),
-                        questionType,
-                        count,
-                        difficulty,
-                        optionCount
-                );
-                log.debug("Built question prompt: jobId={}, questionType={}, length={}",
-                        context.job().getId(), questionType, userPrompt.length());
-
-                updateJobStep(context.job().getId(), "generating " + questionType);
-                String llmJson = callStreamingModelAndWait(userPrompt, emitter, questionType, context.job().getId());
-                JsonNode questionsNode = parseLlmResponse(llmJson);
-
-                if (questionsNode.size() != count) {
-                    throw new BusinessException("LLM returned " + questionsNode.size()
-                            + " questions, expected " + count);
-                }
-
-                for (int i = 0; i < questionsNode.size(); i++) {
-                    EvaluationQuestionGenerationItem item = batchItems.get(i);
-                    Long questionId = IdGenerator.nextId();
-                    EvaluationQuestion question = mapJsonToQuestion(
-                            questionId,
-                            questionsNode.get(i),
-                            context.dto(),
-                            context.courseName(),
-                            questionType,
-                            difficulty,
-                            item.getSequenceNo()
-                    );
-
-                    evaluationQuestionMapper.insert(question);
-                    markItemSuccess(item.getId(), questionId, llmJson);
-                    successfulItemIds.add(item.getId());
-                    successCount++;
-                    updateJobProgress(context.job().getId(), successCount, 0, context.job().getTotalCount(),
-                            "generated " + successCount + "/" + context.job().getTotalCount());
-                }
-            }
-
-            updateJobFinished(context.job().getId(), "success", successCount, 0, null);
+            updateJobFinished(context.job().getId(), "success", successCount.get(), 0, null);
+            log.info("生成问题任务完成: jobId={}, successCount={}, failedCount=0",
+                    context.job().getId(), successCount.get());
             completeEmitter(emitter);
+
         } catch (Exception e) {
             int failedCount = context.job().getTotalCount() - successfulItemIds.size();
             markUnfinishedItemsFailed(context.items(), successfulItemIds, e);
             updateJobFinished(context.job().getId(), resolveTerminalStatus(successfulItemIds.size(), failedCount),
                     successfulItemIds.size(), failedCount, e.getMessage());
-            log.error("Async question generation failed: jobId={}", context.job().getId(), e);
+            log.error("异步生成问题失败: jobId={}, successCount={}, failedCount={}",
+                    context.job().getId(), successfulItemIds.size(), failedCount, e);
             completeEmitterWithError(emitter, e);
         }
+    }
+
+    private List<GenerationBatch> createGenerationBatches(GenerationContext context) {
+        List<GenerationBatch> batches = new ArrayList<>();
+        int itemCursor = 0;
+
+        for (GenerateQuestionDTO.QuestionTypeCountDTO typeCount : context.dto().getQuestionTypeCountList()) {
+            int count = resolveCount(typeCount.getCount());
+            if (itemCursor + count > context.items().size()) {
+                throw new BusinessException("Generation item count does not match request count");
+            }
+
+            List<EvaluationQuestionGenerationItem> batchItems =
+                    List.copyOf(context.items().subList(itemCursor, itemCursor + count));
+            itemCursor += count;
+
+            batches.add(new GenerationBatch(
+                    typeCount.getQuestionType(),
+                    count,
+                    resolveDifficulty(typeCount.getDifficulty()),
+                    resolveOptionCount(typeCount.getOptionCount()),
+                    batchItems
+            ));
+        }
+
+        if (itemCursor != context.items().size()) {
+            throw new BusinessException("Generation item count does not match request count");
+        }
+        return batches;
+    }
+
+    private void validateGenerationBatches(List<GenerationBatch> batches) {
+        for (GenerationBatch batch : batches) {
+            if (QuestionScore.fromCode(batch.questionType()) == QuestionScore.UNKNOWN) {
+                throw new BusinessException("Unsupported question type: " + batch.questionType());
+            }
+        }
+    }
+
+    private void waitForBatches(List<CompletableFuture<Void>> futures) {
+        try {
+            CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
+        } catch (CompletionException e) {
+            Throwable cause = e.getCause() == null ? e : e.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new BusinessException("Question generation failed: " + cause.getMessage());
+        }
+    }
+
+    private void generateBatch(GenerationContext context,
+                               GenerationBatch batch,
+                               SseEmitter emitter,
+                               AtomicInteger successCount,
+                               Set<Long> successfulItemIds) {
+
+        markItemsRunning(batch.items());
+
+        log.info("准备生成题型批次: jobId={}, questionType={}, difficulty={}, count={}",
+                context.job().getId(), batch.questionType(), batch.difficulty(), batch.count());
+
+        String userPrompt = buildUserPrompt(
+                context.courseName(),
+                context.topic(),
+                batch.questionType(),
+                batch.count(),
+                batch.difficulty(),
+                batch.optionCount()
+        );
+        log.debug("生成问题提示词构建完成: jobId={}, questionType={}, length={}",
+                context.job().getId(), batch.questionType(), userPrompt.length());
+
+        updateJobStep(context.job().getId(), "generating " + batch.questionType());
+        String llmJson = callStreamingModelAndWait(userPrompt, emitter, batch.questionType(), context.job().getId());
+        JsonNode questionsNode = parseLlmResponse(llmJson);
+
+        if (questionsNode.size() != batch.count()) {
+            throw new BusinessException("LLM returned " + questionsNode.size()
+                    + " questions, expected " + batch.count());
+        }
+
+        for (int i = 0; i < questionsNode.size(); i++) {
+            EvaluationQuestionGenerationItem item = batch.items().get(i);
+            Long questionId = IdGenerator.nextId();
+            EvaluationQuestion question = mapJsonToQuestion(
+                    questionId,
+                    questionsNode.get(i),
+                    context.dto(),
+                    context.courseName(),
+                    batch.questionType(),
+                    batch.difficulty(),
+                    item.getSequenceNo()
+            );
+
+            evaluationQuestionMapper.insert(question);
+            markItemSuccess(item.getId(), questionId, llmJson);
+            successfulItemIds.add(item.getId());
+            int generatedCount = successCount.incrementAndGet();
+            updateJobProgress(context.job().getId(), generatedCount, 0, context.job().getTotalCount(),
+                    "generated " + generatedCount + "/" + context.job().getTotalCount());
+        }
+        log.info("题型批次生成完成: jobId={}, questionType={}, count={}",
+                context.job().getId(), batch.questionType(), batch.count());
     }
 
     private String buildUserPrompt(String courseName,
@@ -274,52 +333,39 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     }
 
     private String callStreamingModelAndWait(String userPrompt, SseEmitter emitter, String questionType, Long jobId) {
-        ChatRequest request = ChatRequest.builder()
-                .messages(List.of(
-                        SystemMessage.from("""
-                                You are a professional practice question generation expert.
-                                Return valid JSON only. Do not output Markdown, explanation, or reasoning.
-                                """),
-                        UserMessage.from(userPrompt)
-                ))
-                .build();
-
         StringBuilder fullContent = new StringBuilder();
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<Throwable> errorRef = new AtomicReference<>();
 
-        streamingChatModel.chat(request, new StreamingChatResponseHandler() {
-
-            @Override
-            public void onPartialResponse(String partialResponse) {
-                log.debug("LLM partial: {}", partialResponse);
-                fullContent.append(partialResponse);
-                sendEvent(emitter, "quiz-token", Map.of(
-                        "jobId", jobId,
-                        "questionType", questionType,
-                        "chunk", partialResponse
-                ));
-            }
-
-            @Override
-            public void onCompleteResponse(ChatResponse completeResponse) {
-                log.info("LLM streaming generation completed");
-                latch.countDown();
-            }
-
-            @Override
-            public void onError(Throwable error) {
-                log.error("LLM streaming generation failed", error);
-                errorRef.set(error);
-                latch.countDown();
-            }
-        });
-
         try {
+            questionAiService.generateQuestions(userPrompt)
+                    .subscribe(
+                            partialResponse -> {
+                                log.debug("LLM streaming chunk: {}", partialResponse);
+                                fullContent.append(partialResponse);
+                                sendEvent(emitter, "quiz-token",
+                                        Map.of(
+                                                "questionType", questionType,
+                                                "jobId", jobId,
+                                                "chunk", partialResponse
+                                        ));
+                            },
+                            error -> {
+                                log.error("LLM streaming generation failed", error);
+                                errorRef.set(error);
+                                latch.countDown();
+                            },
+                            () -> {
+                                log.info("LLM streaming generation completed");
+                                latch.countDown();
+                            }
+                    );
             latch.await();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BusinessException("Interrupted while waiting for LLM response");
+        } catch (Exception e) {
+            throw new BusinessException("LLM generation failed: " + e.getMessage());
         }
 
         if (errorRef.get() != null) {
@@ -369,51 +415,49 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     }
 
     private void updateJobRunning(Long jobId) {
-        updateJobStep(jobId, "running");
+        buildAndUpdate(jobId, update -> update.setCurrentStep("running"));
     }
 
     private void updateJobStep(Long jobId, String currentStep) {
-        EvaluationQuestionGenerationJob update = new EvaluationQuestionGenerationJob();
-        update.setId(jobId);
-        update.setCurrentStep(currentStep);
-        update.setUpdatedAt(LocalDateTime.now());
-        generationJobMapper.updateById(update);
+        buildAndUpdate(jobId, update -> update.setCurrentStep(currentStep));
     }
 
     private void updateJobProgress(Long jobId, int successCount, int failedCount, int totalCount, String currentStep) {
-        EvaluationQuestionGenerationJob update = new EvaluationQuestionGenerationJob();
-        update.setId(jobId);
-        update.setSuccessCount(successCount);
-        update.setFailedCount(failedCount);
-        update.setProgress(calculateProgress(successCount, failedCount, totalCount));
-        update.setCurrentStep(currentStep);
-        update.setUpdatedAt(LocalDateTime.now());
-        generationJobMapper.updateById(update);
+        buildAndUpdate(jobId, update -> {
+            update.setSuccessCount(successCount);
+            update.setFailedCount(failedCount);
+            update.setProgress(calculateProgress(successCount, failedCount, totalCount));
+            update.setCurrentStep(currentStep);
+        });
     }
 
     private void updateJobFinished(Long jobId, String status, int successCount, int failedCount, String errorMessage) {
+        buildAndUpdate(jobId, update -> {
+            update.setStatus(status);
+            update.setSuccessCount(successCount);
+            update.setFailedCount(failedCount);
+            update.setProgress(calculateProgress(successCount, failedCount, successCount + failedCount));
+            update.setCurrentStep("finished");
+            update.setErrorMessage(errorMessage);
+            update.setFinishedAt(LocalDateTime.now());
+        });
+    }
+
+    private void buildAndUpdate(Long jobId, Consumer<EvaluationQuestionGenerationJob> customizer) {
         EvaluationQuestionGenerationJob update = new EvaluationQuestionGenerationJob();
         update.setId(jobId);
-        update.setStatus(status);
-        update.setSuccessCount(successCount);
-        update.setFailedCount(failedCount);
-        update.setProgress(calculateProgress(successCount, failedCount, successCount + failedCount));
-        update.setCurrentStep("finished");
-        update.setErrorMessage(errorMessage);
-        update.setFinishedAt(LocalDateTime.now());
         update.setUpdatedAt(LocalDateTime.now());
+        customizer.accept(update);
         generationJobMapper.updateById(update);
     }
 
     private void markItemsRunning(List<EvaluationQuestionGenerationItem> items) {
-        for (EvaluationQuestionGenerationItem item : items) {
-            EvaluationQuestionGenerationItem update = new EvaluationQuestionGenerationItem();
-            update.setId(item.getId());
-            update.setStatus("running");
-            update.setStartedAt(LocalDateTime.now());
-            update.setUpdatedAt(LocalDateTime.now());
-            generationItemMapper.updateById(update);
-        }
+        UpdateWrapper<EvaluationQuestionGenerationItem> wrapper = new UpdateWrapper<EvaluationQuestionGenerationItem>()
+                .in("id", items.stream().map(EvaluationQuestionGenerationItem::getId).toList())
+                .set("status", "running")
+                .set("started_at", LocalDateTime.now())
+                .set("updated_at", LocalDateTime.now());
+        generationItemMapper.update(null, wrapper);
     }
 
     private void markItemSuccess(Long itemId, Long questionId, String rawResponse) {
@@ -428,18 +472,16 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     }
 
     private void markUnfinishedItemsFailed(List<EvaluationQuestionGenerationItem> items, Set<Long> successfulItemIds, Exception e) {
-        for (EvaluationQuestionGenerationItem item : items) {
-            if (successfulItemIds.contains(item.getId())) {
-                continue;
-            }
-            EvaluationQuestionGenerationItem update = new EvaluationQuestionGenerationItem();
-            update.setId(item.getId());
-            update.setStatus("failed");
-            update.setErrorMessage(e.getMessage());
-            update.setFinishedAt(LocalDateTime.now());
-            update.setUpdatedAt(LocalDateTime.now());
-            generationItemMapper.updateById(update);
-        }
+        UpdateWrapper<EvaluationQuestionGenerationItem> wrapper = new UpdateWrapper<EvaluationQuestionGenerationItem>()
+                .in("id", items.stream()
+                        .filter(item -> !successfulItemIds.contains(item.getId()))
+                        .map(EvaluationQuestionGenerationItem::getId)
+                        .toList())
+                .set("status", "failed")
+                .set("error_message", e.getMessage())
+                .set("finished_at", LocalDateTime.now())
+                .set("updated_at", LocalDateTime.now());
+        generationItemMapper.update(null, wrapper);
     }
 
     private String resolveCourseName(GenerateQuestionDTO dto) {
@@ -504,7 +546,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         try {
             emitter.send(SseEmitter.event().name(name).data(JSON.toJSONString(data)));
         } catch (IOException | IllegalStateException e) {
-            log.debug("SSE send skipped: event={}, reason={}", name, e.getMessage());
+            log.debug("SSE 发送已跳过: event={}, reason={}", name, e.getMessage());
         }
     }
 
@@ -512,7 +554,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         try {
             emitter.complete();
         } catch (Exception e) {
-            log.debug("SSE complete skipped: {}", e.getMessage());
+            log.debug("SSE 完成已跳过: {}", e.getMessage());
         }
     }
 
@@ -520,7 +562,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         try {
             emitter.completeWithError(error);
         } catch (Exception e) {
-            log.debug("SSE error completion skipped: {}", e.getMessage());
+            log.debug("SSE 错误完成已跳过: {}", e.getMessage());
         }
     }
 
@@ -549,7 +591,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Failed to parse LLM response: {}", response, e);
+            log.error("解析 LLM 响应失败: {}", response, e);
             throw new BusinessException("Failed to parse LLM response as valid JSON");
         }
     }
@@ -646,6 +688,15 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
             String courseName,
             String topic,
             EvaluationQuestionGenerationJob job,
+            List<EvaluationQuestionGenerationItem> items
+    ) {
+    }
+
+    private record GenerationBatch(
+            String questionType,
+            int count,
+            int difficulty,
+            int optionCount,
             List<EvaluationQuestionGenerationItem> items
     ) {
     }
