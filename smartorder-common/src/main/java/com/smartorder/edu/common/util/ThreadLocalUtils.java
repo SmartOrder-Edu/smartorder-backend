@@ -1,5 +1,7 @@
 package com.smartorder.edu.common.util;
 
+import io.jsonwebtoken.Claims;
+
 public class ThreadLocalUtils {
     private static final ThreadLocal<Object> THREAD_LOCAL = new ThreadLocal<>();
 
@@ -14,6 +16,18 @@ public class ThreadLocalUtils {
 
     public static void remove(){
         THREAD_LOCAL.remove();
+    }
+
+    public static Long getCurrentUserId() throws Exception {
+        Claims claims = ThreadLocalUtils.get();
+        if (claims == null) {
+            throw new Exception("未登录");
+        }
+        Object userId = claims.get("userId");
+        if (userId == null) {
+            throw new Exception("用户信息缺失");
+        }
+        return (Long) userId;
     }
 }
 

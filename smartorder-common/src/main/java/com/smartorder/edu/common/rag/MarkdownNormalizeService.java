@@ -6,6 +6,8 @@ import dev.langchain4j.model.input.PromptTemplate;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
+import static com.smartorder.edu.common.config.LlmConfig.RAG_CHAT_MODEL_BEAN;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -24,7 +26,7 @@ public class MarkdownNormalizeService {
     private final ChatModel chatLanguageModel;
     private final String markdownNormalizePromptTemplate;
 
-    public MarkdownNormalizeService(ChatModel chatLanguageModel,
+    public MarkdownNormalizeService(@Qualifier(RAG_CHAT_MODEL_BEAN) ChatModel chatLanguageModel,
                                     @Qualifier("markdownNormalizePromptTemplate") String markdownNormalizePromptTemplate) {
         this.chatLanguageModel = chatLanguageModel;
         this.markdownNormalizePromptTemplate = markdownNormalizePromptTemplate;

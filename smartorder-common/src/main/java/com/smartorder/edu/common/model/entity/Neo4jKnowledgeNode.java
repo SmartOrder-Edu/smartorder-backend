@@ -46,13 +46,28 @@ public class Neo4jKnowledgeNode {
     private Long knowledgeBaseId;
 
     @Relationship(type = "PREREQUISITE_OF", direction = Relationship.Direction.OUTGOING)
-    private Set<Neo4jKnowledgeNode> prerequisites = new HashSet<>();
+    private Set<Neo4jKnowledgeRelation> prerequisites = new HashSet<>();
 
     @Relationship(type = "RELATED_TO")
-    private Set<Neo4jKnowledgeNode> relatedNodes = new HashSet<>();
+    private Set<Neo4jKnowledgeRelation> relatedNodes = new HashSet<>();
 
     @Relationship(type = "PART_OF", direction = Relationship.Direction.OUTGOING)
-    private Set<Neo4jKnowledgeNode> parentNodes = new HashSet<>();
+    private Set<Neo4jKnowledgeRelation> parentNodes = new HashSet<>();
+
+    @Relationship(type = "CAUSE_EFFECT", direction = Relationship.Direction.OUTGOING)
+    private Set<Neo4jKnowledgeRelation> causeEffectNodes = new HashSet<>();
+
+    @Relationship(type = "COMPARE_WITH")
+    private Set<Neo4jKnowledgeRelation> compareNodes = new HashSet<>();
+
+    @Relationship(type = "STEP_OF", direction = Relationship.Direction.OUTGOING)
+    private Set<Neo4jKnowledgeRelation> stepOfNodes = new HashSet<>();
+
+    @Relationship(type = "RECOMMEND", direction = Relationship.Direction.OUTGOING)
+    private Set<Neo4jKnowledgeRelation> recommendNodes = new HashSet<>();
+
+    @Relationship(type = "DEPENDS_ON", direction = Relationship.Direction.OUTGOING)
+    private Set<Neo4jKnowledgeRelation> dependsOnNodes = new HashSet<>();
 
     public Neo4jKnowledgeNode(String id, Long spaceId, String name, String description,
                               String category, Integer importance, Long mysqlId) {

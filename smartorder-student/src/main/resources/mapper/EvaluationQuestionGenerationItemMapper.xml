@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.smartorder.edu.student.mapper.EvaluationQuestionGenerationItemMapper">
+
+    <insert id="insertBatch" parameterType="java.util.List">
+        INSERT INTO evaluation_question_generation_item (
+            id, job_id, question_id, question_type, difficulty, option_count,
+            sequence_no, status, retry_count, max_retry_count, raw_response,
+            error_message, started_at, finished_at, created_at, updated_at
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (
+                #{item.id}, #{item.jobId}, #{item.questionId}, #{item.questionType},
+                #{item.difficulty}, #{item.optionCount}, #{item.sequenceNo}, #{item.status},
+                #{item.retryCount}, #{item.maxRetryCount}, #{item.rawResponse},
+                #{item.errorMessage}, #{item.startedAt}, #{item.finishedAt},
+                #{item.createdAt}, #{item.updatedAt}
+            )
+        </foreach>
+    </insert>
+
+</mapper>

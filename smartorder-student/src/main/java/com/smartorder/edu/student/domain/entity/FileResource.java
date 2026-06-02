@@ -33,6 +33,9 @@ public class FileResource {
     /** 文件类型（pdf/docx/ppt/mp4/jpg/png等） */
     private String fileType;
 
+
+    private String fileHash;
+
     /** 文件大小（字节） */
     private Long fileSize;
 

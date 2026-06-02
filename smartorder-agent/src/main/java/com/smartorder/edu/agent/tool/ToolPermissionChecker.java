@@ -49,6 +49,7 @@ public class ToolPermissionChecker {
         // 按分类做细粒度权限校验
         switch (handler.category()) {
             case PROFILE:
+            case PROFILE_UPDATE:
                 checkProfileAccess(handler, arguments, context);
                 break;
             default:

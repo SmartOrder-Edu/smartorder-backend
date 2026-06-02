@@ -3,11 +3,17 @@ package com.smartorder.edu.common.exception;
 
 import com.smartorder.edu.common.constant.ResultCode;
 import com.smartorder.edu.common.model.vo.Result;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.ServletWebRequest;
+import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.regex.Matcher;
@@ -117,12 +123,30 @@ public class GlobalExceptionHandler {
      * @param e 抛出的异常
      * @return 错误信息
      */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public Result<String> handleValidatedException(MethodArgumentNotValidException e) {
+        // 在这里可以添加日志记录等操作
+        log.error("参数为空的异常: {}", e.getMessage(), e);
+        return Result.fail(ResultCode.SYSTEM_ERROR, e.getMessage());
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public Result<String> handleValidatedException(ConstraintViolationException e) {
+        // 在这里可以添加日志记录等操作
+        log.error("参数为空的异常: {}", e.getMessage(), e);
+        return Result.fail(ResultCode.SYSTEM_ERROR, e.getMessage());
+    }
+
+
     @ExceptionHandler(Exception.class)
     public Result<String> handleException(Exception e) {
         // 在这里可以添加日志记录等操作
         log.error("未处理的异常: {}", e.getMessage(), e);
         return Result.fail(ResultCode.SYSTEM_ERROR, e.getMessage());
     }
+
+
+
 
 
 //    /**
@@ -136,4 +160,6 @@ public class GlobalExceptionHandler {
 //                , ex.getMessage());
 //        // 直接返回 void，千万不要返回 Result 对象！
 //    }
+
+
 }

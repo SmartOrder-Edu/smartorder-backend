@@ -14,6 +14,7 @@ import lombok.Getter;
 @Getter
 @AllArgsConstructor
 public enum ToolCategory {
+    PROFILE_UPDATE("画像更新", RiskLevel.WRITE_DRAFT),
 
     PROFILE("学生档案", RiskLevel.READ),
     PROGRESS("学习进度", RiskLevel.READ),

@@ -11,6 +11,7 @@ import com.smartorder.edu.common.model.entity.KnowledgeFile;
 import com.smartorder.edu.common.model.entity.KnowledgeFileJob;
 import com.smartorder.edu.common.model.rag.RagParseResult;
 import com.smartorder.edu.common.rag.*;
+import com.smartorder.edu.common.service.impl.KnowledgeBaseServiceImpl;
 import com.smartorder.edu.common.util.IdGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,6 +52,8 @@ public class KnowledgeFileListener {
     private final VectorIndexService vectorIndexService;
 
     private final KnowledgeGraphBuildService knowledgeGraphBuildService;
+
+    private final KnowledgeBaseServiceImpl knowledgeBaseService;
 
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE_FILE_DB_SAVE)
@@ -117,6 +120,8 @@ public class KnowledgeFileListener {
                 processMessage
         );
 
+        // 更新知识库文件统计
+        knowledgeBaseService.incrementFileStats(kFile.getKnowledgeBaseId(), kFile.getFileSize());
 
         return kFile;
     }

@@ -28,5 +28,7 @@ public class KnowledgeGraphVO {
         private String source;
         private String target;
         private String relationType;
+        private Double weight;
+        private String description;
     }
 }

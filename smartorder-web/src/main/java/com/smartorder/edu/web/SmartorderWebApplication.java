@@ -14,7 +14,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
     "com.smartorder.edu.learning.mapper",
     "com.smartorder.edu.assessment.mapper",
     "com.smartorder.edu.agent.mapper",
-    "com.smartorder.edu.knowledge.mapper"
+    "com.smartorder.edu.knowledge.mapper",
+    "com.smartorder.edu.manage.mapper"
 })
 @EnableScheduling
 

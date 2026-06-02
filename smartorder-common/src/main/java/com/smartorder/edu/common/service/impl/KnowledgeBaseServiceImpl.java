@@ -5,6 +5,8 @@ import com.smartorder.edu.common.mapper.*;
 import com.smartorder.edu.common.model.dto.KnowledgeBaseReqDTO;
 import com.smartorder.edu.common.model.entity.*;
 import com.smartorder.edu.common.model.vo.KnowledgeBaseListRespVO;
+import com.smartorder.edu.common.model.vo.KnowledgeBaseDetailStatsVO;
+import com.smartorder.edu.common.model.vo.KnowledgeBaseStatsVO;
 import com.smartorder.edu.common.rag.VectorIndexService;
 import com.smartorder.edu.common.service.IKnowledgeBaseService;
 import com.smartorder.edu.common.service.INeo4jKnowledgeGraphService;
@@ -35,6 +37,65 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KnowledgeBaseMapper, K
     private final INeo4jKnowledgeGraphService neo4jKnowledgeGraphService;
     private final VectorIndexService vectorIndexService;
     private final AliOSSUtils aliOSSUtils;
+
+    /**
+     * 文件上传成功时，更新知识库统计
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void incrementFileStats(Long knowledgeBaseId, long fileSize) {
+        KnowledgeBase kb = this.getById(knowledgeBaseId);
+        if (kb == null) {
+            log.warn("知识库不存在，无法更新统计: knowledgeBaseId={}", knowledgeBaseId);
+            return;
+        }
+        kb.setFileCount((kb.getFileCount() == null ? 0 : kb.getFileCount()) + 1);
+        kb.setTotalSize((kb.getTotalSize() == null ? 0L : kb.getTotalSize()) + fileSize);
+        kb.setUpdatedAt(LocalDateTime.now());
+        kb.setLastUpdatedAt(LocalDateTime.now());
+        this.updateById(kb);
+        log.info("知识库文件统计已更新: knowledgeBaseId={}, fileCount={}, totalSize={}", 
+                knowledgeBaseId, kb.getFileCount(), kb.getTotalSize());
+    }
+
+    /**
+     * 文件处理完成时，更新知识库文档和分块统计
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void incrementDocumentStats(Long knowledgeBaseId, int chunkCount) {
+        KnowledgeBase kb = this.getById(knowledgeBaseId);
+        if (kb == null) {
+            log.warn("知识库不存在，无法更新统计: knowledgeBaseId={}", knowledgeBaseId);
+            return;
+        }
+        kb.setDocumentCount((kb.getDocumentCount() == null ? 0 : kb.getDocumentCount()) + 1);
+        kb.setChunkCount((kb.getChunkCount() == null ? 0 : kb.getChunkCount()) + chunkCount);
+        kb.setUpdatedAt(LocalDateTime.now());
+        kb.setLastUpdatedAt(LocalDateTime.now());
+        this.updateById(kb);
+        log.info("知识库文档统计已更新: knowledgeBaseId={}, documentCount={}, chunkCount={}", 
+                knowledgeBaseId, kb.getDocumentCount(), kb.getChunkCount());
+    }
+
+    /**
+     * 文件删除时，更新知识库统计
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void decrementFileStats(Long knowledgeBaseId, long fileSize, int chunkCount) {
+        KnowledgeBase kb = this.getById(knowledgeBaseId);
+        if (kb == null) {
+            log.warn("知识库不存在，无法更新统计: knowledgeBaseId={}", knowledgeBaseId);
+            return;
+        }
+        kb.setFileCount(Math.max(0, (kb.getFileCount() == null ? 0 : kb.getFileCount()) - 1));
+        kb.setDocumentCount(Math.max(0, (kb.getDocumentCount() == null ? 0 : kb.getDocumentCount()) - 1));
+        kb.setChunkCount(Math.max(0, (kb.getChunkCount() == null ? 0 : kb.getChunkCount()) - chunkCount));
+        kb.setTotalSize(Math.max(0L, (kb.getTotalSize() == null ? 0L : kb.getTotalSize()) - fileSize));
+        kb.setUpdatedAt(LocalDateTime.now());
+        kb.setLastUpdatedAt(LocalDateTime.now());
+        this.updateById(kb);
+        log.info("知识库文件统计已减少: knowledgeBaseId={}, fileCount={}, documentCount={}, chunkCount={}, totalSize={}", 
+                knowledgeBaseId, kb.getFileCount(), kb.getDocumentCount(), kb.getChunkCount(), kb.getTotalSize());
+    }
     /**
      * 创建知识库
      */
@@ -216,5 +277,67 @@ public class KnowledgeBaseServiceImpl extends ServiceImpl<KnowledgeBaseMapper, K
             log.error("删除知识库失败，knowledgeBaseId={}", knowledgeBaseId, e);
             throw new RuntimeException("删除知识库失败: " + e.getMessage(), e);
         }
+    }
+
+    @Override
+    public KnowledgeBaseStatsVO getKnowledgeBaseStats(Long currentUserId) {
+        KnowledgeBaseStatsVO stats = new KnowledgeBaseStatsVO();
+
+        // 统计知识库数量（排除已删除的）
+        long knowledgeBaseCount = this.lambdaQuery()
+                .eq(KnowledgeBase::getUserId, currentUserId)
+                .ne(KnowledgeBase::getStatus, "deleted")
+                .count();
+        stats.setKnowledgeBaseCount((int) knowledgeBaseCount);
+
+        // 统计文件数量（排除已删除的）
+        long fileCount = knowledgeFileMapper.selectCount(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<KnowledgeFile>()
+                        .eq(KnowledgeFile::getUserId, currentUserId)
+                        .ne(KnowledgeFile::getStatus, "deleted")
+        );
+        stats.setFileCount((int) fileCount);
+
+        // 统计知识切片数量（排除已删除的）
+        long chunkCount = knowledgeChunkMapper.selectCount(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<KnowledgeChunk>()
+                        .eq(KnowledgeChunk::getUserId, currentUserId)
+                        .ne(KnowledgeChunk::getStatus, "deleted")
+        );
+        stats.setChunkCount((int) chunkCount);
+
+        return stats;
+    }
+
+    @Override
+    public KnowledgeBaseDetailStatsVO getKnowledgeBaseDetailStats(Long knowledgeBaseId, Long currentUserId) {
+        // 校验知识库是否存在且属于当前用户
+        KnowledgeBase kb = this.lambdaQuery()
+                .eq(KnowledgeBase::getId, knowledgeBaseId)
+                .eq(KnowledgeBase::getUserId, currentUserId)
+                .ne(KnowledgeBase::getStatus, "deleted")
+                .one();
+        if (kb == null) {
+            throw new RuntimeException("知识库不存在或无权访问");
+        }
+
+        KnowledgeBaseDetailStatsVO stats = new KnowledgeBaseDetailStatsVO();
+
+        // 总文件数（使用冗余字段）
+        stats.setFileCount(kb.getFileCount() != null ? kb.getFileCount() : 0);
+
+        // 总切片数（使用冗余字段）
+        stats.setChunkCount(kb.getChunkCount() != null ? kb.getChunkCount() : 0);
+
+        // 向量化完成文件数（embedding_status = 'success'）
+        long embeddedCount = knowledgeFileMapper.selectCount(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<KnowledgeFile>()
+                        .eq(KnowledgeFile::getKnowledgeBaseId, knowledgeBaseId)
+                        .eq(KnowledgeFile::getEmbeddingStatus, "success")
+                        .ne(KnowledgeFile::getStatus, "deleted")
+        );
+        stats.setEmbeddedFileCount((int) embeddedCount);
+
+        return stats;
     }
 }
