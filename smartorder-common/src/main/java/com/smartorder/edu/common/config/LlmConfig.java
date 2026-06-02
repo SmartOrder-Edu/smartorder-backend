@@ -15,6 +15,8 @@ import java.time.Duration;
 @Configuration
 public class LlmConfig {
 
+    public static final String RAG_CHAT_MODEL_BEAN = "ragChatModel";
+
     @Value("${langchain4j.open-ai.chat-model.api-key}")
     private String apiKey;
 
@@ -42,6 +44,9 @@ public class LlmConfig {
     @Value("${langchain4j.open-ai.embedding-model.dimensions:1024}")
     private int embeddingDimensions;
 
+    @Value("${rag.llm.thinking-enabled:false}")
+    private boolean ragThinkingEnabled;
+
     @Bean
     public OpenAiChatModel llmChatLanguageModel() {
         return OpenAiChatModel.builder()
@@ -53,6 +58,24 @@ public class LlmConfig {
                 .logResponses(logResponses)
                 .timeout(Duration.ofSeconds(120)) // 文档解析较慢，建议延长超时时间
                 .build();
+    }
+
+    @Bean("ragChatModel")
+    public OpenAiChatModel ragChatModel() {
+        OpenAiChatModel.OpenAiChatModelBuilder builder = OpenAiChatModel.builder()
+                .apiKey(apiKey)
+                .baseUrl(baseUrl)
+                .modelName(modelName)
+                .logRequests(logRequests)
+                .logResponses(logResponses)
+                .timeout(Duration.ofSeconds(120));
+
+        if (Boolean.TRUE.equals(ragThinkingEnabled)) {
+            builder.returnThinking(true)
+                    .sendThinking(true, "reasoning_content");
+        }
+
+        return builder.build();
     }
 
     @Bean

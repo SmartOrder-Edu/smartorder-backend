@@ -2,6 +2,7 @@ package com.smartorder.edu.agent.memory;
 
 import com.smartorder.edu.agent.model.entity.ConversationMessage;
 import com.smartorder.edu.agent.model.entity.ConversationSummary;
+import com.smartorder.edu.agent.mapper.AgentTraceEventMapper;
 import com.smartorder.edu.agent.mapper.ConversationMessageMapper;
 import com.smartorder.edu.agent.mapper.ConversationSummaryMapper;
 import dev.langchain4j.data.message.AiMessage;
@@ -11,6 +12,7 @@ import dev.langchain4j.data.message.UserMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.smartorder.edu.agent.route.ConfirmationWords;
 
@@ -30,6 +32,7 @@ public class ConversationMemoryService {
 
     private final ConversationMessageMapper messageMapper;
     private final ConversationSummaryMapper summaryMapper;
+    private final AgentTraceEventMapper traceEventMapper;
 
     private static final int MAX_RECENT_MESSAGES = 30;
 
@@ -128,6 +131,21 @@ public class ConversationMemoryService {
      */
     public int countUncompressed(String conversationId) {
         return messageMapper.countUncompressed(conversationId);
+    }
+
+    /**
+     * 删除对话（软删除消息和摘要，硬删除追踪事件）
+     */
+    @Transactional
+    public void deleteConversation(String conversationId, Long userId) {
+        int msgCount = messageMapper.softDeleteByConversationId(conversationId, userId);
+        log.info("[MemoryService] 软删除消息: conversationId={}, count={}", conversationId, msgCount);
+
+        int summaryCount = summaryMapper.softDeleteByConversationId(conversationId, userId);
+        log.info("[MemoryService] 软删除摘要: conversationId={}, count={}", summaryCount);
+
+        int traceCount = traceEventMapper.deleteByConversationId(conversationId);
+        log.info("[MemoryService] 硬删除追踪事件: conversationId={}, count={}", traceCount);
     }
 
     // ============ Private ============

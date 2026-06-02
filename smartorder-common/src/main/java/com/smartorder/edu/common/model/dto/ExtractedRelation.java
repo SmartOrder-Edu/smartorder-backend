@@ -23,7 +23,15 @@ public class ExtractedRelation {
     private String targetName;
 
     /**
-     * 关系类型（PREREQUISITE_OF, RELATED_TO, PART_OF）
+     * 关系类型
+     * PREREQUISITE_OF - 前置知识
+     * RELATED_TO - 相关关系
+     * PART_OF - 包含关系
+     * CAUSE_EFFECT - 因果关系
+     * COMPARE_WITH - 比较关系
+     * STEP_OF - 步骤关系
+     * RECOMMEND - 推荐关系
+     * DEPENDS_ON - 依赖关系
      */
     private String relationType;
 

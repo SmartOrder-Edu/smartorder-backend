@@ -199,6 +199,11 @@ milvus:
   collection-name: rag_chunks  # 集合名称
   dimension: 1024                           # text-embedding-v3 模型的维度
 
+# RAG 文本解析专用配置（关闭思考模式）
+rag:
+  llm:
+    thinking-enabled: false
+
 # TF-IDF 稀疏向量配置
 tfidf:
   max-vocabulary-size: 100000
@@ -311,6 +316,8 @@ logging:
     org.springframework.web.client.DefaultRestClient: DEBUG
     # 如果底层用的是 WebClient：
     org.springframework.web.reactive.function.client.ExchangeFunctions: TRACE
+    # 抑制 Neo4j 关系类型警告
+    org.springframework.data.neo4j.cypher.unrecognized: ERROR
   charset:
     console: UTF-8
     file: UTF-8

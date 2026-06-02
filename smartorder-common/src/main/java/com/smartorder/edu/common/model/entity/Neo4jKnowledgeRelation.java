@@ -2,6 +2,7 @@ package com.smartorder.edu.common.model.entity;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.neo4j.core.schema.GeneratedValue;
 import org.springframework.data.neo4j.core.schema.Id;
 import org.springframework.data.neo4j.core.schema.RelationshipProperties;
 import org.springframework.data.neo4j.core.schema.TargetNode;
@@ -14,8 +15,10 @@ import org.springframework.data.neo4j.core.schema.TargetNode;
 @RelationshipProperties
 public class Neo4jKnowledgeRelation {
 
-    @Id
-    private String id;
+    @Id @GeneratedValue
+    private Long internalId;
+
+    private String relationId;
 
     @TargetNode
     private Neo4jKnowledgeNode targetNode;
@@ -26,12 +29,15 @@ public class Neo4jKnowledgeRelation {
 
     private Long spaceId;
 
-    public Neo4jKnowledgeRelation(String id, Neo4jKnowledgeNode targetNode,
-                                  String relationType, Double weight, Long spaceId) {
-        this.id = id;
+    private String description;
+
+    public Neo4jKnowledgeRelation(String relationId, Neo4jKnowledgeNode targetNode,
+                                  String relationType, Double weight, Long spaceId, String description) {
+        this.relationId = relationId;
         this.targetNode = targetNode;
         this.relationType = relationType;
         this.weight = weight;
         this.spaceId = spaceId;
+        this.description = description;
     }
 }

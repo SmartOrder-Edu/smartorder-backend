@@ -16,6 +16,7 @@ import com.smartorder.edu.common.rag.KnowledgeGraphBuildService;
 import com.smartorder.edu.common.rag.RagFileParserService;
 import com.smartorder.edu.common.rag.RagPersistService;
 import com.smartorder.edu.common.rag.VectorIndexService;
+import com.smartorder.edu.common.service.impl.KnowledgeBaseServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -44,6 +45,8 @@ public class KnowledgeFileProcessListener {
     private final VectorIndexService vectorIndexService;
 
     private final KnowledgeGraphBuildService knowledgeGraphBuildService;
+
+    private final KnowledgeBaseServiceImpl knowledgeBaseService;
 
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE_FILE_PROCESS, containerFactory = "rabbitListenerContainerFactory")
@@ -76,11 +79,22 @@ public class KnowledgeFileProcessListener {
             updateFileStatus(file.getId(), PROCESSING, null, null);
             updateJob(jobId, "解析文件并生成Markdown", 20);
             RagParseResult parseResult = ragFileParserService.parseForRag(file);
+
+            // 保存页数到 KnowledgeFile
+            if (parseResult.getPageCount() != null) {
+                file.setPageCount(parseResult.getPageCount());
+                fileMapper.updateById(file);
+            }
+
             updateFileStatus(file.getId(), SUCCESS, PROCESSING, null);
 
             updateJob(jobId, "保存文档和分块", 50);
             RagPersistService.PersistResult persistResult = ragPersistService.saveParseResult(parseResult);
             updateFileStatus(file.getId(), SUCCESS, SUCCESS, PROCESSING);
+
+            // 保存 chunk 数量到 KnowledgeFile 冗余字段
+            file.setChunkCount(persistResult.chunks().size());
+            fileMapper.updateById(file);
 
             updateJob(jobId, "构建知识图谱", 60);
             try {
@@ -96,6 +110,9 @@ public class KnowledgeFileProcessListener {
             vectorIndexService.indexChunks(persistResult.chunks());
             markChunksEmbedded(persistResult.chunks());
             updateFileStatus(file.getId(), SUCCESS, SUCCESS, SUCCESS);
+
+            // 更新知识库文档和分块统计
+            knowledgeBaseService.incrementDocumentStats(file.getKnowledgeBaseId(), persistResult.chunks().size());
 
             updateJob(jobId, "处理完成", 100);
             markJobSuccess(jobId);
@@ -172,12 +189,16 @@ public class KnowledgeFileProcessListener {
         if (file == null) return;
         if (PROCESSING.equals(file.getParseStatus())) {
             file.setParseStatus(FAILED);
+            file.setParseError(errorMessage);
         } else if (PROCESSING.equals(file.getChunkStatus())) {
             file.setChunkStatus(FAILED);
+            file.setChunkError(errorMessage);
         } else if (PROCESSING.equals(file.getEmbeddingStatus())) {
             file.setEmbeddingStatus(FAILED);
+            file.setEmbeddingError(errorMessage);
         } else {
             file.setParseStatus(FAILED);
+            file.setParseError(errorMessage);
         }
         file.setUpdatedAt(LocalDateTime.now());
         fileMapper.updateById(file);
