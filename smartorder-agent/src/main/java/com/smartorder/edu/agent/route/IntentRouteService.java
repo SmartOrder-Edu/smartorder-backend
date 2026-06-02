@@ -43,10 +43,10 @@ public class IntentRouteService {
             } else {
                 // Layer 3: LLM 意图分类（语义兜底）
                 LlmIntentClassifier.LlmIntentResult llmResult = llmIntentClassifier.classify(ctx.getMessage());
-                if (llmIntentClassifier.isConfident(llmResult)) {
+                if (llmResult != null && llmIntentClassifier.isConfident(llmResult)) {
                     log.info("[IntentRoute] LLM命中: intent={}, confidence={}", llmResult.intent(), llmResult.confidence());
-                    result = buildResultFromLlm(llmResult);
-                } else if (llmResult.intent() != IntentType.UNKNOWN && llmResult.confidence() > 0.0) {
+                    result = buildResultFromLlm(llmResult, ctx.getMessage());
+                } else if (llmResult != null && llmResult.intent() != IntentType.UNKNOWN && llmResult.confidence() > 0.0) {
                     log.info("[IntentRoute] LLM低置信: intent={}, confidence={}，默认 REACT",
                             llmResult.intent(), llmResult.confidence());
                     result = buildDefaultResult();
@@ -117,7 +117,15 @@ public class IntentRouteService {
     // 资源生成关键词（高置信）
     private static final List<String> RESOURCE_GEN_KEYWORDS = List.of(
             "生成资料", "生成PPT", "测试题", "全套资料", "生成习题",
-            "出题", "做一个PPT", "生成笔记", "整理笔记"
+            "出题", "做一个PPT", "制作PPT", "生成笔记", "整理笔记",
+            "复习资料", "学习资料", "讲义", "试卷", "练习题", "出一套题"
+    );
+
+    // 图表/格式化输出关键词：这类请求通常是普通回答指定输出格式，不应默认进入多智能体。
+    private static final List<String> DIAGRAM_KEYWORDS = List.of(
+            "mermaid", "Mermaid", "流程图", "技术图", "架构图", "时序图",
+            "类图", "状态图", "用例图", "ER图", "UML", "sequenceDiagram",
+            "flowchart", "graph TD"
     );
 
     // 明确规划请求关键词
@@ -165,35 +173,42 @@ public class IntentRouteService {
                     "用户需要复杂资源生成");
         }
 
-        // 2. 明确学习规划请求
+        // 2. 图表/格式化输出：例如 Mermaid 技术图，本质是单轮技术说明 + 指定输出格式
+        if (containsAny(message, DIAGRAM_KEYWORDS.toArray(new String[0]))) {
+            return buildKeywordResult(IntentType.DIAGRAM_GENERATION, AgentRunMode.REACT,
+                    0.88, List.of(),
+                    "用户需要图表化技术说明，使用 REACT 直接回答");
+        }
+
+        // 3. 明确学习规划请求
         if (containsAny(message, PLANNING_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.GOAL_PLANNING, AgentRunMode.PLAN_EXECUTE,
                     0.85, List.of("getStudentProfile"),
                     "用户明确要求制定学习计划");
         }
 
-        // 3. 习题答疑类
+        // 4. 习题答疑类
         if (containsAny(message, HELP_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.PROBLEM_HELP, AgentRunMode.REACT,
-                    0.85, List.of("getStudentProfile", "queryKnowledge", "queryTasks", "updateStudentProfile"),
+                    0.85, List.of("getStudentProfile", "queryKnowledge", "queryTasks"),
                     "用户需要学习辅导");
         }
 
-        // 4. 进度查询
+        // 5. 进度查询
         if (containsAny(message, PROGRESS_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.PROGRESS_REVIEW, AgentRunMode.REACT,
-                    0.85, List.of("queryLearningProgress", "getStudentProfile", "updateStudentProfile"),
+                    0.85, List.of("queryLearningProgress", "getStudentProfile"),
                     "用户查询学习进度");
         }
 
-        // 5. 任务管理
+        // 6. 任务管理
         if (containsAny(message, TASK_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.TASK_MANAGEMENT, AgentRunMode.REACT,
                     0.85, List.of("queryTasks", "manageLearningTask"),
                     "用户管理学习任务");
         }
 
-        // 6. 简单知识问答（短消息 + 定义类关键词）
+        // 7. 简单知识问答（短消息 + 定义类关键词）
         if (message.length() <= 30 && containsAny(message, "什么是", "解释一下", "定义")) {
             return buildKeywordResult(IntentType.KNOWLEDGE_QA, AgentRunMode.REACT,
                     0.80, List.of(),
@@ -220,10 +235,10 @@ public class IntentRouteService {
     /**
      * 将 LLM 分类结果映射为路由结果
      */
-    private IntentRouteResult buildResultFromLlm(LlmIntentClassifier.LlmIntentResult llmResult) {
-        IntentType intent = llmResult.intent();
-        AgentRunMode mode = mapIntentToRunMode(intent);
-        List<String> tools = mapIntentToTools(intent);
+    private IntentRouteResult buildResultFromLlm(LlmIntentClassifier.LlmIntentResult llmResult, String message) {
+        IntentType intent = normalizeLlmIntent(llmResult.intent(), message);
+        AgentRunMode mode = selectRunMode(intent, message);
+        List<String> tools = selectTools(intent, mode);
 
         return IntentRouteResult.builder()
                 .intentType(intent.getChineseName())
@@ -238,27 +253,43 @@ public class IntentRouteService {
     }
 
     /**
-     * IntentType → AgentRunMode 映射
+     * LLM 分类可能把“生成某种输出格式”误判为资源生成，策略层在进入执行器前做一次语义收敛。
      */
-    private AgentRunMode mapIntentToRunMode(IntentType intent) {
+    private IntentType normalizeLlmIntent(IntentType intent, String message) {
+        if (intent == IntentType.RESOURCE_GENERATION
+                && containsAny(message, DIAGRAM_KEYWORDS.toArray(new String[0]))
+                && !containsAny(message, RESOURCE_GEN_KEYWORDS.toArray(new String[0]))) {
+            return IntentType.DIAGRAM_GENERATION;
+        }
+        return intent;
+    }
+
+    /**
+     * 路由策略：运行模式由意图 + 消息特征决定，而不是由单一 IntentType 硬绑定。
+     */
+    private AgentRunMode selectRunMode(IntentType intent, String message) {
         return switch (intent) {
             case GOAL_PLANNING, PLAN_CONFIRMATION -> AgentRunMode.PLAN_EXECUTE;
             case RESOURCE_GENERATION -> AgentRunMode.MULTI_AGENT;
-            case KNOWLEDGE_QA, PROBLEM_HELP, PROGRESS_REVIEW, TASK_MANAGEMENT, UNKNOWN -> AgentRunMode.REACT;
+            case KNOWLEDGE_QA, PROBLEM_HELP, DIAGRAM_GENERATION, PROGRESS_REVIEW, TASK_MANAGEMENT, UNKNOWN -> AgentRunMode.REACT;
         };
     }
 
     /**
-     * IntentType → 默认工具列表映射
+     * 模式选择之后再决定工具，避免格式化回答携带资源生成工具。
      */
-    private List<String> mapIntentToTools(IntentType intent) {
+    private List<String> selectTools(IntentType intent, AgentRunMode mode) {
+        if (mode == AgentRunMode.REACT && intent == IntentType.RESOURCE_GENERATION) {
+            return List.of();
+        }
+
         return switch (intent) {
-            case GOAL_PLANNING, PLAN_CONFIRMATION -> List.of("getStudentProfile", "updateStudentProfile");
-            case RESOURCE_GENERATION -> List.of("getStudentProfile", "queryKnowledge", "generateResource", "generateQuiz", "updateStudentProfile");
-            case PROBLEM_HELP -> List.of("getStudentProfile", "queryKnowledge", "queryTasks", "updateStudentProfile");
-            case PROGRESS_REVIEW -> List.of("queryLearningProgress", "getStudentProfile", "updateStudentProfile");
-            case TASK_MANAGEMENT -> List.of("queryTasks", "manageLearningTask", "updateStudentProfile");
-            case KNOWLEDGE_QA, UNKNOWN -> List.of("updateStudentProfile");
+            case GOAL_PLANNING, PLAN_CONFIRMATION -> List.of("getStudentProfile");
+            case RESOURCE_GENERATION -> List.of("getStudentProfile", "queryKnowledge", "generateResource", "generateQuiz");
+            case PROBLEM_HELP -> List.of("getStudentProfile", "queryKnowledge", "queryTasks");
+            case PROGRESS_REVIEW -> List.of("queryLearningProgress", "getStudentProfile");
+            case TASK_MANAGEMENT -> List.of("queryTasks", "manageLearningTask");
+            case KNOWLEDGE_QA, DIAGRAM_GENERATION, UNKNOWN -> List.of();
         };
     }
 
@@ -276,8 +307,11 @@ public class IntentRouteService {
     }
 
     private boolean containsAny(String text, String... keywords) {
+        if (text == null || keywords == null) {
+            return false;
+        }
         for (String keyword : keywords) {
-            if (text.contains(keyword)) {
+            if (keyword != null && text.contains(keyword)) {
                 return true;
             }
         }

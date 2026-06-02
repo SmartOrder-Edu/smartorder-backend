@@ -16,3 +16,4 @@
 {"id":"016","message":"ok","conversationId":"mock-cid-1","hasPendingDraft":true,"expectedIntent":"PLAN_CONFIRMATION","expectedMode":"PLAN_EXECUTE","expectedSource":"STATE","description":"英文确认词+待确认草稿"}
 {"id":"017","message":"出题","conversationId":null,"hasPendingDraft":false,"expectedIntent":"RESOURCE_GENERATION","expectedMode":"MULTI_AGENT","expectedSource":"KEYWORD","description":"'出题'关键词 → 资源生成"}
 {"id":"018","message":"我最近学得怎么样","conversationId":null,"hasPendingDraft":false,"expectedIntent":"PROGRESS_REVIEW","expectedMode":"REACT","expectedSource":"KEYWORD","description":"'学得怎么样'关键词 → 进度回顾"}
+{"id":"019","message":"给我关于登录实现全流程的技术图mermaid","conversationId":null,"hasPendingDraft":false,"expectedIntent":"DIAGRAM_GENERATION","expectedMode":"REACT","expectedSource":"KEYWORD","description":"Mermaid 技术图是格式化技术说明，不应进入多智能体资源生成"}

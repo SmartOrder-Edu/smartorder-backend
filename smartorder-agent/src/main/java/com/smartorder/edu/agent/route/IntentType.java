@@ -15,6 +15,7 @@ public enum IntentType {
 
     KNOWLEDGE_QA("知识问答", "简单事实性或定义性问题"),
     PROBLEM_HELP("习题答疑", "习题解答、概念讲解、学习辅导"),
+    DIAGRAM_GENERATION("图表生成", "生成 Mermaid、流程图、架构图、时序图等格式化技术说明"),
     GOAL_PLANNING("目标规划", "用户表达学习目标，需要制定学习计划"),
     PLAN_CONFIRMATION("确认创建计划", "用户确认已生成的规划草稿"),
     RESOURCE_GENERATION("资源生成", "生成 PPT、测试题、复习资料等"),

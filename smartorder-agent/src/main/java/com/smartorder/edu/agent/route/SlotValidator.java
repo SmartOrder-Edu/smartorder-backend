@@ -32,7 +32,7 @@ public class SlotValidator {
             case GOAL_PLANNING -> validateGoalPlanning(ctx);
             case RESOURCE_GENERATION -> validateResourceGen(ctx);
             // 这些意图无强制槽位
-            case KNOWLEDGE_QA, PROBLEM_HELP, PROGRESS_REVIEW, TASK_MANAGEMENT, UNKNOWN -> List.of();
+            case KNOWLEDGE_QA, PROBLEM_HELP, DIAGRAM_GENERATION, PROGRESS_REVIEW, TASK_MANAGEMENT, UNKNOWN -> List.of();
         };
     }
 
