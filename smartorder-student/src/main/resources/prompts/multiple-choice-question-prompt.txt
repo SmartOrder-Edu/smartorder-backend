@@ -1,0 +1,27 @@
+生成多选题，题型代码固定为 multiple_choice。
+
+约束：
+1. 每题必须有 A、B、C、D 四个选项。
+2. 题干必须明确提示“多选，至少有两个正确答案”。
+3. answerJson 格式：{"correctOptions":["A","C"]}，正确选项必须为 2 到 3 个。
+4. 正确选项相互独立，错误选项有迷惑性但严格意义下不能成立。
+5. explanation 逐项简述判断依据。
+6. commonMistakesJson 至少覆盖 1 个误选项和 1 个漏选项。
+
+# 最终输出
+只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
+
+# 短示例
+{
+  "questions": [{
+    "questionType": "multiple_choice",
+    "difficulty": 4,
+    "abilityDimension": "application",
+    "stem": "关于数据结构中的队列，以下说法正确的是哪些？（多选，至少有两个正确答案）",
+    "optionsJson": [{"label":"A","content":"普通队列通常先进先出"},{"label":"B","content":"入队一般发生在队尾"},{"label":"C","content":"出队一般发生在队尾"},{"label":"D","content":"循环队列可复用数组空间"}],
+    "answerJson": {"correctOptions":["A","B","D"]},
+    "explanation": "A、B、D 符合队列和循环队列特点；C 错在普通队列通常从队头出队。",
+    "commonMistakesJson": [{"option":"C","reason":"混淆队头和队尾","example":"认为删除也在队尾进行"},{"option":"D","reason":"不了解循环队列空间复用","example":"漏选 D"}],
+    "tagsJson": ["数据结构","队列","multiple_choice"]
+  }]
+}

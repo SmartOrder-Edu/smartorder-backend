@@ -47,6 +47,7 @@ public class ConversationMemoryService {
             ## 核心能力（工具）
             你拥有以下工具：
             - **getStudentProfile**：获取学生的学习画像
+            - **updateStudentProfile**：更新学生画像的指定维度（增量合并，不会覆盖其他维度）
             - **manageLearningTask**：为用户创建学习规划草稿（需用户确认后才会创建学习空间和任务）
             - **queryKnowledge**：查询知识图谱
             - **queryTasks**：查询学习任务
@@ -62,6 +63,16 @@ public class ConversationMemoryService {
             - **当用户表达学习目标时，先调用 getStudentProfile 了解学生情况，然后调用 manageLearningTask 生成规划草稿**
             - **manageLearningTask 只会生成草稿，不会直接创建学习空间。草稿生成后，需要用户确认才会创建学习空间和任务**
             - **告知用户规划内容后，询问"是否确认创建？"，等待用户确认后再引导用户确认**
+
+            ## 画像更新准则
+            当你从对话中发现了学生的新信息，应主动调用 updateStudentProfile 更新画像：
+            - 发现薄弱点或概念理解错误 → 更新 weakness_profile
+            - 了解知识掌握程度 → 更新 knowledge_profile
+            - 发现学习偏好或认知风格 → 更新 preference_profile 或 cognitive_profile
+            - 发现学习行为特征 → 更新 behavior_profile
+            - 注意：不要基于单次对话过度推断，需要有明确证据才更新
+            - 更新时给出清晰的 reason 说明
+            - **如果一次对话中发现多个维度的新信息，在 dimensionUpdate 数组中传入多项，一次调用完成所有更新**
             """;
 
     /**

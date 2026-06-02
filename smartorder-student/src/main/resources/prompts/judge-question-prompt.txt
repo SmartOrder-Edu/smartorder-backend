@@ -1,0 +1,27 @@
+生成判断题，题型代码固定为 judge。
+
+约束：
+1. stem 必须是可明确判断真假的陈述句，不写疑问句。
+2. 避免“通常”“可能”等易争议表述，除非答案仍可明确判定。
+3. optionsJson 必须是空数组 []。
+4. answerJson 格式：{"correctValue":true} 或 {"correctValue":false}，correctValue 必须是 JSON 布尔值。
+5. 同一批题目中正确题和错误题都要有；如果 {{count}} >= 4，二者数量差不超过 1。
+6. explanation 说明判断依据。
+
+# 最终输出
+只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
+
+# 短示例
+{
+  "questions": [{
+    "questionType": "judge",
+    "difficulty": 2,
+    "abilityDimension": "concept",
+    "stem": "在数据结构中，普通队列的删除操作一般发生在队头。",
+    "optionsJson": [],
+    "answerJson": {"correctValue": true},
+    "explanation": "普通队列从队尾入队、队头出队，符合先进先出。",
+    "commonMistakesJson": [{"reason":"把入队端和出队端混淆","example":"认为删除发生在队尾"}],
+    "tagsJson": ["数据结构","队列","judge"]
+  }]
+}

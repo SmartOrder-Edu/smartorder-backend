@@ -3,7 +3,7 @@ package com.smartorder.edu.student.controller;
 import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import com.smartorder.edu.student.domain.entity.StudentProfile;
-import com.smartorder.edu.student.dto.ProfileInitDTO;
+import com.smartorder.edu.student.domain.dto.ProfileInitDTO;
 import com.smartorder.edu.student.service.IStudentProfileService;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;

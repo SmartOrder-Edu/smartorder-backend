@@ -35,6 +35,9 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import static com.smartorder.edu.common.config.YunPanMQConfig.MQ_ROUTING_KEY_FILE_SAVE;
+import static com.smartorder.edu.common.config.YunPanMQConfig.MQ_YUN_PAN_EXCHANGE;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -94,9 +97,15 @@ public class FileResourceServiceImpl implements IFileResourceService {
         if (file == null) {
             throw new BusinessException("文件不存在或无权删除该文件");
         }
-        // 删除阿里云OSS上的文件
+        // 仅当没有其他记录引用同一OSS文件时，才删除OSS上的文件（秒传场景下多个记录共享同一文件）
         if (file.getFileUrl()!=null&&!file.getFileUrl().isEmpty()) {
-            aliOSSUtils.deleteFile(file.getFileUrl());
+            LambdaQueryWrapper<FileResource> refWrapper = new LambdaQueryWrapper<>();
+            refWrapper.eq(FileResource::getFileUrl, file.getFileUrl())
+                    .ne(FileResource::getId, id);
+            Long refCount = fileResourceMapper.selectCount(refWrapper);
+            if (refCount == 0) {
+                aliOSSUtils.deleteFile(file.getFileUrl());
+            }
         }
 
         // 删除数据库记录
@@ -139,8 +148,34 @@ public class FileResourceServiceImpl implements IFileResourceService {
         Long fileId = IdUtil.getSnowflakeNextId();
 
         String objectKey = "yun/resource/" + userId + "/" + targetFolderId + '/' + fileId.toString() + fileName.substring(fileName.lastIndexOf('.'));
-//        String objectKey = "yun/resource/" + userId + "/" + targetFolderId + '/' + fileId.toString() + "-" + fileName.substring(0,fileName.lastIndexOf('.')) + fileName.substring(fileName.lastIndexOf('.'));
-
+        // 检查该用户是否有已有的上传任务
+        String uploadKey = "yun:resources:upload:task:" + userId + ":" + fileHash;
+        String uploadTaskJson = (String) redisTemplate.opsForValue().get(uploadKey);
+        UploadTask uploadTask = uploadTaskJson != null ? fromJson(uploadTaskJson, UploadTask.class) : null;
+        if(uploadTask!=null){
+            log.info("发现已有的上传任务，继续使用该任务进行上传，objectKey:{}",objectKey);
+            Map<String,Object> result = Map.of(
+                    "uploadId", uploadTask.uploadId,
+                    "uploadedChunksParts", uploadTask.uploadedParts,
+                    "fileId", fileId.toString()
+            );
+            return result;
+        }
+        // 检查是否上传过类似的文件（根据文件Hash值），如果有则直接使用之前的上传ID和已上传分片列表，继续上传
+        FileResource fileResource = fileResourceMapper.selectOne(
+                new LambdaQueryWrapper<FileResource>()
+                        .eq(FileResource::getFileHash, fileHash)
+                        .eq(FileResource::getUploadStatus, 1)
+        );
+        if(fileResource!=null){
+            sendAsyncSaveData(dto,fileResource,fileId,userId);
+            return Map.of(
+                    "uploadId", null,
+                    "uploadedChunksParts", null,
+                    "fileId", fileId.toString(),
+                    "isFinished", true
+            );
+        }
         // 分片上传唯一标识(凭证)
         String uploadId = aliOSSUtils.initiateMultipartUpload(objectKey);
         // 查询已上传分片列表(断点传续)
@@ -149,8 +184,7 @@ public class FileResourceServiceImpl implements IFileResourceService {
         UploadTask task = new UploadTask(fileHash, objectKey, uploadId, listUploadedParts, new ArrayList<>());
 
         log.info("task:{}",task);
-        String uploadTaskKey = "yun:resources:upload:task:" + userId + ":" + fileHash;
-        redisTemplate.opsForValue().set(uploadTaskKey,toJson(task),30, TimeUnit.MINUTES);
+        redisTemplate.opsForValue().set(uploadKey,toJson(task),30, TimeUnit.MINUTES);
 
         // 存储文件元信息，等待分片上传完成后更新URL和状态
         FileResource file = new FileResource();
@@ -160,6 +194,7 @@ public class FileResourceServiceImpl implements IFileResourceService {
         file.setFileName(fileName);
         file.setOriginalFileName(fileName);
         file.setFileUrl(objectKey);
+        file.setFileHash(fileHash);
         file.setFileType(fileName.substring(fileName.lastIndexOf('.') + 1));
         file.setFileSize(fileSize);
         file.setSource(1);
@@ -171,9 +206,20 @@ public class FileResourceServiceImpl implements IFileResourceService {
         Map<String,Object> result = Map.of(
                 "uploadId", uploadId,
                 "uploadedChunksParts", listUploadedParts,
-                "fileId", fileId.toString()
+                "fileId", fileId.toString(),
+                "isFinished", false
         );
         return result;
+    }
+
+    private void sendAsyncSaveData(InitFileUploadDTO dto, FileResource fileResource, Long fileId, Long userId) {
+        log.info("发送异步消息，保存文件数据到数据库，fileId: {}, fileHash: {}", fileId, dto.getFileHash());
+        rabbitTemplate.convertAndSend(MQ_YUN_PAN_EXCHANGE, MQ_ROUTING_KEY_FILE_SAVE, Map.of(
+                "initFileUploadDTO", dto,
+                "fileResource", fileResource,
+                "fileId", fileId,
+                "userId", userId
+        ));
     }
 
     @Override

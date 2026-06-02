@@ -1,0 +1,27 @@
+生成简答题，题型代码固定为 short_answer。
+
+约束：
+1. optionsJson 必须是空数组 []。
+2. 题干聚焦一个核心问题，可要求解释原因、比较差异、说明步骤或分析机制。
+3. answerJson 格式：{"referenceAnswer":"精炼参考答案","scoringPoints":[{"point":"评分点","scoreRatio":0.5}],"keywords":["关键词"]}。
+4. scoringPoints 中每个评分点必须可独立判分，scoreRatio 总和必须等于 1.0。
+5. referenceAnswer 完整但精炼，能作为教师判分依据。
+6. 多行内容必须在 JSON 字符串中使用 \n 转义。
+
+# 最终输出
+只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
+
+# 短示例
+{
+  "questions": [{
+    "questionType": "short_answer",
+    "difficulty": 4,
+    "abilityDimension": "application",
+    "stem": "简述数据结构中栈和队列的主要区别，并各举一个典型应用。",
+    "optionsJson": [],
+    "answerJson": {"referenceAnswer":"栈遵循后进先出，常用于函数调用栈；队列遵循先进先出，常用于任务排队。","scoringPoints":[{"point":"说明栈是后进先出","scoreRatio":0.3},{"point":"说明队列是先进先出","scoreRatio":0.3},{"point":"给出合理应用","scoreRatio":0.4}],"keywords":["栈","队列","后进先出","先进先出"]},
+    "explanation": "本题考查两种线性结构的访问顺序和使用场景。",
+    "commonMistakesJson": [{"reason":"只写名称不说明访问规则","example":"回答栈和队列都是线性表"}],
+    "tagsJson": ["数据结构","线性结构","short_answer"]
+  }]
+}

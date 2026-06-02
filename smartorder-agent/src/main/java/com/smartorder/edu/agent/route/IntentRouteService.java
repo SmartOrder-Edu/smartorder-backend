@@ -175,14 +175,14 @@ public class IntentRouteService {
         // 3. 习题答疑类
         if (containsAny(message, HELP_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.PROBLEM_HELP, AgentRunMode.REACT,
-                    0.85, List.of("getStudentProfile", "queryKnowledge", "queryTasks"),
+                    0.85, List.of("getStudentProfile", "queryKnowledge", "queryTasks", "updateStudentProfile"),
                     "用户需要学习辅导");
         }
 
         // 4. 进度查询
         if (containsAny(message, PROGRESS_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.PROGRESS_REVIEW, AgentRunMode.REACT,
-                    0.85, List.of("queryLearningProgress", "getStudentProfile"),
+                    0.85, List.of("queryLearningProgress", "getStudentProfile", "updateStudentProfile"),
                     "用户查询学习进度");
         }
 
@@ -253,12 +253,12 @@ public class IntentRouteService {
      */
     private List<String> mapIntentToTools(IntentType intent) {
         return switch (intent) {
-            case GOAL_PLANNING, PLAN_CONFIRMATION -> List.of("getStudentProfile");
-            case RESOURCE_GENERATION -> List.of("getStudentProfile", "queryKnowledge", "generateResource", "generateQuiz");
-            case PROBLEM_HELP -> List.of("getStudentProfile", "queryKnowledge", "queryTasks");
-            case PROGRESS_REVIEW -> List.of("queryLearningProgress", "getStudentProfile");
-            case TASK_MANAGEMENT -> List.of("queryTasks", "manageLearningTask");
-            case KNOWLEDGE_QA, UNKNOWN -> List.of();
+            case GOAL_PLANNING, PLAN_CONFIRMATION -> List.of("getStudentProfile", "updateStudentProfile");
+            case RESOURCE_GENERATION -> List.of("getStudentProfile", "queryKnowledge", "generateResource", "generateQuiz", "updateStudentProfile");
+            case PROBLEM_HELP -> List.of("getStudentProfile", "queryKnowledge", "queryTasks", "updateStudentProfile");
+            case PROGRESS_REVIEW -> List.of("queryLearningProgress", "getStudentProfile", "updateStudentProfile");
+            case TASK_MANAGEMENT -> List.of("queryTasks", "manageLearningTask", "updateStudentProfile");
+            case KNOWLEDGE_QA, UNKNOWN -> List.of("updateStudentProfile");
         };
     }
 
