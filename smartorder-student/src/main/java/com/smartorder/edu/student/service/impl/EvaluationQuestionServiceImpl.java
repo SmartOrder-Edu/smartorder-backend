@@ -1,6 +1,7 @@
 package com.smartorder.edu.student.service.impl;
 
 import com.alibaba.fastjson.JSON;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,7 +15,9 @@ import com.smartorder.edu.student.domain.entity.EvaluationQuestion;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationItem;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationJob;
 import com.smartorder.edu.student.domain.enums.PromptFile;
+import com.smartorder.edu.student.domain.enums.QuestionJobPlan;
 import com.smartorder.edu.student.domain.enums.QuestionScore;
+import com.smartorder.edu.student.domain.vo.GenerateQuestionVO;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationItemMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationJobMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
@@ -87,14 +90,32 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         }
         log.info("生成问题任务开始: jobId={}, jobNo={}, totalCount={}",
                 context.job().getId(), context.job().getJobNo(), context.job().getTotalCount());
-        sendEvent(emitter, "job-created", Map.of(
+        sendEvent(emitter, QuestionJobPlan.QUESTION_JOB_PLAN.getEventName(), Map.of(
                 "jobId", context.job().getId(),
                 "jobNo", context.job().getJobNo(),
                 "totalCount", context.job().getTotalCount(),
-                "description", "问题开始生成"
+                "description", "生成问题任务开始"
         ));
 
         CompletableFuture.runAsync(() -> runGeneration(context, emitter), executor);
+    }
+
+    @Override
+    public List<GenerateQuestionVO.QuestionVO> listQuestions(Long learningSpaceId, Integer limit) {
+        int normalizedLimit = limit == null ? 30 : Math.max(1, Math.min(limit, 100));
+        LambdaQueryWrapper<EvaluationQuestion> query = new LambdaQueryWrapper<EvaluationQuestion>()
+                .eq(EvaluationQuestion::getStatus, 1)
+                .orderByDesc(EvaluationQuestion::getCreatedAt)
+                .last("LIMIT " + normalizedLimit);
+
+        if (learningSpaceId != null) {
+            query.eq(EvaluationQuestion::getLearningSpaceId, learningSpaceId);
+        }
+
+        return evaluationQuestionMapper.selectList(query)
+                .stream()
+                .map(GenerateQuestionVO.QuestionVO::from)
+                .toList();
     }
 
     private GenerationContext createGenerationContext(GenerateQuestionDTO dto) throws Exception {
@@ -174,10 +195,12 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         updateJobRunning(context.job().getId());
 
         try {
+            // 根据用户请求，把所有待生成的 item 分成多个批次，每个批次包含同一题型的若干题目，批次之间可以并行生成
             List<GenerationBatch> batches = createGenerationBatches(context);
             validateGenerationBatches(batches);
             log.info("并行生成问题开始: jobId={}, batchCount={}, totalCount={}",
                     context.job().getId(), batches.size(), context.job().getTotalCount());
+
             List<CompletableFuture<Void>> futures = batches.stream()
                     .map(batch -> CompletableFuture.runAsync(
                             () -> generateBatch(context, batch, emitter, successCount, successfulItemIds),
@@ -189,6 +212,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
             updateJobFinished(context.job().getId(), "success", successCount.get(), 0, null);
             log.info("生成问题任务完成: jobId={}, successCount={}, failedCount=0",
                     context.job().getId(), successCount.get());
+
             completeEmitter(emitter);
 
         } catch (Exception e) {
@@ -209,7 +233,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         for (GenerateQuestionDTO.QuestionTypeCountDTO typeCount : context.dto().getQuestionTypeCountList()) {
             int count = resolveCount(typeCount.getCount());
             if (itemCursor + count > context.items().size()) {
-                throw new BusinessException("Generation item count does not match request count");
+                throw new BusinessException("生成的题目数量与请求数量items().size()不匹配");
             }
 
             List<EvaluationQuestionGenerationItem> batchItems =
@@ -226,7 +250,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         }
 
         if (itemCursor != context.items().size()) {
-            throw new BusinessException("Generation item count does not match request count");
+            throw new BusinessException("生成的题目数量与请求数量items().size()不匹配");
         }
         return batches;
     }
@@ -234,7 +258,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     private void validateGenerationBatches(List<GenerationBatch> batches) {
         for (GenerationBatch batch : batches) {
             if (QuestionScore.fromCode(batch.questionType()) == QuestionScore.UNKNOWN) {
-                throw new BusinessException("Unsupported question type: " + batch.questionType());
+                throw new BusinessException("不支持的题目类型questionType: " + batch.questionType());
             }
         }
     }
@@ -247,7 +271,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
             if (cause instanceof RuntimeException runtimeException) {
                 throw runtimeException;
             }
-            throw new BusinessException("Question generation failed: " + cause.getMessage());
+            throw new BusinessException("题目生成失败: " + cause.getMessage());
         }
     }
 
@@ -278,8 +302,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         JsonNode questionsNode = parseLlmResponse(llmJson);
 
         if (questionsNode.size() != batch.count()) {
-            throw new BusinessException("LLM returned " + questionsNode.size()
-                    + " questions, expected " + batch.count());
+            throw new BusinessException("LLM返回了 " + questionsNode.size() + " 个题目, 期望 " + batch.count() + " 个");
         }
 
         for (int i = 0; i < questionsNode.size(); i++) {
@@ -343,7 +366,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                             partialResponse -> {
                                 log.debug("LLM streaming chunk: {}", partialResponse);
                                 fullContent.append(partialResponse);
-                                sendEvent(emitter, "quiz-token",
+                                sendEvent(emitter, questionType,
                                         Map.of(
                                                 "questionType", questionType,
                                                 "jobId", jobId,
@@ -363,18 +386,18 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
             latch.await();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new BusinessException("Interrupted while waiting for LLM response");
+            throw new BusinessException("等待LLM响应时被中断");
         } catch (Exception e) {
-            throw new BusinessException("LLM generation failed: " + e.getMessage());
+            throw new BusinessException("LLM生成失败: " + e.getMessage());
         }
 
         if (errorRef.get() != null) {
-            throw new BusinessException("LLM generation failed: " + errorRef.get().getMessage());
+            throw new BusinessException("LLM生成失败: " + errorRef.get().getMessage());
         }
 
         String result = fullContent.toString().strip();
         if (result.isBlank()) {
-            throw new BusinessException("LLM response is empty");
+            throw new BusinessException("LLM响应为空");
         }
 
         return result;
@@ -500,7 +523,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         try {
             return objectMapper.writeValueAsString(dto);
         } catch (Exception e) {
-            throw new BusinessException("Failed to serialize generation request");
+            throw new BusinessException("序列化生成请求失败");
         }
     }
 
@@ -568,7 +591,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
     private JsonNode parseLlmResponse(String response) {
         if (response == null) {
-            throw new BusinessException("LLM response is empty");
+            throw new BusinessException("LLM响应为空");
         }
 
         String json = response.strip();
@@ -585,14 +608,14 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
             JsonNode root = objectMapper.readTree(json);
             JsonNode questions = root.get("questions");
             if (questions == null || !questions.isArray()) {
-                throw new BusinessException("LLM response JSON lacks questions array");
+                throw new BusinessException("LLM响应JSON缺少questions数组");
             }
             return questions;
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
             log.error("解析 LLM 响应失败: {}", response, e);
-            throw new BusinessException("Failed to parse LLM response as valid JSON");
+            throw new BusinessException("解析LLM响应为有效JSON失败");
         }
     }
 
@@ -635,7 +658,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         }
 
         if (!value.isArray()) {
-            throw new BusinessException("Field " + fieldName + " must be a JSON array");
+            throw new BusinessException("字段fieldName " + fieldName + " 必须是JSON数组");
         }
 
         return objectMapper.convertValue(value, List.class);
@@ -649,7 +672,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         }
 
         if (!value.isArray()) {
-            throw new BusinessException("Field " + fieldName + " must be a JSON array");
+            throw new BusinessException("字段fieldName " + fieldName + " 必须是JSON数组");
         }
 
         return objectMapper.convertValue(value, List.class);
@@ -663,7 +686,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         }
 
         if (!value.isObject()) {
-            throw new BusinessException("Field " + fieldName + " must be a JSON object");
+            throw new BusinessException("字段fieldName " + fieldName + " 必须是JSON对象");
         }
 
         return objectMapper.convertValue(value, Map.class);
@@ -672,12 +695,12 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     private String readRequiredText(JsonNode node, String fieldName) {
         JsonNode value = node.get(fieldName);
         if (value == null || value.isNull()) {
-            throw new BusinessException("LLM question lacks required field: " + fieldName);
+            throw new BusinessException("LLM题目缺少必填字段fieldName: " + fieldName);
         }
 
         String text = value.asText();
         if (text == null || text.isBlank()) {
-            throw new BusinessException("LLM question field is empty: " + fieldName);
+            throw new BusinessException("LLM题目字段fieldName为空: " + fieldName);
         }
 
         return text;

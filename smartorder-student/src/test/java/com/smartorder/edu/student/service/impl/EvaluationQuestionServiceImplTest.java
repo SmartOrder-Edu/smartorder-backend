@@ -8,6 +8,7 @@ import com.smartorder.edu.student.domain.dto.GenerateQuestionDTO;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestion;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationItem;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationJob;
+import com.smartorder.edu.student.domain.vo.GenerateQuestionVO;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationItemMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationJobMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
@@ -21,6 +22,7 @@ import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -252,6 +254,43 @@ class EvaluationQuestionServiceImplTest {
         verify(evaluationQuestionMapper, never()).insert(any(EvaluationQuestion.class));
     }
 
+    @Test
+    void listsSavedQuestionsForFrontendPreview() {
+        PromptLoader promptLoader = mock(PromptLoader.class);
+        QuestionAiService questionAiService = mock(QuestionAiService.class);
+        EvaluationQuestionMapper evaluationQuestionMapper = mock(EvaluationQuestionMapper.class);
+        LearningSpaceMapper learningSpaceMapper = mock(LearningSpaceMapper.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        EvaluationQuestionGenerationJobMapper jobMapper = mock(EvaluationQuestionGenerationJobMapper.class);
+        EvaluationQuestionGenerationItemMapper itemMapper = mock(EvaluationQuestionGenerationItemMapper.class);
+        TransactionTemplate transactionTemplate = passthroughTransactionTemplate();
+
+        EvaluationQuestion first = savedQuestion(11L, "single_choice", "什么是临界区？", 3);
+        EvaluationQuestion second = savedQuestion(12L, "short_answer", "说明信号量的作用。", 5);
+        when(evaluationQuestionMapper.selectList(any())).thenReturn(List.of(first, second));
+
+        EvaluationQuestionServiceImpl service = new EvaluationQuestionServiceImpl(
+                promptLoader,
+                evaluationQuestionMapper,
+                learningSpaceMapper,
+                objectMapper,
+                jobMapper,
+                itemMapper,
+                transactionTemplate,
+                questionAiService
+        );
+
+        List<GenerateQuestionVO.QuestionVO> questions = service.listQuestions(10L, 20);
+
+        assertEquals(2, questions.size());
+        assertEquals(11L, questions.get(0).getId());
+        assertEquals("单选题", questions.get(0).getQuestionTypeName());
+        assertEquals("什么是临界区？", questions.get(0).getStem());
+        assertEquals(BigDecimal.ONE, questions.get(0).getScore());
+        assertEquals("简答题", questions.get(1).getQuestionTypeName());
+        assertEquals(5, questions.get(1).getDifficulty());
+    }
+
     private void setCurrentUserId(Long userId) {
         Claims claims = mock(Claims.class);
         when(claims.get("userId")).thenReturn(userId);
@@ -290,6 +329,19 @@ class EvaluationQuestionServiceImplTest {
         dto.setCount(count);
         dto.setDifficulty(difficulty);
         return dto;
+    }
+
+    private EvaluationQuestion savedQuestion(Long id, String questionType, String stem, int difficulty) {
+        EvaluationQuestion question = new EvaluationQuestion();
+        question.setId(id);
+        question.setQuestionCode("Q-" + id);
+        question.setLearningSpaceId(10L);
+        question.setQuestionType(questionType);
+        question.setDifficulty(difficulty);
+        question.setScore(BigDecimal.ONE);
+        question.setStem(stem);
+        question.setStatus(1);
+        return question;
     }
 
     @SuppressWarnings("unchecked")

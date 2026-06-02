@@ -16,13 +16,13 @@ public class CommonConfig {
     }*/
 
     //构建会话记忆对象
-    @Bean
-    public ChatMemory chatMemory(){
-        MessageWindowChatMemory memory = MessageWindowChatMemory.builder()
-                .maxMessages(20)
-                .build();
-        return memory;
-    }
+//    @Bean
+//    public ChatMemory chatMemory(){
+//        MessageWindowChatMemory memory = MessageWindowChatMemory.builder()
+//                .maxMessages(20)
+//                .build();
+//        return memory;
+//    }
 
 
 }
