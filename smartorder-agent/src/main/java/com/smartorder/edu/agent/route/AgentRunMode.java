@@ -8,9 +8,9 @@ import lombok.Getter;
  * <p>
  * IntentType → AgentRunMode 映射关系（非 1:1）：
  * <ul>
- *   <li>KNOWLEDGE_QA, PROBLEM_HELP, PROGRESS_REVIEW, TASK_MANAGEMENT, UNKNOWN → REACT</li>
+ *   <li>KNOWLEDGE_QA, PROBLEM_HELP, DIAGRAM_GENERATION, PROGRESS_REVIEW, TASK_MANAGEMENT, UNKNOWN → REACT</li>
  *   <li>GOAL_PLANNING, PLAN_CONFIRMATION → PLAN_EXECUTE</li>
- *   <li>RESOURCE_GENERATION → MULTI_AGENT</li>
+ *   <li>复杂学习资源生成 → MULTI_AGENT</li>
  * </ul>
  */
 @Getter
