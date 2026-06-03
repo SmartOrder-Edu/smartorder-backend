@@ -246,7 +246,7 @@ public class Neo4jKnowledgeGraphServiceImpl implements INeo4jKnowledgeGraphServi
             nodeVO.setId(node.getId());
             nodeVO.setName(node.getName());
             nodeVO.setDescription(node.getDescription());
-            nodeVO.setCategory(node.getCategory());
+            nodeVO.setCateory(node.getCategory());
             nodeVO.setImportance(node.getImportance());
             nodeVOs.add(nodeVO);
         }
