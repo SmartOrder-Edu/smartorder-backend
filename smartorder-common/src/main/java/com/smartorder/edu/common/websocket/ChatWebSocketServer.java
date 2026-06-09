@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -68,6 +69,7 @@ public class ChatWebSocketServer {
 
             log.info("用户 [{}] 上线，当前在线人数: {}", userId, onlineSessions.size());
 
+            pushOfflineMessages(userId, session);
         } catch (Exception e) {
             // 如果 Token 过期、签名错误或被篡改，getClaimsFromToken 会抛出异常
             log.error("WebSocket 连接失败，Token 无效或已过期: {}", e.getMessage());
@@ -265,6 +267,58 @@ public class ChatWebSocketServer {
                 // (可选进阶优化)：既然对方不在线，你可以立刻再向数据库插入一条状态为 CALL_CANCEL 的记录，
                 // 表示这是一通“未接通”的电话，防止对方上线后还看到一直在拨打的 UI 状态。
             }
+        }
+    }
+
+    /**
+     * 用户上线后，推送离线消息
+     */
+    private void pushOfflineMessages(Long userId, Session session) {
+        try {
+            // 1. 查询当前用户的未读消息
+            LambdaQueryWrapper<ChatMessage> query = new LambdaQueryWrapper<>();
+            query.eq(ChatMessage::getReceiverId, userId)
+                    .eq(ChatMessage::getStatus, 0)
+                    .orderByAsc(ChatMessage::getCreateTime);
+
+            List<ChatMessage> offlineMessages = chatMessageService.list(query);
+
+            if (offlineMessages == null || offlineMessages.isEmpty()) {
+                log.info("用户 [{}] 没有离线消息", userId);
+                return;
+            }
+
+            // 2. 逐条推送给当前上线用户
+            for (ChatMessage msg : offlineMessages) {
+                ChatMessageDTO dto = new ChatMessageDTO();
+                dto.setMessageId(msg.getId());
+                dto.setSenderId(msg.getSenderId());
+                dto.setReceiverId(msg.getReceiverId());
+                dto.setMsgType(msg.getMsgType());
+                dto.setContent(msg.getContent());
+
+                if (msg.getCreateTime() != null) {
+                    dto.setCreateTime(msg.getCreateTime().toString());
+                }
+
+                session.getAsyncRemote().sendText(JSON.toJSONString(dto));
+            }
+
+            // 3. 推送完成后，更新状态
+            // 这里假设：0 = 未读 / 未投递，1 = 已投递
+            List<Long> ids = offlineMessages.stream()
+                    .map(ChatMessage::getId)
+                    .toList();
+
+            chatMessageService.lambdaUpdate()
+                    .in(ChatMessage::getId, ids)
+                    .set(ChatMessage::getStatus, 1)
+                    .update();
+
+            log.info("用户 [{}] 离线消息推送完成，共 [{}] 条", userId, offlineMessages.size());
+
+        } catch (Exception e) {
+            log.error("推送离线消息失败，userId={}", userId, e);
         }
     }
 }
