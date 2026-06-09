@@ -15,6 +15,7 @@ import jakarta.websocket.server.PathParam;
 import jakarta.websocket.server.ServerEndpoint;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -33,6 +34,13 @@ public class ChatWebSocketServer {
 
     // 在 ChatWebSocketServer 类顶部添加注入
     private static IChatMessageService chatMessageService;
+
+    private static StringRedisTemplate stringRedisTemplate;
+
+    @Autowired
+    public void setStringRedisTemplate(StringRedisTemplate stringRedisTemplate) {
+        ChatWebSocketServer.stringRedisTemplate = stringRedisTemplate;
+    }
 
     @Autowired
     public void setUserFriendMapper(UserFriendMapper userFriendMapper) {
@@ -69,7 +77,7 @@ public class ChatWebSocketServer {
 
             log.info("用户 [{}] 上线，当前在线人数: {}", userId, onlineSessions.size());
 
-            pushOfflineMessages(userId, session);
+            pushRedisOfflineMessages(userId, session);
         } catch (Exception e) {
             // 如果 Token 过期、签名错误或被篡改，getClaimsFromToken 会抛出异常
             log.error("WebSocket 连接失败，Token 无效或已过期: {}", e.getMessage());
@@ -126,7 +134,7 @@ public class ChatWebSocketServer {
                 return; // 直接 return，不入库，不转发
             }
             // ===============================================================
-               // 【新增】：在好友校验通过后，判断是否为音视频通话的业务信令
+            // 【新增】：在好友校验通过后，判断是否为音视频通话的业务信令
             if (isCallMessage(dto.getMsgType())) {
                 handleCallMessage(dto, session);
                 return; // 处理完呼叫信令直接返回，不走下方的普通聊天逻辑
@@ -140,20 +148,32 @@ public class ChatWebSocketServer {
             chatMessage.setContent(dto.getContent());
             chatMessage.setStatus(0);
             chatMessage.setCreateTime(LocalDateTime.now());
-             chatMessageService.save(chatMessage);
+            chatMessageService.save(chatMessage);
 
             // 3. 组装推送消息
             dto.setMessageId(chatMessage.getId());
             dto.setCreateTime(chatMessage.getCreateTime().toString());
 
 
-
             // 4. 转发给接收方
             Session receiverSession = onlineSessions.get(dto.getReceiverId());
             if (receiverSession != null && receiverSession.isOpen()) {
                 receiverSession.getAsyncRemote().sendText(JSON.toJSONString(dto));
+
+                // 推送成功后，可以把消息状态改为已投递
+                chatMessageService.lambdaUpdate()
+                        .eq(ChatMessage::getId, chatMessage.getId())
+                        .set(ChatMessage::getStatus, 1)
+                        .update();
             } else {
-                log.info("接收方用户 [{}] 不在线，消息已转为离线存储", dto.getReceiverId());
+                // 用户不在线，把 messageId 存到 Redis
+                String redisKey = "offline:msg:" + dto.getReceiverId();
+
+                stringRedisTemplate.opsForList()
+                        .rightPush(redisKey, String.valueOf(chatMessage.getId()));
+
+                log.info("接收方用户 [{}] 不在线，消息ID [{}] 已存入 Redis 离线队列",
+                        dto.getReceiverId(), chatMessage.getId());
             }
 
         } catch (Exception e) {
@@ -205,6 +225,7 @@ public class ChatWebSocketServer {
 
     /**
      * 判断指定用户当前是否在线
+     *
      * @param userId 用户ID
      * @return true 在线，false 离线
      */
@@ -273,23 +294,26 @@ public class ChatWebSocketServer {
     /**
      * 用户上线后，推送离线消息
      */
-    private void pushOfflineMessages(Long userId, Session session) {
+    private void pushRedisOfflineMessages(Long userId, Session session) {
+        String redisKey = "offline:msg:" + userId;
+
         try {
-            // 1. 查询当前用户的未读消息
-            LambdaQueryWrapper<ChatMessage> query = new LambdaQueryWrapper<>();
-            query.eq(ChatMessage::getReceiverId, userId)
-                    .eq(ChatMessage::getStatus, 0)
-                    .orderByAsc(ChatMessage::getCreateTime);
+            List<String> messageIdList = stringRedisTemplate.opsForList()
+                    .range(redisKey, 0, -1);
 
-            List<ChatMessage> offlineMessages = chatMessageService.list(query);
-
-            if (offlineMessages == null || offlineMessages.isEmpty()) {
-                log.info("用户 [{}] 没有离线消息", userId);
+            if (messageIdList == null || messageIdList.isEmpty()) {
+                log.info("用户 [{}] 没有 Redis 离线消息", userId);
                 return;
             }
 
-            // 2. 逐条推送给当前上线用户
-            for (ChatMessage msg : offlineMessages) {
+            for (String messageIdStr : messageIdList) {
+                Long messageId = Long.valueOf(messageIdStr);
+
+                ChatMessage msg = chatMessageService.getById(messageId);
+                if (msg == null) {
+                    continue;
+                }
+
                 ChatMessageDTO dto = new ChatMessageDTO();
                 dto.setMessageId(msg.getId());
                 dto.setSenderId(msg.getSenderId());
@@ -302,23 +326,20 @@ public class ChatWebSocketServer {
                 }
 
                 session.getAsyncRemote().sendText(JSON.toJSONString(dto));
+
+                chatMessageService.lambdaUpdate()
+                        .eq(ChatMessage::getId, messageId)
+                        .set(ChatMessage::getStatus, 1)
+                        .update();
             }
 
-            // 3. 推送完成后，更新状态
-            // 这里假设：0 = 未读 / 未投递，1 = 已投递
-            List<Long> ids = offlineMessages.stream()
-                    .map(ChatMessage::getId)
-                    .toList();
+            // 全部推送完成后，再删除 Redis 离线队列
+            stringRedisTemplate.delete(redisKey);
 
-            chatMessageService.lambdaUpdate()
-                    .in(ChatMessage::getId, ids)
-                    .set(ChatMessage::getStatus, 1)
-                    .update();
-
-            log.info("用户 [{}] 离线消息推送完成，共 [{}] 条", userId, offlineMessages.size());
+            log.info("用户 [{}] Redis 离线消息推送完成，共 [{}] 条", userId, messageIdList.size());
 
         } catch (Exception e) {
-            log.error("推送离线消息失败，userId={}", userId, e);
+            log.error("推送 Redis 离线消息失败，userId={}", userId, e);
         }
     }
 }
