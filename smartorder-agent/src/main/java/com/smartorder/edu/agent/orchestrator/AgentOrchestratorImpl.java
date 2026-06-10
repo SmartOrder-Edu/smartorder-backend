@@ -2,6 +2,7 @@ package com.smartorder.edu.agent.orchestrator;
 
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
+import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.plan.PlanExecuteEngine;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentRouteService;
@@ -16,6 +17,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -58,6 +62,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                     String attachmentContext = attachmentService.buildRagContext(
                             request.getUserId(), conversationId, request.getFileIds(), request.getMessage());
                     context.setAttachmentContext(attachmentContext);
+                    context.setAllowedAttachmentFileIds(normalizeFileIds(request.getFileIds()));
                     dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
                             "type", "attachment_rag",
                             "fileIds", request.getFileIds(),
@@ -90,6 +95,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                     .build();
             IntentRouteResult routeResult = intentRouteService.route(routeCtx);
             context.setMode(routeResult.getRunMode());
+            addAttachmentSearchToolIfNeeded(routeResult, context);
 
             // 2. 推送 TRACE_STARTED
             dispatcher.emit(emitter, context, AgentEventType.TRACE_STARTED, Map.of(
@@ -145,5 +151,32 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
             return request.getConversationId();
         }
         return UUID.randomUUID().toString();
+    }
+
+    private void addAttachmentSearchToolIfNeeded(IntentRouteResult routeResult, AgentRuntimeContext context) {
+        if (routeResult.getRunMode() != AgentRunMode.REACT) {
+            return;
+        }
+        List<Long> fileIds = context.getAllowedAttachmentFileIds();
+        if (fileIds == null || fileIds.isEmpty()) {
+            return;
+        }
+
+        List<String> currentTools = routeResult.getRequiredTools() != null
+                ? routeResult.getRequiredTools() : List.of();
+        if (currentTools.contains("searchConversationAttachments")) {
+            return;
+        }
+
+        List<String> tools = new ArrayList<>(currentTools);
+        tools.add("searchConversationAttachments");
+        routeResult.setRequiredTools(tools);
+    }
+
+    private List<Long> normalizeFileIds(List<Long> fileIds) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            return List.of();
+        }
+        return new ArrayList<>(new LinkedHashSet<>(fileIds));
     }
 }

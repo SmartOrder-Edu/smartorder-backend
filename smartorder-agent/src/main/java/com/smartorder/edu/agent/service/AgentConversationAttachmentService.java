@@ -50,6 +50,7 @@ public class AgentConversationAttachmentService {
     private static final String REDIS_OBJECT_KEY_PREFIX = "agent:attachment:upload:key:";
     private static final String TEMP_KB_NAME = "__agent_temp_attachments__";
     private static final int DEFAULT_TOP_K = 5;
+    private static final int MAX_TOP_K = 10;
     private static final int MAX_FILE_COUNT = 5;
     private static final int MAX_CHUNK_CHARS = 900;
 
@@ -176,13 +177,18 @@ public class AgentConversationAttachmentService {
     }
 
     public String buildRagContext(Long userId, String conversationId, List<Long> fileIds, String query) {
+        return buildRagContext(userId, conversationId, fileIds, query, DEFAULT_TOP_K);
+    }
+
+    public String buildRagContext(Long userId, String conversationId, List<Long> fileIds, String query, int topK) {
         List<Long> readyFileIds = validateReadyFileIds(userId, conversationId, fileIds);
         if (readyFileIds.isEmpty()) {
             return null;
         }
 
+        int safeTopK = Math.max(1, Math.min(topK, MAX_TOP_K));
         List<AttachmentRagSearchResult> results = vectorIndexService.searchByFileIds(
-                query, userId, readyFileIds, DEFAULT_TOP_K);
+                query, userId, readyFileIds, safeTopK);
         Map<Long, KnowledgeFile> files = knowledgeFileMapper.selectBatchIds(readyFileIds).stream()
                 .collect(Collectors.toMap(KnowledgeFile::getId, file -> file));
 

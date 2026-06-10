@@ -70,17 +70,18 @@ public class MultiAgentCoordinator {
         reasoningSegments.add(initialSeg);
 
         String sessionKey = context.getTraceId();
+        String attachmentPrefix = buildAttachmentPrefix(context);
 
         // 2. 创建子任务
         List<CompletableFuture<SubAgentResult>> futures = List.of(
                 dispatchSubAgent("resource-sub", resourceSubAgent,
-                        "为以下学习需求生成资源大纲：" + request.getMessage(),
+                        attachmentPrefix + "为以下学习需求生成资源大纲：" + request.getMessage(),
                         context, emitter, sessionKey),
                 dispatchSubAgent("quiz-sub", quizSubAgent,
-                        "为以下学习需求生成练习题：" + request.getMessage(),
+                        attachmentPrefix + "为以下学习需求生成练习题：" + request.getMessage(),
                         context, emitter, sessionKey),
                 dispatchSubAgent("kg-sub", knowledgeGraphSubAgent,
-                        "为以下学习需求提取知识图谱：" + request.getMessage(),
+                        attachmentPrefix + "为以下学习需求提取知识图谱：" + request.getMessage(),
                         context, emitter, sessionKey)
         );
 
@@ -110,6 +111,20 @@ public class MultiAgentCoordinator {
     }
 
     // ============ Private Methods ============
+
+    private String buildAttachmentPrefix(AgentRuntimeContext context) {
+        String attachmentContext = context.getAttachmentContext();
+        if (attachmentContext == null || attachmentContext.isBlank()) {
+            return "";
+        }
+        return """
+                参考用户上传附件摘录：
+                %s
+
+                如果附件依据不足，请明确说明需要用户补充。
+
+                """.formatted(attachmentContext);
+    }
 
     private CompletableFuture<SubAgentResult> dispatchSubAgent(
             String taskId, SubAgent subAgent, String taskDescription,

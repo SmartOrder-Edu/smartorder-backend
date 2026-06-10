@@ -92,7 +92,7 @@ public class PlanExecuteEngine {
                     .chatModel(chatLanguageModel)
                     .build();
 
-            String prompt = buildPlanPrompt(userGoal, profileJson);
+            String prompt = buildPlanPrompt(userGoal, profileJson, context.getAttachmentContext());
             planJson = planAgent.createPlan(prompt);
         } catch (Exception e) {
             log.error("[PlanEngine] PlanAgent 生成失败", e);
@@ -182,15 +182,26 @@ public class PlanExecuteEngine {
         return message;
     }
 
-    private String buildPlanPrompt(String userMessage, String profileJson) {
+    private String buildPlanPrompt(String userMessage, String profileJson, String attachmentContext) {
+        String attachmentSection = "";
+        if (attachmentContext != null && !attachmentContext.isBlank()) {
+            attachmentSection = """
+
+                    用户上传附件摘录：
+                    %s
+
+                    请优先参考附件内容制定计划；如果附件依据不足，请说明哪些部分需要用户补充。
+                    """.formatted(attachmentContext);
+        }
         return """
                 用户目标：
                 %s
 
                 学生画像：
                 %s
+                %s
 
                 请根据用户目标和学生画像，生成一个结构化的学习规划。
-                """.formatted(userMessage, profileJson);
+                """.formatted(userMessage, profileJson, attachmentSection);
     }
 }
