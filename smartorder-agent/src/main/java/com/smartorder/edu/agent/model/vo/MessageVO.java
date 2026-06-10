@@ -18,5 +18,7 @@ public class MessageVO {
     private String reasoningContent;
     /** 思考分段 JSON（与工具调用交错），用于前端还原实时展示效果 */
     private String reasoningSegments;
+    /** 本条消息关联的附件文件ID列表，JSON数组格式如[1,2,3] */
+    private String attachmentFileIds;
     private LocalDateTime createTime;
 }

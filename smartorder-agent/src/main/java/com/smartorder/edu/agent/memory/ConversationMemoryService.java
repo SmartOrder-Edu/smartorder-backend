@@ -118,8 +118,10 @@ public class ConversationMemoryService {
     /**
      * 保存用户消息
      */
-    public void saveUserMessage(String conversationId, Long userId, String content) {
-        save(conversationId, userId, "user", content, null, null, null, null);
+    public void saveUserMessage(String conversationId, Long userId, String content, List<Long> attachmentFileIds) {
+        String fileIdsJson = (attachmentFileIds != null && !attachmentFileIds.isEmpty())
+                ? com.alibaba.fastjson.JSON.toJSONString(attachmentFileIds) : null;
+        save(conversationId, userId, "user", content, null, null, null, null, fileIdsJson);
     }
 
     /**
@@ -127,14 +129,14 @@ public class ConversationMemoryService {
      */
     public void saveAssistantMessage(String conversationId, Long userId, String content,
                                       String reasoningContent, String traceId, String metadataJson) {
-        save(conversationId, userId, "assistant", content, null, reasoningContent, traceId, metadataJson);
+        save(conversationId, userId, "assistant", content, null, reasoningContent, traceId, metadataJson, null);
     }
 
     /**
      * 保存工具消息
      */
     public void saveToolMessage(String conversationId, Long userId, String toolName, String content) {
-        save(conversationId, userId, "tool", content, toolName, null, null, null);
+        save(conversationId, userId, "tool", content, toolName, null, null, null, null);
     }
 
     /**
@@ -162,7 +164,8 @@ public class ConversationMemoryService {
     // ============ Private ============
 
     private void save(String conversationId, Long userId, String role, String content,
-                       String toolName, String reasoningContent, String traceId, String metadataJson) {
+                       String toolName, String reasoningContent, String traceId, String metadataJson,
+                       String attachmentFileIds) {
         ConversationMessage entity = new ConversationMessage();
         entity.setConversationId(conversationId);
         entity.setUserId(userId);
@@ -172,6 +175,7 @@ public class ConversationMemoryService {
         entity.setReasoningContent(reasoningContent);
         entity.setTraceId(traceId);
         entity.setMetadataJson(metadataJson);
+        entity.setAttachmentFileIds(attachmentFileIds);
         entity.setIsCompressed(0);
         entity.setIsDeleted(0);
         messageMapper.insert(entity);

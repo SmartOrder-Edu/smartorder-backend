@@ -60,6 +60,7 @@ public class ConversationController {
             vo.setTraceId(e.getTraceId());
             vo.setReasoningContent(e.getReasoningContent());
             vo.setReasoningSegments(e.getMetadataJson());
+            vo.setAttachmentFileIds(e.getAttachmentFileIds());
             vo.setCreateTime(e.getCreateTime());
             return vo;
         }).toList();

@@ -19,6 +19,7 @@ public class ConversationMessage {
     private String reasoningContent;
     private String traceId;
     private String toolName;
+    private String attachmentFileIds;
     private String metadataJson;
     private Integer isCompressed;
     private Integer isDeleted;

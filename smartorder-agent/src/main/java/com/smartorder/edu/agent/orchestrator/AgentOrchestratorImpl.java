@@ -48,8 +48,9 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 .build();
 
         try {
-            // 0. 统一保存用户消息（所有模式都落库）
-            memoryService.saveUserMessage(conversationId, request.getUserId(), request.getMessage());
+            // 0. 统一保存用户消息（所有模式都落库，含附件关联）
+            memoryService.saveUserMessage(conversationId, request.getUserId(), request.getMessage(),
+                    request.getFileIds());
             request.setConversationId(conversationId);
 
             if (request.getFileIds() != null && !request.getFileIds().isEmpty()) {
