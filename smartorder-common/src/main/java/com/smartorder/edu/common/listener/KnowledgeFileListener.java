@@ -1,59 +1,21 @@
 package com.smartorder.edu.common.listener;
 
 import com.smartorder.edu.common.config.RabbitMQConfig;
-import com.smartorder.edu.common.mapper.KnowledgeChunkMapper;
-import com.smartorder.edu.common.mapper.KnowledgeFileJobMapper;
-import com.smartorder.edu.common.mapper.KnowledgeFileMapper;
+import com.smartorder.edu.common.model.dto.KnowledgeFileCreateResult;
 import com.smartorder.edu.common.model.dto.KnowledgeFileDTO;
-import com.smartorder.edu.common.model.dto.KnowledgeFileProcessMessage;
-import com.smartorder.edu.common.model.entity.KnowledgeChunk;
 import com.smartorder.edu.common.model.entity.KnowledgeFile;
-import com.smartorder.edu.common.model.entity.KnowledgeFileJob;
-import com.smartorder.edu.common.model.rag.RagParseResult;
-import com.smartorder.edu.common.rag.*;
-import com.smartorder.edu.common.service.impl.KnowledgeBaseServiceImpl;
-import com.smartorder.edu.common.util.IdGenerator;
+import com.smartorder.edu.common.service.KnowledgeFileCreateService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.util.List;
-
-import static com.smartorder.edu.common.common.Constants.*;
-import static com.smartorder.edu.common.common.Constants.EMBEDDED;
-import static com.smartorder.edu.common.common.Constants.FAILED;
-import static com.smartorder.edu.common.common.Constants.PROCESSING;
-import static com.smartorder.edu.common.common.Constants.RUNNING;
-import static com.smartorder.edu.common.common.Constants.SUCCESS;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class KnowledgeFileListener {
 
-    private final KnowledgeFileMapper knowledgeFileMapper;
-    private final KnowledgeFileJobMapper knowledgeFileJobMapper;
-    private final OutboxService outboxService;
-
-
-    private final KnowledgeFileMapper fileMapper;
-
-    private final KnowledgeFileJobMapper jobMapper;
-
-    private final KnowledgeChunkMapper chunkMapper;
-
-    private final RagFileParserService ragFileParserService;
-
-    private final RagPersistService ragPersistService;
-
-    private final VectorIndexService vectorIndexService;
-
-    private final KnowledgeGraphBuildService knowledgeGraphBuildService;
-
-    private final KnowledgeBaseServiceImpl knowledgeBaseService;
+    private final KnowledgeFileCreateService knowledgeFileCreateService;
 
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE_FILE_DB_SAVE)
@@ -68,94 +30,8 @@ public class KnowledgeFileListener {
         }
     }
 
-    @Transactional
-    public KnowledgeFile saveFileAndCreateJob(KnowledgeFileDTO msg) throws Exception {
-        IdGenerator.setWorkerId(1);
-        KnowledgeFile kFile = new KnowledgeFile();
-        kFile.setId(IdGenerator.nextId());
-        kFile.setUserId(msg.getUserId());
-        kFile.setKnowledgeBaseId(msg.getKnowledgeBaseId());
-        kFile.setOriginalName(msg.getOriginalName());
-        kFile.setStoredName(msg.getStoredName());
-        kFile.setFileUrl(msg.getFileUrl());
-        kFile.setFileSize(msg.getFileSize());
-        kFile.setFileHash(msg.getFileHash());
-        fillFileType(kFile, msg.getOriginalName());
-
-        kFile.setParseStatus(PENDING);
-        kFile.setChunkStatus(PENDING);
-        kFile.setEmbeddingStatus(PENDING);
-        kFile.setStatus(ACTIVE);
-        kFile.setCreatedAt(LocalDateTime.now());
-        kFile.setUpdatedAt(LocalDateTime.now());
-        knowledgeFileMapper.insert(kFile);
-
-        KnowledgeFileJob job = new KnowledgeFileJob();
-        job.setUserId(kFile.getUserId());
-        job.setKnowledgeBaseId(kFile.getKnowledgeBaseId());
-        job.setFileId(kFile.getId());
-        job.setJobType("parse_chunk_embed");
-        job.setStatus(PENDING);
-        job.setProgress(0);
-        job.setCurrentStep("等待处理");
-        job.setRetryCount(0);
-        job.setMaxRetryCount(3);
-        job.setJobKey("file:" + kFile.getId() + ":parse_chunk_embed:v1");
-        job.setCreatedAt(LocalDateTime.now());
-        job.setUpdatedAt(LocalDateTime.now());
-        knowledgeFileJobMapper.insert(job);
-
-
-        KnowledgeFileProcessMessage processMessage = new KnowledgeFileProcessMessage(
-                job.getId(),
-                kFile.getUserId(),
-                kFile.getKnowledgeBaseId(),
-                kFile.getId()
-        );
-
-        outboxService.saveOutbox(
-                "knowledge.file.process",
-                RabbitMQConfig.KNOWLEDGE_EXCHANGE,
-                RabbitMQConfig.ROUTING_KEY_FILE_PROCESS,
-                processMessage
-        );
-
-        // 更新知识库文件统计
-        knowledgeBaseService.incrementFileStats(kFile.getKnowledgeBaseId(), kFile.getFileSize());
-
-        return kFile;
+    public KnowledgeFile saveFileAndCreateJob(KnowledgeFileDTO msg) {
+        KnowledgeFileCreateResult result = knowledgeFileCreateService.createFileAndJob(msg);
+        return result.getFile();
     }
-
-
-    private void fillFileType(KnowledgeFile kFile, String originalName) {
-        if (originalName == null || originalName.lastIndexOf(".") <= 0) {
-            kFile.setMimeType("application/octet-stream");
-            return;
-        }
-        String extension = originalName.substring(originalName.lastIndexOf(".") + 1).toLowerCase();
-        kFile.setFileExtension(extension);
-        switch (extension) {
-            case "txt", "md" -> kFile.setMimeType("text/plain");
-            case "pdf" -> kFile.setMimeType("application/pdf");
-            case "doc" -> kFile.setMimeType("application/msword");
-            case "docx" -> kFile.setMimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-            case "xls" -> kFile.setMimeType("application/vnd.ms-excel");
-            case "xlsx" -> kFile.setMimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            case "ppt" -> kFile.setMimeType("application/vnd.ms-powerpoint");
-            case "pptx" -> kFile.setMimeType("application/vnd.openxmlformats-officedocument.presentationml.presentation");
-            case "png" -> kFile.setMimeType("image/png");
-            case "jpg", "jpeg" -> kFile.setMimeType("image/jpeg");
-            case "bmp" -> kFile.setMimeType("image/bmp");
-            case "gif" -> kFile.setMimeType("image/gif");
-            case "mp3" -> kFile.setMimeType("audio/mpeg");
-            case "wav" -> kFile.setMimeType("audio/wav");
-            case "mp4" -> kFile.setMimeType("video/mp4");
-            case "mkv" -> kFile.setMimeType("video/x-matroska");
-            case "webm" -> kFile.setMimeType("video/webm");
-            default -> kFile.setMimeType("application/octet-stream");
-        }
-    }
-
-
-
 }

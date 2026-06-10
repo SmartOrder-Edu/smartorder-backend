@@ -3,6 +3,7 @@ package com.smartorder.edu.common.rag;
 
 import com.google.gson.JsonObject;
 import com.smartorder.edu.common.model.entity.KnowledgeChunk;
+import com.smartorder.edu.common.model.rag.AttachmentRagSearchResult;
 import com.smartorder.edu.common.model.rag.VectorIndexDocument;
 import com.smartorder.edu.common.rag.vector.TfidfSparseVectorService;
 import dev.langchain4j.data.embedding.Embedding;
@@ -10,17 +11,23 @@ import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.service.vector.request.DeleteReq;
+import io.milvus.v2.service.vector.request.SearchReq;
 import io.milvus.v2.service.vector.request.UpsertReq;
+import io.milvus.v2.service.vector.request.data.BaseVector;
+import io.milvus.v2.service.vector.request.data.FloatVec;
 import io.milvus.v2.service.vector.response.UpsertResp;
+import io.milvus.v2.service.vector.response.SearchResp;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -68,6 +75,32 @@ public class VectorIndexService {
         }
 
         log.info("完成所有文档块的向量化索引，总数: {}", chunks.size());
+    }
+
+    public List<AttachmentRagSearchResult> searchByFileIds(String query, Long userId, List<Long> fileIds, int topK) {
+        if (query == null || query.isBlank() || userId == null || fileIds == null || fileIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        try {
+            Embedding embedding = embeddingModel.embed(TextSegment.from(query)).content();
+            List<BaseVector> data = Collections.singletonList(new FloatVec(embedding.vectorAsList()));
+            String filter = buildFileIdsFilter(userId, fileIds);
+
+            SearchReq searchReq = SearchReq.builder()
+                    .collectionName(collectionName)
+                    .data(data)
+                    .annsField("dense_vector")
+                    .topK(Math.max(1, topK))
+                    .filter(filter)
+                    .build();
+
+            SearchResp resp = milvusClient.search(searchReq);
+            return parseAttachmentSearchResults(resp);
+        } catch (Exception e) {
+            log.error("按会话附件检索向量失败: userId={}, fileIds={}", userId, fileIds, e);
+            return Collections.emptyList();
+        }
     }
     
     /**
@@ -174,6 +207,47 @@ public class VectorIndexService {
         }
     }
 
+    private String buildFileIdsFilter(Long userId, List<Long> fileIds) {
+        String fileExpr = fileIds.stream()
+                .distinct()
+                .map(id -> "file_id == " + id)
+                .collect(Collectors.joining(" || "));
+        return "user_id == " + userId + " && (" + fileExpr + ")";
+    }
+
+    private List<AttachmentRagSearchResult> parseAttachmentSearchResults(SearchResp resp) {
+        List<AttachmentRagSearchResult> results = new ArrayList<>();
+        if (resp == null || resp.getSearchResults() == null) {
+            return results;
+        }
+
+        for (List<SearchResp.SearchResult> resultList : resp.getSearchResults()) {
+            if (resultList == null) {
+                continue;
+            }
+            for (SearchResp.SearchResult result : resultList) {
+                Map<String, Object> entity = result.getEntity();
+                if (entity == null) {
+                    entity = Collections.emptyMap();
+                }
+                results.add(AttachmentRagSearchResult.builder()
+                        .vectorId(getStringField(entity, "vector_id"))
+                        .content(getStringField(entity, "content"))
+                        .chunkId(getLongField(entity, "chunk_id"))
+                        .knowledgeBaseId(getLongField(entity, "knowledge_base_id"))
+                        .fileId(getLongField(entity, "file_id"))
+                        .documentId(getLongField(entity, "document_id"))
+                        .pageNumber(getIntField(entity, "page_number"))
+                        .sectionTitle(getStringField(entity, "section_title"))
+                        .titlePath(getStringField(entity, "title_path"))
+                        .score(result.getScore())
+                        .metadata(entity)
+                        .build());
+            }
+        }
+        return results;
+    }
+
     /**
      * 根据知识库ID删除所有向量
      */
@@ -212,5 +286,40 @@ public class VectorIndexService {
 
     private String nullToEmpty(String s) {
         return s == null ? "" : s;
+    }
+
+    private String getStringField(Map<String, Object> entity, String field) {
+        Object value = entity.get(field);
+        return value == null ? null : value.toString();
+    }
+
+    private Long getLongField(Map<String, Object> entity, String field) {
+        Object value = entity.get(field);
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return Long.parseLong(text);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private Integer getIntField(Map<String, Object> entity, String field) {
+        Object value = entity.get(field);
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return Integer.parseInt(text);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 }

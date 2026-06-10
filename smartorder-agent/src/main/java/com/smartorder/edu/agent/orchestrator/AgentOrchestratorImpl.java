@@ -6,6 +6,8 @@ import com.smartorder.edu.agent.plan.PlanExecuteEngine;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentRouteService;
 import com.smartorder.edu.agent.route.RouteContext;
+import com.smartorder.edu.agent.service.AgentConversationAttachmentService;
+import com.smartorder.edu.agent.service.AttachmentNotReadyException;
 import com.smartorder.edu.agent.trace.AgentEventType;
 import com.smartorder.edu.agent.trace.AgentRuntimeContext;
 import com.smartorder.edu.agent.trace.TraceEventDispatcher;
@@ -33,6 +35,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
     private final MultiAgentCoordinator multiAgentCoordinator;
     private final TraceEventDispatcher dispatcher;
     private final ConversationMemoryService memoryService;
+    private final AgentConversationAttachmentService attachmentService;
 
     @Override
     public void handle(AgentChatRequest request, SseEmitter emitter) {
@@ -47,6 +50,36 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         try {
             // 0. 统一保存用户消息（所有模式都落库）
             memoryService.saveUserMessage(conversationId, request.getUserId(), request.getMessage());
+            request.setConversationId(conversationId);
+
+            if (request.getFileIds() != null && !request.getFileIds().isEmpty()) {
+                try {
+                    String attachmentContext = attachmentService.buildRagContext(
+                            request.getUserId(), conversationId, request.getFileIds(), request.getMessage());
+                    context.setAttachmentContext(attachmentContext);
+                    dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
+                            "type", "attachment_rag",
+                            "fileIds", request.getFileIds(),
+                            "hit", attachmentContext != null && !attachmentContext.isBlank()
+                    ));
+                } catch (AttachmentNotReadyException e) {
+                    String answer = e.getMessage();
+                    dispatcher.emit(emitter, context, AgentEventType.TRACE_STARTED, Map.of(
+                            "mode", context.getMode().getCode()
+                    ));
+                    dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
+                            "type", "attachment_status",
+                            "message", answer
+                    ));
+                    dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of(
+                            "text", answer
+                    ));
+                    memoryService.saveAssistantMessage(conversationId, request.getUserId(), answer,
+                            null, context.getTraceId(), null);
+                    dispatcher.complete(emitter, context);
+                    return;
+                }
+            }
 
             // 1. 意图路由（带会话上下文）
             RouteContext routeCtx = RouteContext.builder()

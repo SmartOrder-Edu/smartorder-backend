@@ -15,6 +15,7 @@ import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
@@ -71,6 +72,9 @@ public class SelfManagedReActEngine {
         // 1. 从记忆系统构建历史上下文（已包含当前用户消息，因为 orchestrator 在调用引擎前已落库）
         List<ChatMessage> messages = memoryService.buildMessages(
                 runtimeContext.getConversationId(), request.getUserId());
+        if (runtimeContext.getAttachmentContext() != null && !runtimeContext.getAttachmentContext().isBlank()) {
+            messages.add(Math.min(1, messages.size()), SystemMessage.from(runtimeContext.getAttachmentContext()));
+        }
 
         // 3. 构建工具规范
         List<ToolSpecification> tools = toolAdapter.buildToolSpecifications(routeResult.getRequiredTools());

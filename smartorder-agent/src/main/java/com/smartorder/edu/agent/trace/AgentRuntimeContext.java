@@ -26,6 +26,8 @@ public class AgentRuntimeContext {
     @Builder.Default
     private AgentRunMode mode = AgentRunMode.REACT;
 
+    private String attachmentContext;
+
     @Builder.Default
     private AtomicInteger sequence = new AtomicInteger(0);
 
