@@ -37,11 +37,18 @@ public class ToolPermissionChecker {
                 }
                 break;
             case WRITE_CONFIRMED:
-                // WRITE_CONFIRMED 级别的工具不能由 Agent 直接执行
-                // 必须通过用户确认 API 触发
-                throw new SecurityException(
-                        "工具 [" + handler.name() + "] 属于确认写操作，不能由 Agent 直接调用。"
-                                + "请保存为草稿，等待用户通过 /agent/plan/confirm 确认后执行。");
+                // WRITE_CONFIRMED 级别的工具需要用户确认后才能执行
+                // confirmationGranted=true 表示用户已通过确认门
+                if (context.getUserId() <= 0) {
+                    throw new SecurityException("无效用户身份: " + context.getUserId());
+                }
+                if (!context.isConfirmationGranted()) {
+                    throw new SecurityException(
+                            "工具 [" + handler.name() + "] 属于确认写操作，不能由 Agent 直接调用。"
+                                    + "请保存为草稿，等待用户通过 /agent/plan/confirm 确认后执行。");
+                }
+                // 用户已确认，允许执行
+                break;
             default:
                 break;
         }

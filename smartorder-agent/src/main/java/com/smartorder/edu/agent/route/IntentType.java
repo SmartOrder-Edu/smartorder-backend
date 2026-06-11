@@ -6,8 +6,9 @@ import lombok.Getter;
 /**
  * 意图类型枚举——与 AgentRunMode 解耦
  * <p>
- * 一种意图不一定永远对应同一种执行模式。
- * 例如 RESOURCE_GENERATION 简单时可能 REACT，复杂时才 MULTI_AGENT。
+ * 路由策略根据意图类型选择执行模式：
+ * 简单意图（KNOWLEDGE_QA, PROBLEM_HELP, DIAGRAM_GENERATION, UNKNOWN）→ REACT
+ * 复杂意图（GOAL_PLANNING, PLAN_CONFIRMATION, RESOURCE_GENERATION）→ PLAN_THEN_REACT
  */
 @Getter
 @AllArgsConstructor

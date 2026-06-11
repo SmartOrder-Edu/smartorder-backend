@@ -28,9 +28,12 @@ public enum AgentEventType {
     PHASE_CHANGE("agent.phase.change", "阶段切换", true),
     STATUS("agent.status", "状态提示", true),
 
-    SUB_AGENT_STARTED("agent.sub_agent.started", "子智能体开始", true),
-    SUB_AGENT_COMPLETED("agent.sub_agent.completed", "子智能体完成", true),
-    SUB_AGENT_FAILED("agent.sub_agent.failed", "子智能体失败", true),
+    // ====== PlanThenReAct 事件 ======
+    PLAN_TASK_STARTED("agent.plan.task.started", "计划任务开始执行", true),
+    PLAN_TASK_COMPLETED("agent.plan.task.completed", "计划任务执行完成", true),
+    PLAN_TASK_FAILED("agent.plan.task.failed", "计划任务执行失败", true),
+    PLAN_PAUSED("agent.plan.paused", "计划暂停（澄清/确认门）", true),
+    PLAN_RESUMED("agent.plan.resumed", "计划从暂停点恢复", true),
 
     ERROR("agent.error", "错误事件", true),
 

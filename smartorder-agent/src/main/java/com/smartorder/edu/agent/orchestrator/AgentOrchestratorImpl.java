@@ -3,7 +3,6 @@ package com.smartorder.edu.agent.orchestrator;
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.route.AgentRunMode;
-import com.smartorder.edu.agent.plan.PlanExecuteEngine;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentRouteService;
 import com.smartorder.edu.agent.route.RouteContext;
@@ -25,8 +24,8 @@ import java.util.UUID;
 
 /**
  * Agent 编排器实现——编排主流程
- *
- * 阶段五：REACT + PLAN_EXECUTE + MULTI_AGENT 全部接入
+ * <p>
+ * 两种运行模式：PureReAct（简单问答）+ PlanThenReAct（复杂任务）。
  */
 @Slf4j
 @Service
@@ -35,8 +34,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
 
     private final IntentRouteService intentRouteService;
     private final SelfManagedReActEngine reActEngine;
-    private final PlanExecuteEngine planExecuteEngine;
-    private final MultiAgentCoordinator multiAgentCoordinator;
+    private final PlanThenReActEngine planThenReActEngine;
     private final TraceEventDispatcher dispatcher;
     private final ConversationMemoryService memoryService;
     private final AgentConversationAttachmentService attachmentService;
@@ -112,14 +110,26 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                     "confidence", routeResult.getConfidence(),
                     "source", routeResult.getSource().name(),
                     "needsClarification", routeResult.isNeedsClarification(),
+                    "needsPlanning", routeResult.isNeedsPlanning(),
                     "reason", routeResult.getReason()
             ));
 
             // 4. 按运行模式分发
             switch (routeResult.getRunMode()) {
-                case REACT -> reActEngine.execute(request, routeResult, context, emitter);
-                case PLAN_EXECUTE -> handlePlanExecute(request, routeResult, context, emitter);
-                case MULTI_AGENT -> handleMultiAgent(request, routeResult, context, emitter);
+                case REACT -> {
+                    if (routeResult.isNeedsClarification()) {
+                        // 澄清短路：直接输出澄清文本，不走 ReAct
+                        String clarificationMsg = routeResult.getReason();
+                        dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of(
+                                "text", clarificationMsg
+                        ));
+                        memoryService.saveAssistantMessage(conversationId, request.getUserId(),
+                                clarificationMsg, null, context.getTraceId(), null);
+                    } else {
+                        reActEngine.execute(request, routeResult, context, emitter);
+                    }
+                }
+                case PLAN_THEN_REACT -> handlePlanThenReAct(request, routeResult, context, emitter);
                 default -> throw new IllegalStateException("不支持的运行模式: " + routeResult.getRunMode());
             }
 
@@ -132,16 +142,17 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         }
     }
 
-    // ============ 模式处理（PLAN_EXECUTE / MULTI_AGENT 后续阶段完善） ============
+    // ============ PlanThenReAct 分发 ============
 
-    private void handlePlanExecute(AgentChatRequest request, IntentRouteResult routeResult,
-                                   AgentRuntimeContext context, SseEmitter emitter) {
-        planExecuteEngine.runPlanning(request, routeResult, context, emitter);
-    }
-
-    private void handleMultiAgent(AgentChatRequest request, IntentRouteResult routeResult,
-                                  AgentRuntimeContext context, SseEmitter emitter) {
-        multiAgentCoordinator.execute(request, routeResult, context, emitter);
+    private void handlePlanThenReAct(AgentChatRequest request, IntentRouteResult routeResult,
+                                      AgentRuntimeContext context, SseEmitter emitter) {
+        if (routeResult.isNeedsPlanning()) {
+            // 首次进入：生成 TaskList
+            planThenReActEngine.runPlanning(request, routeResult, context, emitter);
+        } else {
+            // 恢复执行：StateRuleRouter 检测到暂停的计划
+            planThenReActEngine.resumePlan(request, context, emitter);
+        }
     }
 
     // ============ Private Methods ============

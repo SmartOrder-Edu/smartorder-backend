@@ -44,14 +44,13 @@ class IntentRouteServiceTest {
     }
 
     @Test
-    void shouldKeepExplicitLearningResourceGenerationAsMultiAgent() {
+    void shouldKeepExplicitLearningResourceGenerationAsPlanThenReAct() {
         IntentRouteResult result = service.route("生成线性代数复习资料和PPT");
 
         assertEquals(IntentType.RESOURCE_GENERATION, result.getIntentEnum());
-        assertEquals(AgentRunMode.MULTI_AGENT, result.getRunMode());
+        assertEquals(AgentRunMode.PLAN_THEN_REACT, result.getRunMode());
         assertEquals(RoutingSource.KEYWORD, result.getSource());
-        assertEquals(List.of("getStudentProfile", "queryKnowledge", "generateResource", "generateQuiz"),
-                result.getRequiredTools());
+        assertTrue(result.isNeedsPlanning());
         verifyNoInteractions(llmIntentClassifier);
     }
 }

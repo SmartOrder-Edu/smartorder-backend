@@ -76,9 +76,78 @@ public class SelfManagedReActEngine {
             messages.add(Math.min(1, messages.size()), SystemMessage.from(runtimeContext.getAttachmentContext()));
         }
 
-        // 3. 构建工具规范
+        // 2. 构建工具规范
         List<ToolSpecification> tools = toolAdapter.buildToolSpecifications(routeResult.getRequiredTools());
 
+        runReActLoop(request, routeResult, runtimeContext, emitter, messages, tools, false);
+    }
+
+    /**
+     * 带任务上下文的 ReAct 执行（PlanThenReAct 引擎调用）
+     *
+     * @param taskSystemMessage   任务专属系统提示
+     * @param previousOutputs     前置任务的输出
+     * @param confirmationGranted 是否已通过确认门（允许 WRITE_CONFIRMED 工具）
+     */
+    public void executeWithTaskContext(
+            AgentChatRequest request,
+            IntentRouteResult routeResult,
+            AgentRuntimeContext runtimeContext,
+            SseEmitter emitter,
+            String taskSystemMessage,
+            Map<String, String> previousOutputs,
+            boolean confirmationGranted
+    ) {
+        // 1. 构建消息历史
+        List<ChatMessage> messages = new ArrayList<>();
+
+        // 主系统提示
+        messages.add(SystemMessage.from(memoryService.getSystemPrompt()));
+
+        // 任务专属系统提示
+        if (taskSystemMessage != null && !taskSystemMessage.isBlank()) {
+            messages.add(SystemMessage.from(taskSystemMessage));
+        }
+
+        // 前置任务输出作为上下文
+        if (previousOutputs != null && !previousOutputs.isEmpty()) {
+            StringBuilder ctxBuilder = new StringBuilder("前置任务结果：\n");
+            for (Map.Entry<String, String> entry : previousOutputs.entrySet()) {
+                ctxBuilder.append("- ").append(entry.getKey()).append(": ")
+                        .append(entry.getValue().length() > 300
+                                ? entry.getValue().substring(0, 300) + "..."
+                                : entry.getValue())
+                        .append("\n");
+            }
+            messages.add(SystemMessage.from(ctxBuilder.toString()));
+        }
+
+        // 附件上下文
+        if (runtimeContext.getAttachmentContext() != null && !runtimeContext.getAttachmentContext().isBlank()) {
+            messages.add(SystemMessage.from(runtimeContext.getAttachmentContext()));
+        }
+
+        // 当前任务作为用户消息
+        messages.add(UserMessage.from(request.getMessage()));
+
+        // 2. 构建工具规范
+        List<ToolSpecification> tools = toolAdapter.buildToolSpecifications(routeResult.getRequiredTools());
+
+        runReActLoop(request, routeResult, runtimeContext, emitter, messages, tools, confirmationGranted);
+    }
+
+    /**
+     * ReAct 循环核心逻辑
+     */
+    private void runReActLoop(
+            AgentChatRequest request,
+            IntentRouteResult routeResult,
+            AgentRuntimeContext runtimeContext,
+            SseEmitter emitter,
+            List<ChatMessage> messages,
+            List<ToolSpecification> tools,
+            boolean confirmationGranted
+    ) {
         // 4. ReAct 循环 — 每轮非流式 LLM 返回的 AiMessage.thinking() 即为真实思考过程
         String finalAnswer = null;
         StringBuilder allThinkingBuilder = new StringBuilder();
@@ -142,6 +211,7 @@ public class SelfManagedReActEngine {
                             .runtimeContext(runtimeContext)
                             .emitter(emitter)
                             .agentName("MainReActAgent")
+                            .confirmationGranted(confirmationGranted)
                             .build();
 
                     long toolStart = System.currentTimeMillis();

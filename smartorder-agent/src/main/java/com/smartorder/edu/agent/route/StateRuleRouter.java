@@ -1,6 +1,8 @@
 package com.smartorder.edu.agent.route;
 
+import com.alibaba.fastjson.JSON;
 import com.smartorder.edu.agent.mapper.AgentPlanDraftMapper;
+import com.smartorder.edu.agent.model.dto.TaskList;
 import com.smartorder.edu.agent.model.entity.AgentPlanDraft;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +16,10 @@ import java.util.List;
  * 这是分层路由的第一层（最高优先级）。
  * 只有在会话状态明确指示某条路径时才返回结果；
  * 否则返回 null，交由下层（关键词/LLM）处理。
+ * <p>
+ * 支持两种草稿类型：
+ * - TASK_LIST（新 PlanThenReAct 架构）：检测 PAUSED_CLARIFICATION / PAUSED_CONFIRMATION
+ * - LEGACY（旧 PlanExecuteEngine 架构）：检测 PENDING + 确认词
  */
 @Slf4j
 @Component
@@ -33,20 +39,43 @@ public class StateRuleRouter {
             return null;
         }
 
-        // S1: 存在待确认草稿 AND 消息是确认词 → 确认创建计划
-        AgentPlanDraft pending = planDraftMapper.selectPendingDraftByConversationId(conversationId);
-        if (pending != null && ConfirmationWords.isConfirmationOnly(ctx.getMessage())) {
-            log.info("[StateRule] 待确认草稿+确认词 → PLAN_CONFIRMATION, draftId={}", pending.getDraftId());
-            return IntentRouteResult.builder()
-                    .intentType(IntentType.PLAN_CONFIRMATION.getChineseName())
-                    .intentEnum(IntentType.PLAN_CONFIRMATION)
-                    .complexity("复杂")
-                    .runMode(AgentRunMode.PLAN_EXECUTE)
-                    .requiredTools(List.of("getStudentProfile"))
-                    .confidence(0.95)
-                    .source(RoutingSource.STATE)
-                    .reason("存在待确认规划草稿且用户发送了确认消息")
-                    .build();
+        // ===== 新架构：检测 TASK_LIST 类型的暂停草稿 =====
+        AgentPlanDraft taskListDraft = planDraftMapper.selectActiveTaskListDraft(conversationId);
+        if (taskListDraft != null && "TASK_LIST".equals(taskListDraft.getPlanType())) {
+            TaskList tl = JSON.parseObject(taskListDraft.getTaskListJson(), TaskList.class);
+
+            // PAUSED_CLARIFICATION：用户提供了补充信息
+            if ("PAUSED_CLARIFICATION".equals(tl.getStatus())) {
+                log.info("[StateRule] TaskList PAUSED_CLARIFICATION → 恢复规划, draftId={}", taskListDraft.getDraftId());
+                return IntentRouteResult.builder()
+                        .intentType("规划澄清回复")
+                        .intentEnum(IntentType.GOAL_PLANNING)
+                        .complexity("复杂")
+                        .runMode(AgentRunMode.PLAN_THEN_REACT)
+                        .requiredTools(List.of())
+                        .confidence(0.95)
+                        .source(RoutingSource.STATE)
+                        .reason("存在待澄清规划，用户提供了补充信息")
+                        .needsPlanning(false) // 不需要重新规划，恢复执行
+                        .build();
+            }
+
+            // PAUSED_CONFIRMATION + 确认词
+            if ("PAUSED_CONFIRMATION".equals(tl.getStatus())
+                    && ConfirmationWords.isConfirmationOnly(ctx.getMessage())) {
+                log.info("[StateRule] TaskList PAUSED_CONFIRMATION + 确认词 → 确认执行, draftId={}", taskListDraft.getDraftId());
+                return IntentRouteResult.builder()
+                        .intentType(IntentType.PLAN_CONFIRMATION.getChineseName())
+                        .intentEnum(IntentType.PLAN_CONFIRMATION)
+                        .complexity("复杂")
+                        .runMode(AgentRunMode.PLAN_THEN_REACT)
+                        .requiredTools(List.of())
+                        .confidence(0.95)
+                        .source(RoutingSource.STATE)
+                        .reason("存在待确认规划草稿且用户确认")
+                        .needsPlanning(false)
+                        .build();
+            }
         }
 
         // S2: 存在待确认草稿但消息不是确认词 → 可能是对草稿提问，不干预路由

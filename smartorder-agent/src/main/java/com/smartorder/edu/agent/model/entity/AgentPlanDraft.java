@@ -17,6 +17,16 @@ public class AgentPlanDraft {
     private String traceId;
     private Long userId;
     private String planJson;
+
+    /** TaskList JSON（PlanThenReAct 新架构） */
+    private String taskListJson;
+
+    /** 计划类型：LEGACY（旧 planJson） | TASK_LIST（新 TaskList） */
+    private String planType;
+
+    /** 断点恢复：当前执行到的任务索引 */
+    private Integer resumeTaskIndex;
+
     private String status;
     private LocalDateTime expireTime;
     private LocalDateTime createTime;

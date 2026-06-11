@@ -2,8 +2,11 @@ package com.smartorder.edu.agent.controller;
 
 import com.smartorder.edu.agent.mapper.AgentTraceEventMapper;
 import com.smartorder.edu.agent.model.dto.PlanConfirmRequest;
+import com.smartorder.edu.agent.model.entity.AgentPlanDraft;
 import com.smartorder.edu.agent.model.entity.AgentTraceEvent;
+import com.smartorder.edu.agent.orchestrator.PlanThenReActEngine;
 import com.smartorder.edu.agent.plan.PlanConfirmService;
+import com.smartorder.edu.agent.plan.PlanDraftService;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
@@ -21,6 +24,8 @@ import java.util.concurrent.Executors;
 
 /**
  * Agent 规划控制器——规划确认、trace 查询等非对话接口
+ * <p>
+ * 支持 LEGACY（旧 PlanConfirmService）和 TASK_LIST（新 PlanThenReActEngine）两种草稿类型。
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -30,12 +35,14 @@ import java.util.concurrent.Executors;
 public class AgentPlanController {
 
     private final PlanConfirmService planConfirmService;
+    private final PlanDraftService planDraftService;
+    private final PlanThenReActEngine planThenReActEngine;
     private final AgentTraceEventMapper traceEventMapper;
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     @PostMapping(value = "/plan/confirm", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "确认学习规划并执行",
-               description = "用户确认规划草稿后，后端创建学习空间、任务、知识图谱和资源。通过 SSE 推送执行进度。")
+               description = "用户确认规划草稿后，后端根据草稿类型走不同执行路径。通过 SSE 推送执行进度。")
     public SseEmitter confirmPlan(@RequestBody PlanConfirmRequest request) {
         Long userId = getCurrentUserId();
         String conversationId = request.getConversationId() != null
@@ -46,8 +53,17 @@ public class AgentPlanController {
         log.info("[PlanConfirm] 开始执行规划: userId={}, draftId={}", userId, request.getDraftId());
 
         executor.execute(() -> {
-            planConfirmService.confirmAndExecute(
-                    request.getDraftId(), userId, conversationId, emitter, traceId);
+            // 根据 planType 分发到不同引擎
+            AgentPlanDraft draft = planDraftService.getByDraftId(request.getDraftId());
+            if (draft != null && "TASK_LIST".equals(draft.getPlanType())) {
+                // 新架构：PlanThenReActEngine 从确认门恢复执行
+                planThenReActEngine.executeTaskList(
+                        request.getDraftId(), userId, conversationId, emitter, traceId);
+            } else {
+                // 旧架构：PlanConfirmService 创建学习空间
+                planConfirmService.confirmAndExecute(
+                        request.getDraftId(), userId, conversationId, emitter, traceId);
+            }
         });
 
         emitter.onTimeout(() -> log.warn("[PlanConfirm] SSE 超时: draftId={}", request.getDraftId()));

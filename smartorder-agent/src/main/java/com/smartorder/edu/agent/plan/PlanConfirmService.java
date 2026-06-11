@@ -57,7 +57,7 @@ public class PlanConfirmService {
                 .traceId(traceId)
                 .conversationId(conversationId)
                 .userId(userId)
-                .mode(AgentRunMode.PLAN_EXECUTE)
+                .mode(AgentRunMode.PLAN_THEN_REACT)
                 .sequence(new AtomicInteger(0))
                 .build();
 
@@ -128,33 +128,36 @@ public class PlanConfirmService {
             ));
 
             JSONArray phases = plan.getJSONArray("phases");
-            for (int i = 0; i < phases.size(); i++) {
-                JSONObject phase = phases.getJSONObject(i);
-                int phaseIndex = phase.getIntValue("phaseIndex");
-                JSONArray resources = phase.getJSONArray("resources");
+            if (phases == null || phases.isEmpty()) {
+                log.warn("[PlanConfirm] 规划缺少 phases，跳过资源登记");
+            } else {
+                for (int i = 0; i < phases.size(); i++) {
+                    JSONObject phase = phases.getJSONObject(i);
+                    int phaseIndex = phase.getIntValue("phaseIndex");
+                    JSONArray resources = phase.getJSONArray("resources");
 
-                if (resources == null || resources.isEmpty()) continue;
+                    if (resources == null || resources.isEmpty()) continue;
 
-                for (int j = 0; j < resources.size(); j++) {
-                    JSONObject resource = resources.getJSONObject(j);
-                    AgentResourceLog logEntity = new AgentResourceLog();
-                    logEntity.setSpaceId(spaceId);
-                    logEntity.setPhaseIndex(phaseIndex);
-                    logEntity.setResourceType(resource.getString("resourceType"));
-                    logEntity.setTitle(resource.getString("title"));
-                    logEntity.setUserId(userId);
+                    for (int j = 0; j < resources.size(); j++) {
+                        JSONObject resource = resources.getJSONObject(j);
+                        AgentResourceLog logEntity = new AgentResourceLog();
+                        logEntity.setSpaceId(spaceId);
+                        logEntity.setPhaseIndex(phaseIndex);
+                        logEntity.setResourceType(resource.getString("resourceType"));
+                        logEntity.setTitle(resource.getString("title"));
+                        logEntity.setUserId(userId);
 
-                    if (phaseIndex == 1) {
-                        // 第一阶段资源立即生成（后续阶段完善）
-                        logEntity.setStatus("PENDING");
-                        logEntity.setGenerationParams(JSONObject.toJSONString(Map.of(
-                                "knowledgePoints", phase.getJSONArray("knowledgePoints"),
-                                "spaceId", spaceId
-                        )));
-                    } else {
-                        logEntity.setStatus("PENDING");
+                        if (phaseIndex == 1) {
+                            logEntity.setStatus("PENDING");
+                            logEntity.setGenerationParams(JSONObject.toJSONString(Map.of(
+                                    "knowledgePoints", phase.getJSONArray("knowledgePoints"),
+                                    "spaceId", spaceId
+                            )));
+                        } else {
+                            logEntity.setStatus("PENDING");
+                        }
+                        resourceLogMapper.insert(logEntity);
                     }
-                    resourceLogMapper.insert(logEntity);
                 }
             }
 

@@ -19,9 +19,9 @@ public enum ToolCategory {
     PROFILE("学生档案", RiskLevel.READ),
     PROGRESS("学习进度", RiskLevel.READ),
     KNOWLEDGE("知识查询", RiskLevel.READ),
-    PLAN("学习规划", RiskLevel.WRITE_DRAFT),
-    RESOURCE("资源生成", RiskLevel.WRITE_DRAFT),
-    QUIZ("测评生成", RiskLevel.WRITE_DRAFT),
+    PLAN("学习规划", RiskLevel.WRITE_CONFIRMED),
+    RESOURCE("资源生成", RiskLevel.WRITE_CONFIRMED),
+    QUIZ("测评生成", RiskLevel.WRITE_CONFIRMED),
     TASK("任务管理", RiskLevel.WRITE_CONFIRMED),
     SEARCH("搜索工具", RiskLevel.READ);
 

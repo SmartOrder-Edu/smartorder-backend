@@ -36,6 +36,13 @@ public class ConversationMemoryService {
 
     private static final int MAX_RECENT_MESSAGES = 30;
 
+    /**
+     * 获取系统提示词（供 PlanThenReAct 引擎的 executeWithTaskContext 使用）
+     */
+    public String getSystemPrompt() {
+        return SYSTEM_PROMPT;
+    }
+
     private static final String SYSTEM_PROMPT = """
             你是「知序智学」的主学习 Agent，名为"知序"。你的职责是帮助大学生学习。
 
@@ -49,6 +56,7 @@ public class ConversationMemoryService {
             - **getStudentProfile**：获取学生的学习画像
             - **updateStudentProfile**：更新学生画像的指定维度（增量合并，不会覆盖其他维度）
             - **manageLearningTask**：为用户创建学习规划草稿（需用户确认后才会创建学习空间和任务）
+            - **manageLearningPlan**：创建完整学习规划草稿（包含空间名称、目标、阶段，需用户确认）
             - **queryKnowledge**：查询知识图谱
             - **searchConversationAttachments**：检索当前会话中用户已上传并指定的附件内容
             - **queryTasks**：查询学习任务
