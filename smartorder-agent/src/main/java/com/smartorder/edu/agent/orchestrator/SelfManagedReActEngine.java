@@ -83,7 +83,7 @@ public class SelfManagedReActEngine {
     }
 
     /**
-     * 带任务上下文的 ReAct 执行（PlanThenReAct 引擎调用）
+     * 带任务上下文的 ReAct 执行（PlanAndExecute 引擎调用）
      *
      * @param taskSystemMessage   任务专属系统提示
      * @param previousOutputs     前置任务的输出

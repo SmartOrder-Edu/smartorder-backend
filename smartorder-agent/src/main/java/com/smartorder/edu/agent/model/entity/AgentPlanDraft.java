@@ -18,7 +18,7 @@ public class AgentPlanDraft {
     private Long userId;
     private String planJson;
 
-    /** TaskList JSON（PlanThenReAct 新架构） */
+    /** TaskList JSON（PlanAndExecute 新架构） */
     private String taskListJson;
 
     /** 计划类型：LEGACY（旧 planJson） | TASK_LIST（新 TaskList） */

@@ -44,11 +44,11 @@ class IntentRouteServiceTest {
     }
 
     @Test
-    void shouldKeepExplicitLearningResourceGenerationAsPlanThenReAct() {
+    void shouldKeepExplicitLearningResourceGenerationAsPlanAndExecute() {
         IntentRouteResult result = service.route("生成线性代数复习资料和PPT");
 
         assertEquals(IntentType.RESOURCE_GENERATION, result.getIntentEnum());
-        assertEquals(AgentRunMode.PLAN_THEN_REACT, result.getRunMode());
+        assertEquals(AgentRunMode.PLAN_AND_EXECUTE, result.getRunMode());
         assertEquals(RoutingSource.KEYWORD, result.getSource());
         assertTrue(result.isNeedsPlanning());
         verifyNoInteractions(llmIntentClassifier);

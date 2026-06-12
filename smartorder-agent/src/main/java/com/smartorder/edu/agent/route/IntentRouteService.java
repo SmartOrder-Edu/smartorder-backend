@@ -166,9 +166,9 @@ public class IntentRouteService {
             return null;
         }
 
-        // 1. 资源生成类（最高置信度，显式命令词）→ PlanThenReAct
+        // 1. 资源生成类（最高置信度，显式命令词）→ PlanAndExecute
         if (containsAny(message, RESOURCE_GEN_KEYWORDS.toArray(new String[0]))) {
-            return buildKeywordResult(IntentType.RESOURCE_GENERATION, AgentRunMode.PLAN_THEN_REACT,
+            return buildKeywordResult(IntentType.RESOURCE_GENERATION, AgentRunMode.PLAN_AND_EXECUTE,
                     0.90, List.of("getStudentProfile", "queryKnowledge", "generateResource", "generateQuiz"),
                     "用户需要复杂资源生成");
         }
@@ -180,9 +180,9 @@ public class IntentRouteService {
                     "用户需要图表化技术说明，使用 REACT 直接回答");
         }
 
-        // 3. 明确学习规划请求 → PlanThenReAct
+        // 3. 明确学习规划请求 → PlanAndExecute
         if (containsAny(message, PLANNING_KEYWORDS.toArray(new String[0]))) {
-            return buildKeywordResult(IntentType.GOAL_PLANNING, AgentRunMode.PLAN_THEN_REACT,
+            return buildKeywordResult(IntentType.GOAL_PLANNING, AgentRunMode.PLAN_AND_EXECUTE,
                     0.85, List.of("getStudentProfile"),
                     "用户明确要求制定学习计划");
         }
@@ -220,7 +220,7 @@ public class IntentRouteService {
 
     private IntentRouteResult buildKeywordResult(IntentType intent, AgentRunMode mode,
                                                   double confidence, List<String> tools, String reason) {
-        boolean needsPlanning = mode == AgentRunMode.PLAN_THEN_REACT;
+        boolean needsPlanning = mode == AgentRunMode.PLAN_AND_EXECUTE;
         return IntentRouteResult.builder()
                 .intentType(intent.getChineseName())
                 .intentEnum(intent)
@@ -256,7 +256,7 @@ public class IntentRouteService {
         IntentType intent = normalizeLlmIntent(llmResult.intent(), message);
         AgentRunMode mode = selectRunMode(intent, message);
         List<String> tools = selectTools(intent, mode);
-        boolean needsPlanning = mode == AgentRunMode.PLAN_THEN_REACT;
+        boolean needsPlanning = mode == AgentRunMode.PLAN_AND_EXECUTE;
         String planHint = needsPlanning ? determinePlanHint(intent) : null;
 
         return IntentRouteResult.builder()
@@ -290,18 +290,18 @@ public class IntentRouteService {
      */
     private AgentRunMode selectRunMode(IntentType intent, String message) {
         return switch (intent) {
-            case GOAL_PLANNING, PLAN_CONFIRMATION, RESOURCE_GENERATION -> AgentRunMode.PLAN_THEN_REACT;
+            case GOAL_PLANNING, PLAN_CONFIRMATION, RESOURCE_GENERATION -> AgentRunMode.PLAN_AND_EXECUTE;
             case KNOWLEDGE_QA, PROBLEM_HELP, DIAGRAM_GENERATION, PROGRESS_REVIEW, TASK_MANAGEMENT, UNKNOWN -> AgentRunMode.REACT;
         };
     }
 
     /**
      * 模式选择之后再决定工具，避免格式化回答携带资源生成工具。
-     * 对于 PLAN_THEN_REACT 模式，工具由 PlannerAgent 动态决定，这里返回空列表。
+     * 对于 PLAN_AND_EXECUTE 模式，工具由 PlannerAgent 动态决定，这里返回空列表。
      */
     private List<String> selectTools(IntentType intent, AgentRunMode mode) {
-        // PlanThenReAct 模式下工具由 PlannerAgent 动态分配，路由层不预设
-        if (mode == AgentRunMode.PLAN_THEN_REACT) {
+        // PlanAndExecute 模式下工具由 PlannerAgent 动态分配，路由层不预设
+        if (mode == AgentRunMode.PLAN_AND_EXECUTE) {
             return List.of();
         }
 
@@ -310,7 +310,7 @@ public class IntentRouteService {
             case PROGRESS_REVIEW -> List.of("queryLearningProgress", "getStudentProfile");
             case TASK_MANAGEMENT -> List.of("queryTasks", "manageLearningTask");
             case KNOWLEDGE_QA, DIAGRAM_GENERATION, UNKNOWN -> List.of();
-            default -> List.of(); // GOAL_PLANNING, PLAN_CONFIRMATION, RESOURCE_GENERATION → PLAN_THEN_REACT
+            default -> List.of(); // GOAL_PLANNING, PLAN_CONFIRMATION, RESOURCE_GENERATION → PLAN_AND_EXECUTE
         };
     }
 

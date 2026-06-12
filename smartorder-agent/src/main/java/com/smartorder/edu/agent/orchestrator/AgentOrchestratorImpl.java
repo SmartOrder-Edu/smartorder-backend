@@ -25,7 +25,7 @@ import java.util.UUID;
 /**
  * Agent 编排器实现——编排主流程
  * <p>
- * 两种运行模式：PureReAct（简单问答）+ PlanThenReAct（复杂任务）。
+ * 两种运行模式：PureReAct（简单问答）+ PlanAndExecute（复杂任务）。
  */
 @Slf4j
 @Service
@@ -34,7 +34,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
 
     private final IntentRouteService intentRouteService;
     private final SelfManagedReActEngine reActEngine;
-    private final PlanThenReActEngine planThenReActEngine;
+    private final PlanAndExecuteEngine planAndExecuteEngine;
     private final TraceEventDispatcher dispatcher;
     private final ConversationMemoryService memoryService;
     private final AgentConversationAttachmentService attachmentService;
@@ -129,7 +129,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                         reActEngine.execute(request, routeResult, context, emitter);
                     }
                 }
-                case PLAN_THEN_REACT -> handlePlanThenReAct(request, routeResult, context, emitter);
+                case PLAN_AND_EXECUTE -> handlePlanAndExecute(request, routeResult, context, emitter);
                 default -> throw new IllegalStateException("不支持的运行模式: " + routeResult.getRunMode());
             }
 
@@ -142,16 +142,16 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         }
     }
 
-    // ============ PlanThenReAct 分发 ============
+    // ============ PlanAndExecute 分发 ============
 
-    private void handlePlanThenReAct(AgentChatRequest request, IntentRouteResult routeResult,
-                                      AgentRuntimeContext context, SseEmitter emitter) {
+    private void handlePlanAndExecute(AgentChatRequest request, IntentRouteResult routeResult,
+                                       AgentRuntimeContext context, SseEmitter emitter) {
         if (routeResult.isNeedsPlanning()) {
             // 首次进入：生成 TaskList
-            planThenReActEngine.runPlanning(request, routeResult, context, emitter);
+            planAndExecuteEngine.runPlanning(request, routeResult, context, emitter);
         } else {
             // 恢复执行：StateRuleRouter 检测到暂停的计划
-            planThenReActEngine.resumePlan(request, context, emitter);
+            planAndExecuteEngine.resumePlan(request, context, emitter);
         }
     }
 

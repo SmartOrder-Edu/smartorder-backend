@@ -44,7 +44,7 @@ public class PlanDraftService {
     }
 
     /**
-     * 保存 TaskList 类型草稿（PlanThenReAct 新架构）
+     * 保存 TaskList 类型草稿（PlanAndExecute 新架构）
      */
     public String saveTaskListDraft(String conversationId, String traceId, Long userId, TaskList taskList) {
         String draftId = UUID.randomUUID().toString();

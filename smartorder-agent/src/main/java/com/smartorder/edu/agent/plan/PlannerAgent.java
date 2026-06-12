@@ -5,7 +5,7 @@ import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
 
 /**
- * 任务规划智能体——PlanThenReAct 架构的规划阶段
+ * 任务规划智能体——PlanAndExecute 架构的规划阶段
  * <p>
  * 将用户目标拆解为有序的 TaskList（任务列表），
  * 每个任务携带 requiredTools、dependsOn、gate、riskLevel。

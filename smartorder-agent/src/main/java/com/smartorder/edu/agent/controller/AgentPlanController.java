@@ -4,7 +4,7 @@ import com.smartorder.edu.agent.mapper.AgentTraceEventMapper;
 import com.smartorder.edu.agent.model.dto.PlanConfirmRequest;
 import com.smartorder.edu.agent.model.entity.AgentPlanDraft;
 import com.smartorder.edu.agent.model.entity.AgentTraceEvent;
-import com.smartorder.edu.agent.orchestrator.PlanThenReActEngine;
+import com.smartorder.edu.agent.orchestrator.PlanAndExecuteEngine;
 import com.smartorder.edu.agent.plan.PlanConfirmService;
 import com.smartorder.edu.agent.plan.PlanDraftService;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
@@ -25,7 +25,7 @@ import java.util.concurrent.Executors;
 /**
  * Agent 规划控制器——规划确认、trace 查询等非对话接口
  * <p>
- * 支持 LEGACY（旧 PlanConfirmService）和 TASK_LIST（新 PlanThenReActEngine）两种草稿类型。
+ * 支持 LEGACY（旧 PlanConfirmService）和 TASK_LIST（新 PlanAndExecuteEngine）两种草稿类型。
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -36,7 +36,7 @@ public class AgentPlanController {
 
     private final PlanConfirmService planConfirmService;
     private final PlanDraftService planDraftService;
-    private final PlanThenReActEngine planThenReActEngine;
+    private final PlanAndExecuteEngine planAndExecuteEngine;
     private final AgentTraceEventMapper traceEventMapper;
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
@@ -56,8 +56,8 @@ public class AgentPlanController {
             // 根据 planType 分发到不同引擎
             AgentPlanDraft draft = planDraftService.getByDraftId(request.getDraftId());
             if (draft != null && "TASK_LIST".equals(draft.getPlanType())) {
-                // 新架构：PlanThenReActEngine 从确认门恢复执行
-                planThenReActEngine.executeTaskList(
+                // 新架构：PlanAndExecuteEngine 从确认门恢复执行
+                planAndExecuteEngine.executeTaskList(
                         request.getDraftId(), userId, conversationId, emitter, traceId);
             } else {
                 // 旧架构：PlanConfirmService 创建学习空间

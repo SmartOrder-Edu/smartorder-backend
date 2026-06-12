@@ -28,7 +28,7 @@ public enum AgentEventType {
     PHASE_CHANGE("agent.phase.change", "阶段切换", true),
     STATUS("agent.status", "状态提示", true),
 
-    // ====== PlanThenReAct 事件 ======
+    // ====== PlanAndExecute 事件 ======
     PLAN_TASK_STARTED("agent.plan.task.started", "计划任务开始执行", true),
     PLAN_TASK_COMPLETED("agent.plan.task.completed", "计划任务执行完成", true),
     PLAN_TASK_FAILED("agent.plan.task.failed", "计划任务执行失败", true),

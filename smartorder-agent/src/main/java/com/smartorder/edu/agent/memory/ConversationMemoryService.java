@@ -37,7 +37,7 @@ public class ConversationMemoryService {
     private static final int MAX_RECENT_MESSAGES = 30;
 
     /**
-     * 获取系统提示词（供 PlanThenReAct 引擎的 executeWithTaskContext 使用）
+     * 获取系统提示词（供 PlanAndExecute 引擎的 executeWithTaskContext 使用）
      */
     public String getSystemPrompt() {
         return SYSTEM_PROMPT;

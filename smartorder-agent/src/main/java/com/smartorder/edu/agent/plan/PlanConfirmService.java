@@ -57,7 +57,7 @@ public class PlanConfirmService {
                 .traceId(traceId)
                 .conversationId(conversationId)
                 .userId(userId)
-                .mode(AgentRunMode.PLAN_THEN_REACT)
+                .mode(AgentRunMode.PLAN_AND_EXECUTE)
                 .sequence(new AtomicInteger(0))
                 .build();
 

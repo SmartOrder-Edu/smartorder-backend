@@ -30,7 +30,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Plan-then-ReAct 混合引擎——替代 PlanExecuteEngine + MultiAgentCoordinator
+ * Plan-and-Execute 混合引擎——替代 PlanExecuteEngine + MultiAgentCoordinator
  * <p>
  * 核心思想：Plan 是全局的（确定做什么、按什么顺序），ReAct 是局部的（每个子任务怎么做）。
  * <p>
@@ -42,7 +42,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class PlanThenReActEngine {
+public class PlanAndExecuteEngine {
 
     private final ChatModel chatLanguageModel;
     private final ToolRegistry toolRegistry;
@@ -80,7 +80,7 @@ public class PlanThenReActEngine {
                     .build();
             taskListRaw = plannerAgent.createTaskList(prompt);
         } catch (Exception e) {
-            log.error("[PlanThenReAct] PlannerAgent 调用失败", e);
+            log.error("[PlanAndExecute] PlannerAgent 调用失败", e);
             String errorMsg = "抱歉，生成任务计划时遇到了问题，请稍后再试。";
             dispatcher.emit(emitter, context, AgentEventType.ERROR, Map.of(
                     "message", "规划生成失败: " + e.getMessage()
@@ -96,7 +96,7 @@ public class PlanThenReActEngine {
         try {
             taskList = schemaValidator.validateAndParseTaskList(taskListRaw);
         } catch (Exception e) {
-            log.error("[PlanThenReAct] TaskList 校验失败: {}", e.getMessage());
+            log.error("[PlanAndExecute] TaskList 校验失败: {}", e.getMessage());
             String errorMsg = "生成的任务计划格式不正确，请重新描述你的目标。";
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", errorMsg));
             memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
@@ -176,7 +176,7 @@ public class PlanThenReActEngine {
         // 1. 从 DB 加载 TaskList
         AgentPlanDraft draft = draftService.getByDraftId(draftId);
         if (draft == null) {
-            log.error("[PlanThenReAct] 草稿不存在: {}", draftId);
+            log.error("[PlanAndExecute] 草稿不存在: {}", draftId);
             dispatcher.emit(emitter, AgentRuntimeContext.builder().traceId(traceId).build(),
                     AgentEventType.ERROR, Map.of("message", "规划草稿不存在"));
             return;
@@ -189,7 +189,7 @@ public class PlanThenReActEngine {
                 .traceId(traceId)
                 .conversationId(conversationId)
                 .userId(userId)
-                .mode(AgentRunMode.PLAN_THEN_REACT)
+                .mode(AgentRunMode.PLAN_AND_EXECUTE)
                 .sequence(draft.getResumeTaskIndex() != null
                         ? new java.util.concurrent.atomic.AtomicInteger(draft.getResumeTaskIndex() * 100)
                         : new java.util.concurrent.atomic.AtomicInteger(0))
@@ -266,7 +266,7 @@ public class PlanThenReActEngine {
                                 taskToPayload(task));
 
                     } catch (Exception e) {
-                        log.error("[PlanThenReAct] 任务执行失败: taskId={}", task.getTaskId(), e);
+                        log.error("[PlanAndExecute] 任务执行失败: taskId={}", task.getTaskId(), e);
                         task.setStatus("FAILED");
                         task.setErrorMessage(e.getMessage());
                         dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_FAILED,
@@ -296,7 +296,7 @@ public class PlanThenReActEngine {
     public void resumePlan(AgentChatRequest request, AgentRuntimeContext context, SseEmitter emitter) {
         AgentPlanDraft draft = draftService.getActiveTaskListDraft(context.getConversationId());
         if (draft == null) {
-            log.warn("[PlanThenReAct] 未找到活跃的 TaskList 草稿: convId={}", context.getConversationId());
+            log.warn("[PlanAndExecute] 未找到活跃的 TaskList 草稿: convId={}", context.getConversationId());
             return;
         }
 
@@ -368,7 +368,7 @@ public class PlanThenReActEngine {
 
             return toolAdapter.execute(toolReq, toolCtx);
         } catch (Exception e) {
-            log.warn("[PlanThenReAct] 获取学生画像失败，继续生成规划: {}", e.getMessage());
+            log.warn("[PlanAndExecute] 获取学生画像失败，继续生成规划: {}", e.getMessage());
             return "{}";
         }
     }
@@ -449,7 +449,7 @@ public class PlanThenReActEngine {
 
                 dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_COMPLETED, taskToPayload(task));
             } catch (Exception e) {
-                log.error("[PlanThenReAct] 任务执行失败: taskId={}", task.getTaskId(), e);
+                log.error("[PlanAndExecute] 任务执行失败: taskId={}", task.getTaskId(), e);
                 task.setStatus("FAILED");
                 task.setErrorMessage(e.getMessage());
                 dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_FAILED, taskToPayload(task));
@@ -532,7 +532,7 @@ public class PlanThenReActEngine {
             // ConversationMemoryService 没有直接获取最后消息的方法，这里用简化实现
             return "任务执行完成"; // 默认摘要，实际内容已通过 SSE 推送
         } catch (Exception e) {
-            log.warn("[PlanThenReAct] 提取最后消息失败: {}", e.getMessage());
+            log.warn("[PlanAndExecute] 提取最后消息失败: {}", e.getMessage());
             return "任务执行完成";
         }
     }

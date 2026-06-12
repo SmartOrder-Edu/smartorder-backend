@@ -18,7 +18,7 @@ import java.util.List;
  * 否则返回 null，交由下层（关键词/LLM）处理。
  * <p>
  * 支持两种草稿类型：
- * - TASK_LIST（新 PlanThenReAct 架构）：检测 PAUSED_CLARIFICATION / PAUSED_CONFIRMATION
+ * - TASK_LIST（新 PlanAndExecute 架构）：检测 PAUSED_CLARIFICATION / PAUSED_CONFIRMATION
  * - LEGACY（旧 PlanExecuteEngine 架构）：检测 PENDING + 确认词
  */
 @Slf4j
@@ -51,7 +51,7 @@ public class StateRuleRouter {
                         .intentType("规划澄清回复")
                         .intentEnum(IntentType.GOAL_PLANNING)
                         .complexity("复杂")
-                        .runMode(AgentRunMode.PLAN_THEN_REACT)
+                        .runMode(AgentRunMode.PLAN_AND_EXECUTE)
                         .requiredTools(List.of())
                         .confidence(0.95)
                         .source(RoutingSource.STATE)
@@ -68,7 +68,7 @@ public class StateRuleRouter {
                         .intentType(IntentType.PLAN_CONFIRMATION.getChineseName())
                         .intentEnum(IntentType.PLAN_CONFIRMATION)
                         .complexity("复杂")
-                        .runMode(AgentRunMode.PLAN_THEN_REACT)
+                        .runMode(AgentRunMode.PLAN_AND_EXECUTE)
                         .requiredTools(List.of())
                         .confidence(0.95)
                         .source(RoutingSource.STATE)
