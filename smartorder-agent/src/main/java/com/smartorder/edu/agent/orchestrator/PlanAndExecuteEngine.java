@@ -6,6 +6,9 @@ import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.model.dto.TaskItem;
 import com.smartorder.edu.agent.model.dto.TaskList;
 import com.smartorder.edu.agent.model.entity.AgentPlanDraft;
+import com.smartorder.edu.agent.model.dto.VerificationResult;
+import com.smartorder.edu.agent.model.dto.VerificationResult.SuggestedAction;
+import com.smartorder.edu.agent.plan.LLMStepVerifier;
 import com.smartorder.edu.agent.plan.PlanDraftService;
 import com.smartorder.edu.agent.plan.PlanSchemaValidator;
 import com.smartorder.edu.agent.plan.PlannerAgent;
@@ -52,6 +55,12 @@ public class PlanAndExecuteEngine {
     private final TraceEventDispatcher dispatcher;
     private final ConversationMemoryService memoryService;
     private final SelfManagedReActEngine reActEngine;
+    private final LLMStepVerifier stepVerifier;
+
+    /** 单任务最大重试次数 */
+    private static final int MAX_RETRIES_PER_TASK = 3;
+    /** 单次计划最大重规划次数 */
+    private static final int MAX_TOTAL_REPLANS = 5;
 
     // ============ 公开 API ============
 
@@ -198,15 +207,19 @@ public class PlanAndExecuteEngine {
         // 3. 拓扑排序
         List<TaskItem> sortedTasks = topologicalSort(taskList.getTasks());
 
-        // 4. 执行任务
+        // 4. 执行任务（带验证+动态重规划）
         Map<String, String> taskOutputs = new LinkedHashMap<>(taskList.getTaskOutputs());
         taskList.setStatus("EXECUTING");
 
-        for (int i = taskList.getCurrentTaskIndex(); i < sortedTasks.size(); i++) {
-            TaskItem task = sortedTasks.get(i);
+        int totalReplans = 0;
+        int taskIndex = taskList.getCurrentTaskIndex();
+
+        while (taskIndex < sortedTasks.size()) {
+            TaskItem task = sortedTasks.get(taskIndex);
 
             // 跳过已完成的任务
             if ("COMPLETED".equals(task.getStatus())) {
+                taskIndex++;
                 continue;
             }
 
@@ -215,68 +228,80 @@ public class PlanAndExecuteEngine {
                 task.setStatus("FAILED");
                 task.setErrorMessage("依赖任务未完成: " + task.getDependsOn());
                 dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_FAILED, taskToPayload(task));
+                taskIndex++;
                 continue;
             }
 
-            // 发射任务开始
-            task.setStatus("RUNNING");
-            dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_STARTED, taskToPayload(task));
+            // 根据门类型分发（门任务不受验证循环控制）
+            if ("CLARIFICATION".equals(task.getGate())) {
+                task.setStatus("RUNNING");
+                dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_STARTED, taskToPayload(task));
+                handleClarificationGate(taskList, taskIndex, context, emitter, null);
+                taskList.setCurrentTaskIndex(taskIndex);
+                draftService.updateTaskList(draftId, taskList);
+                return;
+            }
 
-            // 根据门类型分发
-            switch (task.getGate()) {
-                case "CLARIFICATION" -> {
-                    handleClarificationGate(taskList, i, context, emitter, null);
-                    taskList.setCurrentTaskIndex(i);
-                    draftService.updateTaskList(draftId, taskList);
-                    return; // 暂停
+            if ("CONFIRMATION".equals(task.getGate())) {
+                task.setStatus("RUNNING");
+                dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_STARTED, taskToPayload(task));
+                taskList.setCurrentTaskIndex(taskIndex);
+                taskList.setStatus("PAUSED_CONFIRMATION");
+                taskList.setConfirmationDraftId(draftId);
+                draftService.updateTaskList(draftId, taskList);
+
+                dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
+                        "draftId", draftId,
+                        "taskList", taskList,
+                        "needsConfirmation", true,
+                        "clarificationQuestion", ""
+                ));
+
+                String confirmText = buildConfirmationText(task, taskList);
+                dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", confirmText));
+                memoryService.saveAssistantMessage(conversationId, userId, confirmText, null, traceId, null);
+                return;
+            }
+
+            // NORMAL 任务：执行 → 验证 → 重试/重规划 循环
+            boolean taskCompleted = executeAndVerifyTask(task, taskOutputs, taskList, draftId,
+                    context, emitter, conversationId, userId);
+
+            if (!taskCompleted) {
+                // 任务验证失败，尝试重规划剩余任务
+                if (totalReplans >= MAX_TOTAL_REPLANS) {
+                    log.warn("[PlanAndExecute] 达到最大重规划次数 {}, 终止计划", MAX_TOTAL_REPLANS);
+                    task.setStatus("FAILED");
+                    task.setErrorMessage("超出最大重规划次数限制");
+                    dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_FAILED, taskToPayload(task));
+                    break;
                 }
-                case "CONFIRMATION" -> {
-                    // 暂停等待确认
-                    taskList.setCurrentTaskIndex(i);
-                    taskList.setStatus("PAUSED_CONFIRMATION");
-                    taskList.setConfirmationDraftId(draftId);
-                    draftService.updateTaskList(draftId, taskList);
 
-                    dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
-                            "draftId", draftId,
-                            "taskList", taskList,
-                            "needsConfirmation", true,
-                            "clarificationQuestion", ""
+                totalReplans++;
+                boolean replanned = replanRemainingTasks(taskList, sortedTasks, taskIndex,
+                        task, taskOutputs, context, emitter, draftId);
+                if (replanned) {
+                    // 重新拓扑排序，从当前索引继续
+                    sortedTasks = topologicalSort(taskList.getTasks());
+                    // taskIndex 保持不变，继续执行重规划后的新任务
+                    dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
+                            "type", "plan_replanned",
+                            "message", "计划已根据执行反馈动态调整",
+                            "taskIndex", taskIndex,
+                            "remainingTasks", sortedTasks.size() - taskIndex,
+                            "totalReplans", totalReplans
                     ));
-
-                    String confirmText = buildConfirmationText(task, taskList);
-                    dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", confirmText));
-                    memoryService.saveAssistantMessage(conversationId, userId,
-                            confirmText, null, traceId, null);
-                    return; // 暂停
+                } else {
+                    // 无法重规划，跳过当前任务
+                    log.warn("[PlanAndExecute] 重规划失败，跳过任务: taskId={}", task.getTaskId());
+                    taskIndex++;
                 }
-                default -> {
-                    // NORMAL：执行任务
-                    boolean isConfirmationTask = "WRITE_CONFIRMED".equals(task.getRiskLevel());
-                    try {
-                        String result = executeTaskViaReAct(task, taskOutputs, context, emitter,
-                                isConfirmationTask);
-
-                        task.setStatus("COMPLETED");
-                        task.setResultSummary(truncate(result, 500));
-                        taskOutputs.put(task.getTaskId(), truncate(result, 2000));
-                        taskList.setTaskOutputs(taskOutputs);
-
-                        dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_COMPLETED,
-                                taskToPayload(task));
-
-                    } catch (Exception e) {
-                        log.error("[PlanAndExecute] 任务执行失败: taskId={}", task.getTaskId(), e);
-                        task.setStatus("FAILED");
-                        task.setErrorMessage(e.getMessage());
-                        dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_FAILED,
-                                taskToPayload(task));
-                    }
-                }
+            } else {
+                taskIndex++;
             }
 
             // 更新 DB
-            taskList.setCurrentTaskIndex(i + 1);
+            taskList.setCurrentTaskIndex(taskIndex);
             draftService.updateTaskList(draftId, taskList);
         }
 
@@ -424,36 +449,23 @@ public class PlanAndExecuteEngine {
     }
 
     /**
-     * 执行任务直到遇到确认门（执行 CONFIRMATION 之前的 NORMAL 任务）
+     * 执行任务直到遇到确认门（执行 CONFIRMATION 之前的 NORMAL 任务），带验证
      */
     private void executeTasksUntilGate(String draftId, TaskList taskList, int gateIndex,
                                         AgentRuntimeContext context, SseEmitter emitter,
                                         AgentChatRequest request) {
         Map<String, String> taskOutputs = new LinkedHashMap<>(taskList.getTaskOutputs());
+        String conversationId = context.getConversationId();
+        Long userId = request != null ? request.getUserId() : context.getUserId();
 
         for (int i = 0; i < gateIndex; i++) {
             TaskItem task = taskList.getTasks().get(i);
 
             if ("COMPLETED".equals(task.getStatus())) continue;
+            if (!"NORMAL".equals(task.getGate())) continue;
 
-            task.setStatus("RUNNING");
-            dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_STARTED, taskToPayload(task));
-
-            try {
-                String result = executeTaskViaReAct(task, taskOutputs, context, emitter, false);
-
-                task.setStatus("COMPLETED");
-                task.setResultSummary(truncate(result, 500));
-                taskOutputs.put(task.getTaskId(), truncate(result, 2000));
-                taskList.setTaskOutputs(taskOutputs);
-
-                dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_COMPLETED, taskToPayload(task));
-            } catch (Exception e) {
-                log.error("[PlanAndExecute] 任务执行失败: taskId={}", task.getTaskId(), e);
-                task.setStatus("FAILED");
-                task.setErrorMessage(e.getMessage());
-                dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_FAILED, taskToPayload(task));
-            }
+            executeAndVerifyTask(task, taskOutputs, taskList, draftId, context, emitter,
+                    conversationId, userId);
 
             taskList.setCurrentTaskIndex(i + 1);
             draftService.updateTaskList(draftId, taskList);
@@ -501,12 +513,9 @@ public class PlanAndExecuteEngine {
         taskRequest.setConversationId(context.getConversationId());
         taskRequest.setMessage(task.getDescription());
 
-        // 4. 通过 ReAct 引擎执行（带任务上下文）
-        reActEngine.executeWithTaskContext(taskRequest, taskRoute, context, emitter,
+        // 4. 通过 ReAct 引擎执行（带任务上下文），直接返回执行结果
+        return reActEngine.executeWithTaskContext(taskRequest, taskRoute, context, emitter,
                 taskSystemMessage, previousOutputs, confirmationGranted);
-
-        // 5. 提取最后一条 assistant 消息作为结果
-        return extractLastAssistantMessage(context.getConversationId(), context.getUserId());
     }
 
     private String buildTaskSystemMessage(TaskItem task, Map<String, String> previousOutputs) {
@@ -526,15 +535,242 @@ public class PlanAndExecuteEngine {
         return sb.toString();
     }
 
-    private String extractLastAssistantMessage(String conversationId, Long userId) {
-        // 从 DB 获取最后一条 assistant 消息
-        try {
-            // ConversationMemoryService 没有直接获取最后消息的方法，这里用简化实现
-            return "任务执行完成"; // 默认摘要，实际内容已通过 SSE 推送
-        } catch (Exception e) {
-            log.warn("[PlanAndExecute] 提取最后消息失败: {}", e.getMessage());
-            return "任务执行完成";
+    // ============ 验证与重规划 ============
+
+    /**
+     * 执行单个任务并进行质量验证，验证失败时自动重试（最多 MAX_RETRIES_PER_TASK 次）
+     *
+     * @return true 表示任务最终通过验证，false 表示需要外部重规划
+     */
+    private boolean executeAndVerifyTask(TaskItem task, Map<String, String> taskOutputs,
+                                          TaskList taskList, String draftId,
+                                          AgentRuntimeContext context, SseEmitter emitter,
+                                          String conversationId, Long userId) {
+        boolean confirmationGranted = "WRITE_CONFIRMED".equals(task.getRiskLevel());
+
+        for (int attempt = 0; attempt <= MAX_RETRIES_PER_TASK; attempt++) {
+            task.setStatus("RUNNING");
+            dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_STARTED, taskToPayload(task));
+
+            String result;
+            try {
+                if (attempt > 0) {
+                    // 重试时使用修正后的描述
+                    log.info("[PlanAndExecute] 重试任务: taskId={}, attempt={}/{}, revisedDesc={}",
+                            task.getTaskId(), attempt, MAX_RETRIES_PER_TASK, task.getDescription());
+                    dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
+                            "type", "task_retry",
+                            "taskId", task.getTaskId(),
+                            "attempt", attempt,
+                            "maxRetries", MAX_RETRIES_PER_TASK
+                    ));
+                }
+
+                result = executeTaskViaReAct(task, taskOutputs, context, emitter, confirmationGranted);
+            } catch (Exception e) {
+                log.error("[PlanAndExecute] 任务执行异常: taskId={}", task.getTaskId(), e);
+                task.setErrorMessage(e.getMessage());
+                dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_FAILED, taskToPayload(task));
+                // 执行异常直接算失败，不重试
+                return false;
+            }
+
+            // 验证结果质量
+            VerificationResult verification = stepVerifier.verify(task, result, taskOutputs);
+
+            if (verification.isPassed()) {
+                task.setStatus("COMPLETED");
+                task.setResultSummary(truncate(result, 500));
+                taskOutputs.put(task.getTaskId(), truncate(result, 2000));
+                taskList.setTaskOutputs(taskOutputs);
+                dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_COMPLETED, taskToPayload(task));
+                log.info("[PlanAndExecute] 任务验证通过: taskId={}", task.getTaskId());
+                return true;
+            }
+
+            // 验证失败，根据建议动作处理
+            log.warn("[PlanAndExecute] 任务验证失败: taskId={}, action={}, feedback={}",
+                    task.getTaskId(), verification.getAction(),
+                    truncate(verification.getFeedback(), 100));
+
+            switch (verification.getAction()) {
+                case RETRY -> {
+                    if (attempt < MAX_RETRIES_PER_TASK) {
+                        // 用修正描述和工具重试
+                        if (verification.getRevisedDescription() != null) {
+                            task.setDescription(verification.getRevisedDescription());
+                        }
+                        if (verification.getRevisedTools() != null && !verification.getRevisedTools().isEmpty()) {
+                            task.setRequiredTools(verification.getRevisedTools());
+                        }
+                        task.setRetryCount(task.getRetryCount() + 1);
+                        // 继续 for 循环，重试
+                    } else {
+                        log.warn("[PlanAndExecute] 任务重试次数耗尽: taskId={}", task.getTaskId());
+                        return false; // 需要重规划
+                    }
+                }
+                case REPLAN -> {
+                    return false; // 需要重规划
+                }
+                case SKIP -> {
+                    task.setStatus("SKIPPED");
+                    task.setErrorMessage("验证未通过，已跳过: " + verification.getFeedback());
+                    dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_FAILED, taskToPayload(task));
+                    return true; // 跳过视为完成（不阻塞后续任务）
+                }
+                case CLARIFY -> {
+                    // 转为澄清门，暂停执行
+                    task.setGate("CLARIFICATION");
+                    task.setDescription(verification.getFeedback());
+                    task.setStatus("PAUSED");
+                    handleClarificationGate(taskList,
+                            taskList.getTasks().indexOf(task), context, emitter, null);
+                    return false; // 暂停
+                }
+                default -> { // CONTINUE (should not happen when !passed)
+                    task.setStatus("COMPLETED");
+                    task.setResultSummary(truncate(result, 500));
+                    taskOutputs.put(task.getTaskId(), truncate(result, 2000));
+                    taskList.setTaskOutputs(taskOutputs);
+                    dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_COMPLETED, taskToPayload(task));
+                    return true;
+                }
+            }
         }
+
+        return false; // 重试耗尽
+    }
+
+    /**
+     * 调用 PlannerAgent.replan() 动态重规划剩余任务
+     *
+     * @return true 表示重规划成功，sortedTasks 已被更新
+     */
+    private boolean replanRemainingTasks(TaskList taskList, List<TaskItem> sortedTasks,
+                                          int failedTaskIndex, TaskItem failedTask,
+                                          Map<String, String> taskOutputs,
+                                          AgentRuntimeContext context, SseEmitter emitter,
+                                          String draftId) {
+        try {
+            // 1. 构建重规划 prompt
+            String replanPrompt = buildReplanPrompt(taskList, failedTask, taskOutputs);
+
+            // 2. 调用 PlannerAgent.replan()
+            PlannerAgent plannerAgent = AiServices.builder(PlannerAgent.class)
+                    .chatModel(chatLanguageModel)
+                    .build();
+            String replanResponse = plannerAgent.replan(replanPrompt);
+
+            // 3. 解析重规划结果
+            String cleanJson = extractJson(replanResponse);
+            List<TaskItem> newRemainingTasks;
+            try {
+                newRemainingTasks = com.alibaba.fastjson.JSON.parseArray(cleanJson, TaskItem.class);
+            } catch (Exception e) {
+                log.error("[PlanAndExecute] 重规划 JSON 解析失败: {}", e.getMessage());
+                return false;
+            }
+
+            if (newRemainingTasks == null || newRemainingTasks.isEmpty()) {
+                log.warn("[PlanAndExecute] 重规划返回空任务列表");
+                return false;
+            }
+
+            // 4. 保留已完成的任务，替换剩余任务
+            List<TaskItem> completedTasks = new ArrayList<>();
+            for (int i = 0; i < failedTaskIndex; i++) {
+                completedTasks.add(sortedTasks.get(i));
+            }
+
+            List<TaskItem> mergedTasks = new ArrayList<>(completedTasks);
+            mergedTasks.addAll(newRemainingTasks);
+
+            // 5. 校验新的任务列表
+            TaskList newTaskList = new TaskList();
+            newTaskList.setTasks(mergedTasks);
+            // 做一次拓扑排序校验（检测循环依赖）
+            try {
+                topologicalSort(newTaskList.getTasks());
+            } catch (IllegalStateException e) {
+                log.error("[PlanAndExecute] 重规划产生循环依赖: {}", e.getMessage());
+                return false;
+            }
+
+            // 6. 替换 taskList 并持久化
+            taskList.setTasks(mergedTasks);
+            draftService.updateTaskList(draftId, taskList);
+
+            log.info("[PlanAndExecute] 重规划成功: failedTaskId={}, newRemainingCount={}, totalTasks={}",
+                    failedTask.getTaskId(), newRemainingTasks.size(), mergedTasks.size());
+            return true;
+
+        } catch (Exception e) {
+            log.error("[PlanAndExecute] 重规划失败: taskId={}", failedTask.getTaskId(), e);
+            return false;
+        }
+    }
+
+    private String buildReplanPrompt(TaskList taskList, TaskItem failedTask,
+                                     Map<String, String> taskOutputs) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("用户原始目标：").append(taskList.getUserGoal()).append("\n\n");
+
+        // 已完成的任务
+        sb.append("已完成的任务：\n");
+        for (TaskItem task : taskList.getTasks()) {
+            if ("COMPLETED".equals(task.getStatus())) {
+                sb.append("- ").append(task.getTaskId()).append(": ").append(task.getDescription()).append("\n");
+                sb.append("  结果: ").append(truncate(task.getResultSummary(), 200)).append("\n");
+            }
+        }
+
+        // 当前失败的任务
+        sb.append("\n验证失败的任务：\n");
+        sb.append("- ").append(failedTask.getTaskId()).append(": ").append(failedTask.getDescription()).append("\n");
+        sb.append("  失败原因: ").append(failedTask.getErrorMessage() != null
+                ? failedTask.getErrorMessage() : "结果未通过质量验证").append("\n");
+        sb.append("  预期产出: ").append(failedTask.getExpectedOutput() != null
+                ? failedTask.getExpectedOutput() : "根据任务描述完成").append("\n");
+
+        // 原始计划的剩余任务
+        sb.append("\n原始计划中尚未执行的任务（供参考，可自由调整）：\n");
+        for (TaskItem task : taskList.getTasks()) {
+            if (!"COMPLETED".equals(task.getStatus()) && !task.getTaskId().equals(failedTask.getTaskId())) {
+                sb.append("- ").append(task.getTaskId()).append(": ").append(task.getDescription()).append("\n");
+            }
+        }
+
+        sb.append("\n请根据以上信息，重新规划剩余任务。");
+
+        return sb.toString();
+    }
+
+    private String extractJson(String response) {
+        int jsonStart = response.indexOf("```json");
+        if (jsonStart >= 0) {
+            jsonStart = response.indexOf('\n', jsonStart) + 1;
+            int jsonEnd = response.indexOf("```", jsonStart);
+            if (jsonEnd > jsonStart) {
+                return response.substring(jsonStart, jsonEnd).trim();
+            }
+        }
+        int braceStart = response.indexOf('{');
+        if (braceStart >= 0) {
+            int braceEnd = response.lastIndexOf('}');
+            if (braceEnd > braceStart) {
+                return response.substring(braceStart, braceEnd + 1).trim();
+            }
+        }
+        // 可能是数组格式（replan 返回）
+        int bracketStart = response.indexOf('[');
+        if (bracketStart >= 0) {
+            int bracketEnd = response.lastIndexOf(']');
+            if (bracketEnd > bracketStart) {
+                return response.substring(bracketStart, bracketEnd + 1).trim();
+            }
+        }
+        return response;
     }
 
     // ============ 拓扑排序 ============

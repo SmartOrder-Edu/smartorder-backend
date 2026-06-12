@@ -88,8 +88,9 @@ public class SelfManagedReActEngine {
      * @param taskSystemMessage   任务专属系统提示
      * @param previousOutputs     前置任务的输出
      * @param confirmationGranted 是否已通过确认门（允许 WRITE_CONFIRMED 工具）
+     * @return 最终回答文本
      */
-    public void executeWithTaskContext(
+    public String executeWithTaskContext(
             AgentChatRequest request,
             IntentRouteResult routeResult,
             AgentRuntimeContext runtimeContext,
@@ -133,13 +134,15 @@ public class SelfManagedReActEngine {
         // 2. 构建工具规范
         List<ToolSpecification> tools = toolAdapter.buildToolSpecifications(routeResult.getRequiredTools());
 
-        runReActLoop(request, routeResult, runtimeContext, emitter, messages, tools, confirmationGranted);
+        return runReActLoop(request, routeResult, runtimeContext, emitter, messages, tools, confirmationGranted);
     }
 
     /**
      * ReAct 循环核心逻辑
+     *
+     * @return 最终回答文本
      */
-    private void runReActLoop(
+    private String runReActLoop(
             AgentChatRequest request,
             IntentRouteResult routeResult,
             AgentRuntimeContext runtimeContext,
@@ -175,7 +178,7 @@ public class SelfManagedReActEngine {
                 dispatcher.emit(emitter, runtimeContext, AgentEventType.ERROR, Map.of(
                         "message", "模型调用失败: " + e.getMessage()
                 ));
-                return;
+                return null;
             }
 
             AiMessage aiMessage = response.aiMessage();
@@ -282,6 +285,8 @@ public class SelfManagedReActEngine {
 
         // 9. 异步检查是否需要压缩
         compressService.checkAndCompress(runtimeContext.getConversationId(), request.getUserId());
+
+        return finalAnswer;
     }
 
     /**

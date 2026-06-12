@@ -54,4 +54,8 @@ public class TaskItem {
 
     /** 失败原因 */
     private String errorMessage;
+
+    /** 重试次数（动态重规划时递增） */
+    @Builder.Default
+    private int retryCount = 0;
 }
