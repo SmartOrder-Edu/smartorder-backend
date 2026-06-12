@@ -90,6 +90,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
             // 0.5 显式模式短路：跳过意图路由，直接按用户选择的模式执行
             if (request.getForceMode() != null && !request.getForceMode().isBlank()) {
                 handleForcedMode(request, emitter, context, conversationId);
+                dispatcher.complete(emitter, context);
                 return;
             }
 

@@ -48,6 +48,7 @@ import java.util.stream.Collectors;
 public class PlanAndExecuteEngine {
 
     private final ChatModel chatLanguageModel;
+    private final ChatModel planningChatModel; // 规划专用，禁用 thinking 确保纯 JSON 输出
     private final ToolRegistry toolRegistry;
     private final LangChain4jToolAdapter toolAdapter;
     private final PlanSchemaValidator schemaValidator;
@@ -85,9 +86,11 @@ public class PlanAndExecuteEngine {
         String taskListRaw;
         try {
             PlannerAgent plannerAgent = AiServices.builder(PlannerAgent.class)
-                    .chatModel(chatLanguageModel)
+                    .chatModel(planningChatModel)
                     .build();
             taskListRaw = plannerAgent.createTaskList(prompt);
+            log.info("[PlanAndExecute] PlannerAgent 原始响应 (前500字符): {}",
+                    taskListRaw != null ? taskListRaw.substring(0, Math.min(500, taskListRaw.length())) : "null");
         } catch (Exception e) {
             log.error("[PlanAndExecute] PlannerAgent 调用失败", e);
             String errorMsg = "抱歉，生成任务计划时遇到了问题，请稍后再试。";
@@ -105,7 +108,9 @@ public class PlanAndExecuteEngine {
         try {
             taskList = schemaValidator.validateAndParseTaskList(taskListRaw);
         } catch (Exception e) {
-            log.error("[PlanAndExecute] TaskList 校验失败: {}", e.getMessage());
+            log.error("[PlanAndExecute] TaskList 校验失败: {}, 原始响应(前300字符): {}",
+                    e.getMessage(),
+                    taskListRaw != null ? taskListRaw.substring(0, Math.min(300, taskListRaw.length())) : "null");
             String errorMsg = "生成的任务计划格式不正确，请重新描述你的目标。";
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", errorMsg));
             memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
@@ -381,6 +386,8 @@ public class PlanAndExecuteEngine {
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", finalSummary));
         memoryService.saveAssistantMessage(conversationId, userId,
                 finalSummary, null, context.getTraceId(), null);
+
+        dispatcher.complete(emitter, context);
     }
 
     private boolean resumeConfirmationGateIfNeeded(String draftId, TaskList taskList, TaskItem explicitTask) {
@@ -532,6 +539,15 @@ public class PlanAndExecuteEngine {
                 request != null ? request.getUserId() : context.getUserId(), taskList);
         taskList.setConfirmationDraftId(draftId);
         draftService.updateTaskList(draftId, taskList);
+
+        // 先发射 PLAN_CREATED，确保前端初始化 currentTaskList，
+        // 再发射 PLAN_PAUSED 更新状态为暂停
+        dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
+                "draftId", draftId,
+                "taskList", taskList,
+                "needsConfirmation", false,
+                "clarificationQuestion", question
+        ));
 
         // 发射暂停事件
         dispatcher.emit(emitter, context, AgentEventType.PLAN_PAUSED, Map.of(
@@ -757,7 +773,7 @@ public class PlanAndExecuteEngine {
 
             // 2. 调用 PlannerAgent.replan()
             PlannerAgent plannerAgent = AiServices.builder(PlannerAgent.class)
-                    .chatModel(chatLanguageModel)
+                    .chatModel(planningChatModel)
                     .build();
             String replanResponse = plannerAgent.replan(replanPrompt);
 
