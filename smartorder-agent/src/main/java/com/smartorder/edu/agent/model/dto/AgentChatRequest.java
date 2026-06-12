@@ -17,4 +17,11 @@ public class AgentChatRequest {
     private String message;
     private String conversationId;
     private List<Long> fileIds;
+
+    /**
+     * 强制运行模式（可选），跳过意图路由。
+     * "REACT" — 快速回答；"PLAN_AND_EXECUTE" — 目标规划。
+     * 为 null 时走正常的意图路由。
+     */
+    private String forceMode;
 }

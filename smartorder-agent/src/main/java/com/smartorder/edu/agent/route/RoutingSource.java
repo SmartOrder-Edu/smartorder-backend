@@ -11,5 +11,7 @@ public enum RoutingSource {
     /** LLM 分类：调用 LLM 进行语义级别的意图分类 */
     LLM,
     /** 澄清兜底：低置信或槽位不足，进入追问澄清 */
-    CLARIFICATION
+    CLARIFICATION,
+    /** 用户手动选择：前端强制指定运行模式，跳过意图路由 */
+    USER_SELECTED
 }

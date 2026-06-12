@@ -5,7 +5,9 @@ import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentRouteService;
+import com.smartorder.edu.agent.route.IntentType;
 import com.smartorder.edu.agent.route.RouteContext;
+import com.smartorder.edu.agent.route.RoutingSource;
 import com.smartorder.edu.agent.service.AgentConversationAttachmentService;
 import com.smartorder.edu.agent.service.AttachmentNotReadyException;
 import com.smartorder.edu.agent.trace.AgentEventType;
@@ -83,6 +85,12 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                     dispatcher.complete(emitter, context);
                     return;
                 }
+            }
+
+            // 0.5 显式模式短路：跳过意图路由，直接按用户选择的模式执行
+            if (request.getForceMode() != null && !request.getForceMode().isBlank()) {
+                handleForcedMode(request, emitter, context, conversationId);
+                return;
             }
 
             // 1. 意图路由（带会话上下文）
@@ -182,6 +190,71 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         List<String> tools = new ArrayList<>(currentTools);
         tools.add("searchConversationAttachments");
         routeResult.setRequiredTools(tools);
+    }
+
+    // ============ 显式模式短路 ============
+
+    /**
+     * 用户手动选择模式时，跳过意图路由，直接执行
+     */
+    private void handleForcedMode(AgentChatRequest request, SseEmitter emitter,
+                                  AgentRuntimeContext context, String conversationId) {
+        AgentRunMode mode;
+        try {
+            mode = AgentRunMode.valueOf(request.getForceMode().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            log.warn("[AgentOrchestrator] 无效的 forceMode: {}, 回退到 REACT", request.getForceMode());
+            mode = AgentRunMode.REACT;
+        }
+
+        IntentRouteResult forcedResult = buildForcedRouteResult(mode);
+        context.setMode(forcedResult.getRunMode());
+        addAttachmentSearchToolIfNeeded(forcedResult, context);
+
+        // 推送 TRACE_STARTED
+        dispatcher.emit(emitter, context, AgentEventType.TRACE_STARTED, Map.of(
+                "mode", forcedResult.getRunMode().getCode()
+        ));
+
+        // 推送 ROUTE_COMPLETED
+        dispatcher.emit(emitter, context, AgentEventType.ROUTE_COMPLETED, Map.of(
+                "intentType", forcedResult.getIntentType(),
+                "intentEnum", forcedResult.getIntentEnum() != null ? forcedResult.getIntentEnum().name() : "",
+                "complexity", forcedResult.getComplexity(),
+                "runMode", forcedResult.getRunMode().getCode(),
+                "requiredTools", forcedResult.getRequiredTools(),
+                "confidence", forcedResult.getConfidence(),
+                "source", forcedResult.getSource().name(),
+                "needsClarification", forcedResult.isNeedsClarification(),
+                "needsPlanning", forcedResult.isNeedsPlanning(),
+                "reason", forcedResult.getReason()
+        ));
+
+        // 按模式分发
+        switch (forcedResult.getRunMode()) {
+            case REACT -> reActEngine.execute(request, forcedResult, context, emitter);
+            case PLAN_AND_EXECUTE -> handlePlanAndExecute(request, forcedResult, context, emitter);
+            default -> throw new IllegalStateException("不支持的运行模式: " + forcedResult.getRunMode());
+        }
+    }
+
+    private IntentRouteResult buildForcedRouteResult(AgentRunMode mode) {
+        boolean needsPlanning = mode == AgentRunMode.PLAN_AND_EXECUTE;
+        List<String> tools = needsPlanning
+                ? List.of()
+                : List.of("getStudentProfile", "queryKnowledge", "queryTasks");
+        return IntentRouteResult.builder()
+                .intentType(needsPlanning ? "目标规划（手动选择）" : "知识问答（手动选择）")
+                .intentEnum(needsPlanning ? IntentType.GOAL_PLANNING : IntentType.KNOWLEDGE_QA)
+                .complexity(needsPlanning ? "复杂" : "简单")
+                .runMode(mode)
+                .requiredTools(tools)
+                .confidence(1.0)
+                .source(RoutingSource.USER_SELECTED)
+                .reason("用户手动选择模式")
+                .needsPlanning(needsPlanning)
+                .planHint(needsPlanning ? "goal_planning" : null)
+                .build();
     }
 
     private List<Long> normalizeFileIds(List<Long> fileIds) {
