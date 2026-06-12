@@ -166,19 +166,33 @@ public class PlanAndExecuteEngine {
             return;
         }
 
-        // 9. 无门 → 保存草稿，直接执行
+        // 9. 无门 → 保存草稿，发射 PLAN_CREATED，等待用户确认后执行
         String draftId = draftService.saveTaskListDraft(
                 context.getConversationId(), context.getTraceId(),
                 request.getUserId(), taskList);
-        taskList.setStatus("EXECUTING");
+        taskList.setStatus("PENDING_CONFIRM");
+        taskList.setConfirmationDraftId(draftId);
         draftService.updateTaskList(draftId, taskList);
 
-        executeTaskList(draftId, request.getUserId(), context.getConversationId(),
-                emitter, context.getTraceId());
+        // 发射 PLAN_CREATED 事件（前端依赖此事件初始化 currentTaskList）
+        dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
+                "draftId", draftId,
+                "taskList", taskList,
+                "needsConfirmation", false,
+                "clarificationQuestion", ""
+        ));
+
+        // 输出计划摘要文本
+        String summaryText = buildPlanSummaryText(taskList);
+        dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", summaryText));
+        memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
+                summaryText, null, context.getTraceId(), null);
     }
 
     /**
-     * Phase 2: 执行 TaskList（确认后调用或无门直接调用）
+     * Phase 2: 执行 TaskList（确认后调用）
+     * <p>
+     * 由 AgentPlanController 调用，创建全新的执行上下文。
      */
     public void executeTaskList(String draftId, Long userId, String conversationId,
                                 SseEmitter emitter, String traceId) {
@@ -204,10 +218,53 @@ public class PlanAndExecuteEngine {
                         : new java.util.concurrent.atomic.AtomicInteger(0))
                 .build();
 
-        // 3. 拓扑排序
+        executeTaskListInternal(draft, taskList, context, emitter, draftId,
+                userId, conversationId);
+    }
+
+    /**
+     * Phase 2 (with context): 使用父级上下文执行 TaskList，保持 traceId 和序列号连续性。
+     * <p>
+     * 由 resumePlan 等内部调用方使用，避免丢失 attachmentContext 等父级状态。
+     */
+    public void executeTaskListWithContext(String draftId, Long userId,
+                                           AgentRuntimeContext parentContext, SseEmitter emitter) {
+        AgentPlanDraft draft = draftService.getByDraftId(draftId);
+        if (draft == null) {
+            log.error("[PlanAndExecute] 草稿不存在: {}", draftId);
+            dispatcher.emit(emitter, parentContext,
+                    AgentEventType.ERROR, Map.of("message", "规划草稿不存在"));
+            return;
+        }
+
+        TaskList taskList = JSON.parseObject(draft.getTaskListJson(), TaskList.class);
+
+        // 构建子上下文（继承父级关键字段，保持 traceId 连续性）
+        AgentRuntimeContext context = AgentRuntimeContext.builder()
+                .traceId(parentContext.getTraceId())
+                .conversationId(parentContext.getConversationId())
+                .userId(parentContext.getUserId())
+                .mode(AgentRunMode.PLAN_AND_EXECUTE)
+                .attachmentContext(parentContext.getAttachmentContext())
+                .allowedAttachmentFileIds(parentContext.getAllowedAttachmentFileIds())
+                .sequence(new java.util.concurrent.atomic.AtomicInteger(
+                        parentContext.getSequence() != null ? parentContext.getSequence().get() : 0))
+                .build();
+
+        executeTaskListInternal(draft, taskList, context, emitter, draftId,
+                userId, parentContext.getConversationId());
+    }
+
+    /**
+     * 执行 TaskList 的核心逻辑（共享实现）
+     */
+    private void executeTaskListInternal(AgentPlanDraft draft, TaskList taskList,
+                                         AgentRuntimeContext context, SseEmitter emitter,
+                                         String draftId, Long userId, String conversationId) {
+        // 1. 拓扑排序
         List<TaskItem> sortedTasks = topologicalSort(taskList.getTasks());
 
-        // 4. 执行任务（带验证+动态重规划）
+        // 2. 执行任务（带验证+动态重规划）
         Map<String, String> taskOutputs = new LinkedHashMap<>(taskList.getTaskOutputs());
         taskList.setStatus("EXECUTING");
 
@@ -259,7 +316,8 @@ public class PlanAndExecuteEngine {
 
                 String confirmText = buildConfirmationText(task, taskList);
                 dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", confirmText));
-                memoryService.saveAssistantMessage(conversationId, userId, confirmText, null, traceId, null);
+                memoryService.saveAssistantMessage(conversationId, userId, confirmText, null,
+                        context.getTraceId(), null);
                 return;
             }
 
@@ -305,14 +363,14 @@ public class PlanAndExecuteEngine {
             draftService.updateTaskList(draftId, taskList);
         }
 
-        // 5. 全部完成
+        // 3. 全部完成
         taskList.setStatus("COMPLETED");
         draftService.updateTaskList(draftId, taskList);
 
         String finalSummary = buildFinalSummary(taskList);
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", finalSummary));
         memoryService.saveAssistantMessage(conversationId, userId,
-                finalSummary, null, traceId, null);
+                finalSummary, null, context.getTraceId(), null);
     }
 
     /**
@@ -349,8 +407,8 @@ public class PlanAndExecuteEngine {
             ));
 
             draftService.updateTaskList(draft.getDraftId(), taskList);
-            executeTaskList(draft.getDraftId(), context.getUserId(),
-                    context.getConversationId(), emitter, context.getTraceId());
+            executeTaskListWithContext(draft.getDraftId(), context.getUserId(),
+                    context, emitter);
 
         } else if ("PAUSED_CONFIRMATION".equals(taskList.getStatus())) {
             // 用户通过聊天确认词确认（前端按钮确认走 /agent/plan/confirm）
@@ -366,8 +424,8 @@ public class PlanAndExecuteEngine {
                     "taskId", pausedTask.getTaskId()
             ));
 
-            executeTaskList(draft.getDraftId(), context.getUserId(),
-                    context.getConversationId(), emitter, context.getTraceId());
+            executeTaskListWithContext(draft.getDraftId(), context.getUserId(),
+                    context, emitter);
         }
     }
 
