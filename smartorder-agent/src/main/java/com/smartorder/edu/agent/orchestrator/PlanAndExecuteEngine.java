@@ -206,6 +206,7 @@ public class PlanAndExecuteEngine {
         }
 
         TaskList taskList = JSON.parseObject(draft.getTaskListJson(), TaskList.class);
+        boolean resumed = resumeConfirmationGateIfNeeded(draftId, taskList, null);
 
         // 2. 构建运行时上下文
         AgentRuntimeContext context = AgentRuntimeContext.builder()
@@ -217,6 +218,10 @@ public class PlanAndExecuteEngine {
                         ? new java.util.concurrent.atomic.AtomicInteger(draft.getResumeTaskIndex() * 100)
                         : new java.util.concurrent.atomic.AtomicInteger(0))
                 .build();
+
+        if (resumed) {
+            emitResumeIfConfirmationWasCleared(taskList, context, emitter);
+        }
 
         executeTaskListInternal(draft, taskList, context, emitter, draftId,
                 userId, conversationId);
@@ -238,6 +243,7 @@ public class PlanAndExecuteEngine {
         }
 
         TaskList taskList = JSON.parseObject(draft.getTaskListJson(), TaskList.class);
+        boolean resumed = resumeConfirmationGateIfNeeded(draftId, taskList, null);
 
         // 构建子上下文（继承父级关键字段，保持 traceId 连续性）
         AgentRuntimeContext context = AgentRuntimeContext.builder()
@@ -250,6 +256,10 @@ public class PlanAndExecuteEngine {
                 .sequence(new java.util.concurrent.atomic.AtomicInteger(
                         parentContext.getSequence() != null ? parentContext.getSequence().get() : 0))
                 .build();
+
+        if (resumed) {
+            emitResumeIfConfirmationWasCleared(taskList, context, emitter);
+        }
 
         executeTaskListInternal(draft, taskList, context, emitter, draftId,
                 userId, parentContext.getConversationId());
@@ -373,6 +383,40 @@ public class PlanAndExecuteEngine {
                 finalSummary, null, context.getTraceId(), null);
     }
 
+    private boolean resumeConfirmationGateIfNeeded(String draftId, TaskList taskList, TaskItem explicitTask) {
+        if (!"PAUSED_CONFIRMATION".equals(taskList.getStatus()) && !"PENDING_CONFIRM".equals(taskList.getStatus())) {
+            return false;
+        }
+
+        TaskItem task = explicitTask;
+        if (task == null && taskList.getCurrentTaskIndex() >= 0
+                && taskList.getCurrentTaskIndex() < taskList.getTasks().size()) {
+            task = taskList.getTasks().get(taskList.getCurrentTaskIndex());
+        }
+
+        if (task != null && "CONFIRMATION".equals(task.getGate())) {
+            task.setGate("NORMAL");
+            task.setStatus("PENDING");
+        }
+
+        taskList.setStatus("EXECUTING");
+        draftService.updateTaskList(draftId, taskList);
+        return true;
+    }
+
+    private void emitResumeIfConfirmationWasCleared(TaskList taskList, AgentRuntimeContext context, SseEmitter emitter) {
+        int taskIndex = taskList.getCurrentTaskIndex();
+        if (taskIndex < 0 || taskIndex >= taskList.getTasks().size()) {
+            return;
+        }
+        TaskItem task = taskList.getTasks().get(taskIndex);
+        dispatcher.emit(emitter, context, AgentEventType.PLAN_RESUMED, Map.of(
+                "reason", "CONFIRMATION",
+                "taskId", task.getTaskId(),
+                "resumeFromIndex", taskIndex
+        ));
+    }
+
     /**
      * 恢复暂停的计划（澄清回复 / 确认词）
      */
@@ -414,10 +458,7 @@ public class PlanAndExecuteEngine {
             // 用户通过聊天确认词确认（前端按钮确认走 /agent/plan/confirm）
             int pausedIndex = taskList.getCurrentTaskIndex();
             TaskItem pausedTask = taskList.getTasks().get(pausedIndex);
-            pausedTask.setGate("NORMAL"); // 清除确认门
-
-            taskList.setStatus("EXECUTING");
-            draftService.updateTaskList(draft.getDraftId(), taskList);
+            resumeConfirmationGateIfNeeded(draft.getDraftId(), taskList, pausedTask);
 
             dispatcher.emit(emitter, context, AgentEventType.PLAN_RESUMED, Map.of(
                     "reason", "CONFIRMATION",
