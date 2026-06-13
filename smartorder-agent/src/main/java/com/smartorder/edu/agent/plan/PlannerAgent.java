@@ -32,21 +32,12 @@ public interface PlannerAgent {
                 },
                 {
                   "taskId": "task-2",
-                  "description": "查询相关知识图谱，了解知识依赖关系",
-                  "requiredTools": ["queryKnowledge"],
-                  "dependsOn": ["task-1"],
-                  "gate": "NORMAL",
-                  "riskLevel": "READ",
-                  "expectedOutput": "知识图谱节点和边"
-                },
-                {
-                  "taskId": "task-3",
-                  "description": "制定学习规划并等待用户确认",
+                  "description": "基于学生画像和学科训练知识，制定完整学习规划。需生成：spaceName、type、phases(每阶段含phaseIndex/phaseName/knowledgePoints/weeks/resources)、knowledgeGraph(含nodes/edges)、dailySchedule(morning/evening)、startDate、targetEndDate。使用 manageLearningPlan 工具提交规划，phases 参数传入完整 JSON 数组。注意：此时尚未创建学习空间，queryKnowledge 不可用，应结合学生画像和 LLM 自身的学科知识体系来规划，后续创建的知识图谱将保存在学习空间内。",
                   "requiredTools": ["manageLearningPlan"],
-                  "dependsOn": ["task-1", "task-2"],
+                  "dependsOn": ["task-1"],
                   "gate": "CONFIRMATION",
                   "riskLevel": "WRITE_CONFIRMED",
-                  "expectedOutput": "学习规划草稿ID"
+                  "expectedOutput": "包含完整学习阶段的规划数据JSON，可直接创建学习空间、路径、任务和知识图谱"
                 }
               ]
             }
@@ -66,13 +57,17 @@ public interface PlannerAgent {
                - WRITE_CONFIRMED: 有副作用的写操作，必须经过确认门
             7. 任务数量 1-10 个，避免过度拆分
             8. description 要清晰具体，能直接作为 ReAct 的用户消息
+            9. queryKnowledge 工具需要一个已存在的学习空间ID（spaceId），因此只能在已有学习空间的场景使用（如：在某个空间内查询知识、生成资料等）。新建学习规划时不要使用 queryKnowledge，应依赖 LLM 自身的学科知识体系进行规划。
 
             ## 典型场景示例
 
-            ### 场景1: 用户要求制定学习计划
+            ### 场景1: 用户要求制定学习计划（新规划，无现有空间）
             - task-1: 获取学生画像 (getStudentProfile, READ, NORMAL)
-            - task-2: 查询知识图谱 (queryKnowledge, READ, NORMAL, dependsOn: task-1)
-            - task-3: 生成学习规划草稿 (manageLearningPlan, WRITE_CONFIRMED, CONFIRMATION, dependsOn: task-1, task-2)
+            - task-2: 基于画像和学科知识体系生成完整学习规划，使用 manageLearningPlan 工具提交。
+              注意：此时无现有学习空间，queryKnowledge 不可用（需要 spaceId），应依赖 LLM 自身的学科知识。
+              工具参数需包含 phases JSON 数组，每阶段含 phaseIndex/phaseName/knowledgePoints/weeks/resources；
+              以及 knowledgeGraph（nodes 含 name/description/category/importance，edges 含 from/to/type）。
+              (manageLearningPlan, WRITE_CONFIRMED, CONFIRMATION, dependsOn: task-1)
 
             ### 场景2: 用户要求生成全套资料
             - task-1: 获取学生画像 (getStudentProfile, READ, NORMAL)
@@ -141,6 +136,7 @@ public interface PlannerAgent {
             4. requiredTools 只能从以下选择：getStudentProfile, queryKnowledge, queryLearningProgress, queryTasks, manageLearningPlan, generateResource, generateQuiz, searchConversationAttachments
             5. 任务总数（含已完成的）不超过 12 个
             6. 如果有无法解决的阻碍，使用 CLARIFICATION gate 向用户追问
+            7. queryKnowledge 需要已存在的学习空间ID，无空间时不可用，应依赖 LLM 自身知识体系规划
             """)
     String replan(@UserMessage("{{prompt}}") @V("prompt") String prompt);
 }

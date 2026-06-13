@@ -2,10 +2,12 @@ package com.smartorder.edu.agent.tool.impl;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.smartorder.edu.agent.plan.PlanConfirmService;
 import com.smartorder.edu.agent.plan.PlanDraftService;
 import com.smartorder.edu.agent.tool.ToolCategory;
 import com.smartorder.edu.agent.tool.ToolHandler;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
+import com.smartorder.edu.learning.domain.vo.LearningSpaceVO;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,10 +16,15 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 
 /**
- * 管理学习规划工具——创建完整的学习规划草稿
+ * 管理学习规划工具——创建学习规划草稿或直接创建学习空间。
  * <p>
- * 替代旧版 ManageLearningTaskTool（只保存简单草稿，无 phases，会 NPE）。
- * 本工具接收完整的规划参数，保存为 LEGACY 类型草稿，需用户确认后才创建学习空间。
+ * 两条路径：
+ * <ul>
+ *   <li><b>TASK_LIST 确认路径</b>：当 {@code ToolInvokeContext.confirmationGranted=true} 时，
+ *       用户已通过 PlanAndExecute 的 CONFIRMATION gate 确认，直接调用 PlanConfirmService 创建
+ *       学习空间、路径节点、任务和知识图谱，不保存草稿。</li>
+ *   <li><b>LEGACY 路径</b>：未确认时保存为 LEGACY 类型草稿，需用户通过 /agent/plan/confirm 二次确认。</li>
+ * </ul>
  * <p>
  * 风险等级 WRITE_CONFIRMED：创建学习空间属于有副作用的操作。
  */
@@ -27,6 +34,7 @@ import java.util.Map;
 public class ManageLearningPlanTool implements ToolHandler {
 
     private final PlanDraftService draftService;
+    private final PlanConfirmService planConfirmService;
 
     @Override
     public String name() {
@@ -35,9 +43,9 @@ public class ManageLearningPlanTool implements ToolHandler {
 
     @Override
     public String description() {
-        return "创建学习规划草稿，包含学习空间、学习路径和任务。"
-                + "必须传入学习目标描述，可选传入空间名称和类型。"
-                + "规划保存为草稿，需要用户确认后才会创建学习空间。";
+        return "创建学习规划，包含学习空间、学习路径和任务。"
+                + "必须传入学习目标描述，可选传入空间名称、类型和学习阶段(phases)。"
+                + "如果用户已确认规划，将直接创建学习空间实体；否则保存为草稿等待确认。";
     }
 
     @Override
@@ -87,7 +95,31 @@ public class ManageLearningPlanTool implements ToolHandler {
             }
         }
 
-        // 保存完整草稿
+        // TASK_LIST 确认路径：用户已通过 CONFIRMATION gate 确认，直接创建实体
+        if (context.isConfirmationGranted()) {
+            log.info("[ManageLearningPlan] confirmationGranted=true，直接创建学习空间实体");
+            try {
+                LearningSpaceVO space = planConfirmService.createEntities(
+                        planJson, userId, context.getConversationId(),
+                        context.getEmitter(), context.getRuntimeContext());
+                log.info("[ManageLearningPlan] 学习空间已创建: spaceId={}, name={}", space.getId(), space.getName());
+                return Map.of(
+                        "success", true,
+                        "spaceId", space.getId(),
+                        "spaceName", space.getName(),
+                        "message", "学习空间「" + space.getName() + "」已创建完成。"
+                );
+            } catch (Exception e) {
+                log.error("[ManageLearningPlan] 创建学习空间失败", e);
+                return Map.of(
+                        "success", false,
+                        "error", "创建学习空间失败: " + e.getMessage()
+                );
+            }
+        }
+
+        // LEGACY 路径：保存草稿，等待用户确认
+        log.info("[ManageLearningPlan] 未确认，保存 LEGACY 草稿");
         String draftId = draftService.saveDraft(
                 context.getConversationId(),
                 context.getTraceId(),
