@@ -48,6 +48,105 @@ public class PlanConfirmService {
     private final TraceEventDispatcher dispatcher;
 
     /**
+     * 确认并创建学习空间大纲（LEARNING_PLAN 路径）。
+     * <p>
+     * 与 {@link #createEntities} 的区别：仅创建结构性实体（空间、路径节点/边、知识图谱），
+     * 不创建每日任务和资源记录。适用于用户审阅学习计划草稿后的确认操作。
+     * <p>
+     * 后续版本可通过独立的 "展开每日任务" 工具补充 task 和 resource。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public LearningSpaceVO createEntitiesOutlineOnly(String draftId, Long userId,
+                                                      String conversationId,
+                                                      SseEmitter emitter, String traceId) {
+        JSONObject plan = draftService.getLearningPlanJson(draftId);
+
+        AgentRuntimeContext context = AgentRuntimeContext.builder()
+                .traceId(traceId)
+                .conversationId(conversationId)
+                .userId(userId)
+                .mode(AgentRunMode.PLAN_AND_EXECUTE)
+                .sequence(new AtomicInteger(0))
+                .build();
+
+        try {
+            // 1. 创建学习空间
+            dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
+                    "message", "正在创建学习空间"
+            ));
+
+            LearningSpaceDTO spaceDTO = new LearningSpaceDTO();
+            spaceDTO.setName(plan.getString("spaceName"));
+            spaceDTO.setType(plan.getString("type") != null ? plan.getString("type") : "course");
+            spaceDTO.setDescription(plan.getString("description"));
+
+            JSONArray goalsArr = plan.getJSONArray("goals");
+            spaceDTO.setGoals(goalsArr != null ? goalsArr.toJSONString() : "[]");
+
+            try {
+                spaceDTO.setStartDate(plan.getString("startDate") != null
+                        ? LocalDate.parse(plan.getString("startDate")) : LocalDate.now());
+            } catch (Exception e) {
+                log.warn("[PlanConfirm-outline] startDate 解析失败: {}", plan.getString("startDate"));
+                spaceDTO.setStartDate(LocalDate.now());
+            }
+
+            if (plan.getString("targetEndDate") != null) {
+                try {
+                    spaceDTO.setTargetEndDate(LocalDate.parse(plan.getString("targetEndDate")));
+                } catch (Exception e) {
+                    log.warn("[PlanConfirm-outline] targetEndDate 解析失败: {}", plan.getString("targetEndDate"));
+                }
+            }
+
+            LearningSpaceVO spaceVO = spaceService.createSpace(userId, spaceDTO);
+            Long spaceId = spaceVO.getId();
+            log.info("[PlanConfirm-outline] 学习空间已创建: spaceId={}", spaceId);
+
+            // 2. 创建学习路径节点和边
+            dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
+                    "message", "正在创建学习路径"
+            ));
+            createPathNodesAndEdges(spaceId, plan);
+
+            // 3. 保存知识图谱
+            dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
+                    "message", "正在保存知识图谱"
+            ));
+            saveKnowledgeGraph(spaceId, plan);
+
+            // 跳过 createTasks() 和资源生成登记（outlineOnly 模式）
+
+            // 标记草稿为已确认
+            draftService.cancelDraft(draftId, userId);
+
+            // 通知前端
+            dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
+                    "type", "space_created",
+                    "spaceId", spaceId,
+                    "spaceName", spaceVO.getName(),
+                    "message", "学习空间「" + spaceVO.getName() + "」已创建完成！"
+            ));
+
+            int phaseCount = plan.getJSONArray("phases") != null ? plan.getJSONArray("phases").size() : 0;
+            dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of(
+                    "text", "学习空间「" + spaceVO.getName() + "」已创建完成！\n"
+                            + "包含 " + phaseCount + " 个学习阶段，知识图谱已就绪。\n"
+                            + "你可以进入学习空间开始学习了！"
+            ));
+
+            dispatcher.complete(emitter, context);
+            log.info("[PlanConfirm-outline] 大纲创建完成: spaceId={}", spaceId);
+
+            return spaceVO;
+        } catch (Exception e) {
+            log.error("[PlanConfirm-outline] 执行失败: draftId={}", draftId, e);
+            dispatcher.error(emitter, context, e);
+            throw e;
+        }
+    }
+
+    /**
      * 确认并执行学习规划（LEGACY 路径：从草稿加载 plan JSON）
      */
     @Transactional(rollbackFor = Exception.class)

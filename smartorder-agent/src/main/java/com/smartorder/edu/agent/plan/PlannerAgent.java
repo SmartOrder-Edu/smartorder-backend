@@ -46,7 +46,7 @@ public interface PlannerAgent {
             1. taskId 必须从 task-1 开始递增编号
             2. dependsOn 中只能引用已存在的 taskId
             3. 不能出现循环依赖
-            4. 每个任务的 requiredTools 只能包含以下工具：getStudentProfile, queryKnowledge, queryLearningProgress, queryTasks, manageLearningPlan, generateResource, generateQuiz, searchConversationAttachments
+            4. 每个任务的 requiredTools 只能包含以下工具：getStudentProfile, queryKnowledge, queryLearningProgress, queryTasks, manageLearningPlan, draftLearningPlan, generateResource, generateQuiz, searchConversationAttachments
             5. gate 决定执行前是否需要暂停：
                - NORMAL: 直接执行
                - CLARIFICATION: 需要先向用户提问，获得补充信息后继续
@@ -63,11 +63,17 @@ public interface PlannerAgent {
 
             ### 场景1: 用户要求制定学习计划（新规划，无现有空间）
             - task-1: 获取学生画像 (getStudentProfile, READ, NORMAL)
-            - task-2: 基于画像和学科知识体系生成完整学习规划，使用 manageLearningPlan 工具提交。
+            - task-2: 基于学生画像和学科知识体系生成完整学习计划草稿，使用 draftLearningPlan 工具提交。
               注意：此时无现有学习空间，queryKnowledge 不可用（需要 spaceId），应依赖 LLM 自身的学科知识。
-              工具参数需包含 phases JSON 数组，每阶段含 phaseIndex/phaseName/knowledgePoints/weeks/resources；
-              以及 knowledgeGraph（nodes 含 name/description/category/importance，edges 含 from/to/type）。
-              (manageLearningPlan, WRITE_CONFIRMED, CONFIRMATION, dependsOn: task-1)
+              工具参数必须完整：spaceName、goalDescription、type、goals（JSON 数组字符串）、
+              startDate（YYYY-MM-DD）、targetEndDate（YYYY-MM-DD）、
+              phases（完整 JSON 数组，每阶段含 phaseIndex/phaseName/knowledgePoints/weeks/resources）、
+              knowledgeGraph（完整 JSON 对象，nodes 含 name/description/category/importance，
+              edges 含 from/to/type，from/to 必须对应 nodes 中的 name）。
+              此工具仅保存草稿，不创建学习空间。
+              (draftLearningPlan, WRITE_DRAFT, NORMAL, dependsOn: task-1)
+            - task-3: 等待用户审阅学习计划草稿，用户确认后将创建学习空间
+              (无工具, READ, CONFIRMATION, dependsOn: task-2)
 
             ### 场景2: 用户要求生成全套资料
             - task-1: 获取学生画像 (getStudentProfile, READ, NORMAL)
@@ -133,7 +139,7 @@ public interface PlannerAgent {
             1. taskId 从输入中已完成任务的编号继续（如已执行到 task-3，则新任务从 task-3 开始重新编号，或使用 task-3a, task-3b 表示插入的任务）
             2. dependsOn 只能引用已存在的 taskId（包括已完成的任务）
             3. 不能出现循环依赖
-            4. requiredTools 只能从以下选择：getStudentProfile, queryKnowledge, queryLearningProgress, queryTasks, manageLearningPlan, generateResource, generateQuiz, searchConversationAttachments
+            4. requiredTools 只能从以下选择：getStudentProfile, queryKnowledge, queryLearningProgress, queryTasks, manageLearningPlan, draftLearningPlan, generateResource, generateQuiz, searchConversationAttachments
             5. 任务总数（含已完成的）不超过 12 个
             6. 如果有无法解决的阻碍，使用 CLARIFICATION gate 向用户追问
             7. queryKnowledge 需要已存在的学习空间ID，无空间时不可用，应依赖 LLM 自身知识体系规划

@@ -55,12 +55,24 @@ public class AgentPlanController {
         executor.execute(() -> {
             // 根据 planType 分发到不同引擎
             AgentPlanDraft draft = planDraftService.getByDraftId(request.getDraftId());
-            if (draft != null && "TASK_LIST".equals(draft.getPlanType())) {
+            if (draft == null) {
+                log.error("[PlanConfirm] 草稿不存在: {}", request.getDraftId());
+                emitter.completeWithError(
+                        new IllegalArgumentException("规划草稿不存在: " + request.getDraftId()));
+                return;
+            }
+
+            String planType = draft.getPlanType();
+            if ("LEARNING_PLAN".equals(planType)) {
+                // 学习计划草稿：仅创建大纲（空间、路径、知识图谱），不创建每日任务
+                planConfirmService.createEntitiesOutlineOnly(
+                        request.getDraftId(), userId, conversationId, emitter, traceId);
+            } else if ("TASK_LIST".equals(planType)) {
                 // 新架构：PlanAndExecuteEngine 从确认门恢复执行
                 planAndExecuteEngine.executeTaskList(
                         request.getDraftId(), userId, conversationId, emitter, traceId);
             } else {
-                // 旧架构：PlanConfirmService 创建学习空间
+                // 旧架构（LEGACY 或无 planType）：PlanConfirmService 创建学习空间
                 planConfirmService.confirmAndExecute(
                         request.getDraftId(), userId, conversationId, emitter, traceId);
             }

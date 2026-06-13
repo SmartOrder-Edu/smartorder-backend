@@ -71,6 +71,40 @@ public class PlanDraftService {
     }
 
     /**
+     * 保存学习计划草稿（LEARNING_PLAN 类型，用于用户审阅）
+     */
+    public String saveLearningPlanDraft(String conversationId, String traceId, Long userId,
+                                         JSONObject learningPlanJson) {
+        String draftId = UUID.randomUUID().toString();
+
+        AgentPlanDraft draft = new AgentPlanDraft();
+        draft.setDraftId(draftId);
+        draft.setConversationId(conversationId);
+        draft.setTraceId(traceId);
+        draft.setUserId(userId);
+        draft.setPlanJson(learningPlanJson.toJSONString());
+        draft.setPlanType("LEARNING_PLAN");
+        draft.setStatus("PENDING");
+        draft.setExpireTime(LocalDateTime.now().plusHours(24));
+
+        draftMapper.insert(draft);
+        log.info("[PlanDraft] 学习计划草稿已保存: draftId={}, spaceName={}",
+                draftId, learningPlanJson.getString("spaceName"));
+        return draftId;
+    }
+
+    /**
+     * 获取 LEARNING_PLAN 类型草稿的 planJson
+     */
+    public JSONObject getLearningPlanJson(String draftId) {
+        AgentPlanDraft draft = draftMapper.selectByDraftId(draftId);
+        if (draft == null || draft.getPlanJson() == null) {
+            throw new IllegalArgumentException("学习计划草稿不存在: " + draftId);
+        }
+        return JSONObject.parseObject(draft.getPlanJson());
+    }
+
+    /**
      * 保存简单规划草稿（来自 ReAct 流中的 manageLearningTask 工具）
      * 只有目标描述，没有完整规划 JSON，确认时需要 PlanConfirmService 先生成规划再创建
      */
