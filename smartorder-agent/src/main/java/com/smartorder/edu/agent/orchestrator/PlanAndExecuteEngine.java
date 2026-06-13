@@ -241,7 +241,7 @@ public class PlanAndExecuteEngine {
         }
 
         executeTaskListInternal(draft, taskList, context, emitter, draftId,
-                userId, conversationId);
+                userId, conversationId, resumed);
     }
 
     /**
@@ -279,7 +279,7 @@ public class PlanAndExecuteEngine {
         }
 
         executeTaskListInternal(draft, taskList, context, emitter, draftId,
-                userId, parentContext.getConversationId());
+                userId, parentContext.getConversationId(), resumed);
     }
 
     /**
@@ -287,7 +287,8 @@ public class PlanAndExecuteEngine {
      */
     private void executeTaskListInternal(AgentPlanDraft draft, TaskList taskList,
                                          AgentRuntimeContext context, SseEmitter emitter,
-                                         String draftId, Long userId, String conversationId) {
+                                         String draftId, Long userId, String conversationId,
+                                         boolean userConfirmed) {
         // 1. 拓扑排序
         List<TaskItem> sortedTasks = topologicalSort(taskList.getTasks());
 
@@ -350,9 +351,13 @@ public class PlanAndExecuteEngine {
 
             // NORMAL 任务：执行 → 验证 → 重试/重规划 循环
             boolean taskCompleted = executeAndVerifyTask(task, taskOutputs, taskList, draftId,
-                    context, emitter, conversationId, userId);
+                    context, emitter, conversationId, userId, userConfirmed);
 
             if (!taskCompleted) {
+                // 检查是否因 CLARIFY 而暂停，若是则退出主循环
+                if ("PAUSED_CLARIFICATION".equals(taskList.getStatus())) {
+                    return;
+                }
                 // 任务验证失败，尝试重规划剩余任务
                 if (totalReplans >= MAX_TOTAL_REPLANS) {
                     log.warn("[PlanAndExecute] 达到最大重规划次数 {}, 终止计划", MAX_TOTAL_REPLANS);
@@ -369,13 +374,14 @@ public class PlanAndExecuteEngine {
                     // 重新拓扑排序，从当前索引继续
                     sortedTasks = topologicalSort(taskList.getTasks());
                     // taskIndex 保持不变，继续执行重规划后的新任务
-                    dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
-                            "type", "plan_replanned",
-                            "message", "计划已根据执行反馈动态调整",
-                            "taskIndex", taskIndex,
-                            "remainingTasks", sortedTasks.size() - taskIndex,
-                            "totalReplans", totalReplans
-                    ));
+                    java.util.Map<String, Object> replanStatus = new java.util.LinkedHashMap<>();
+                    replanStatus.put("type", "plan_replanned");
+                    replanStatus.put("message", "计划已根据执行反馈动态调整");
+                    replanStatus.put("taskIndex", taskIndex);
+                    replanStatus.put("remainingTasks", sortedTasks.size() - taskIndex);
+                    replanStatus.put("totalReplans", totalReplans);
+                    replanStatus.put("taskList", taskList);
+                    dispatcher.emit(emitter, context, AgentEventType.STATUS, replanStatus);
                 } else {
                     // 无法重规划，跳过当前任务
                     log.warn("[PlanAndExecute] 重规划失败，跳过任务: taskId={}", task.getTaskId());
@@ -390,8 +396,18 @@ public class PlanAndExecuteEngine {
             draftService.updateTaskList(draftId, taskList);
         }
 
-        // 3. 全部完成
-        taskList.setStatus("COMPLETED");
+        // 3. 根据任务实际状态设置最终结果
+        boolean hasFailed = taskList.getTasks().stream()
+                .anyMatch(t -> "FAILED".equals(t.getStatus()));
+        boolean hasCompleted = taskList.getTasks().stream()
+                .anyMatch(t -> "COMPLETED".equals(t.getStatus()));
+        if (hasFailed && hasCompleted) {
+            taskList.setStatus("PARTIAL_COMPLETED");
+        } else if (hasFailed && !hasCompleted) {
+            taskList.setStatus("FAILED");
+        } else {
+            taskList.setStatus("COMPLETED");
+        }
         draftService.updateTaskList(draftId, taskList);
 
         String finalSummary = buildFinalSummary(taskList);
@@ -568,8 +584,7 @@ public class PlanAndExecuteEngine {
                 "question", question
         ));
 
-        // 发射澄清文本
-        dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", question));
+        // 澄清问题已通过 PLAN_PAUSED 事件传递，不再重复发射 TEXT_DELTA
         memoryService.saveAssistantMessage(context.getConversationId(),
                 request != null ? request.getUserId() : context.getUserId(),
                 question, null, context.getTraceId(), null);
@@ -592,7 +607,12 @@ public class PlanAndExecuteEngine {
             if (!"NORMAL".equals(task.getGate())) continue;
 
             executeAndVerifyTask(task, taskOutputs, taskList, draftId, context, emitter,
-                    conversationId, userId);
+                    conversationId, userId, false);
+
+            // 检查是否因 CLARIFY 而暂停，若是则退出
+            if ("PAUSED_CLARIFICATION".equals(taskList.getStatus())) {
+                return;
+            }
 
             taskList.setCurrentTaskIndex(i + 1);
             draftService.updateTaskList(draftId, taskList);
@@ -672,8 +692,10 @@ public class PlanAndExecuteEngine {
     private boolean executeAndVerifyTask(TaskItem task, Map<String, String> taskOutputs,
                                           TaskList taskList, String draftId,
                                           AgentRuntimeContext context, SseEmitter emitter,
-                                          String conversationId, Long userId) {
-        boolean confirmationGranted = "WRITE_CONFIRMED".equals(task.getRiskLevel());
+                                          String conversationId, Long userId,
+                                          boolean userConfirmed) {
+        // 仅当用户已通过确认门确认且任务风险等级要求确认时，才授予写权限
+        boolean confirmationGranted = userConfirmed && "WRITE_CONFIRMED".equals(task.getRiskLevel());
 
         for (int attempt = 0; attempt <= MAX_RETRIES_PER_TASK; attempt++) {
             task.setStatus("RUNNING");
