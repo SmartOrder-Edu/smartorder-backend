@@ -136,12 +136,24 @@ public class PlanAndExecuteEngine {
             // 先执行 CONFIRMATION gate 之前的 NORMAL 任务
             int firstConfirmationIndex = findFirstConfirmationIndex(taskList);
             if (firstConfirmationIndex > 0) {
-                // 有前置 NORMAL 任务，先执行它们
+                // 有前置 NORMAL 任务
                 taskList.setStatus("EXECUTING");
                 String draftId = draftService.saveTaskListDraft(
                         context.getConversationId(), context.getTraceId(),
                         request.getUserId(), taskList);
+                taskList.setConfirmationDraftId(draftId);
+                draftService.updateTaskList(draftId, taskList);
 
+                // 先发送 plan.created 让前端立即展示 PlanChecklist，
+                // 避免前端在 NORMAL 任务执行期间（可能 30-60s）看不到计划结构
+                dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
+                        "draftId", draftId,
+                        "taskList", taskList,
+                        "needsConfirmation", true,
+                        "clarificationQuestion", ""
+                ));
+
+                // 再执行 NORMAL 任务（任务状态通过 plan.task.started/completed 实时同步前端）
                 executeTasksUntilGate(draftId, taskList, firstConfirmationIndex, context, emitter, request);
                 return;
             }
