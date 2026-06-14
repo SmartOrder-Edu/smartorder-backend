@@ -22,6 +22,8 @@ public class Resource {
     private String coverUrl;
     private Integer isAiGenerated;
     private String source;
+    /** 资源状态：planned/generating/generated/failed */
+    private String status;
     private String metadata;
     private Integer isDeleted;
     private LocalDateTime createTime;

@@ -14,3 +14,11 @@ CREATE TABLE IF NOT EXISTS `knowledge_graph_node` (
     KEY `idx_space_id` (`space_id`),
     KEY `idx_space_category` (`space_id`, `category`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识图谱节点表';
+
+-- ============================================================
+-- 迭代演进 ALTER（已合并到 doc/db_migration_iter1.sql 由 DBA 手动执行）
+-- ============================================================
+-- 迭代一（草案完整物化）：加 kp_uid，与 learning_path_node.kp_uid 共享
+-- ALTER TABLE `knowledge_graph_node`
+--     ADD COLUMN `kp_uid` VARCHAR(36) DEFAULT NULL COMMENT '知识点全局UID（与 learning_path_node.kp_uid 一致）' AFTER `name`,
+--     ADD INDEX `idx_space_kp_uid` (`space_id`, `kp_uid`);

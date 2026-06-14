@@ -134,10 +134,13 @@ public class SpaceDashboardServiceImpl implements ISpaceDashboardService {
         PathNodeVO vo = new PathNodeVO();
         vo.setId(node.getId());
         vo.setSpaceId(node.getSpaceId());
+        vo.setParentNodeId(node.getParentNodeId());
+        vo.setKpUid(node.getKpUid());
         vo.setTitle(node.getTitle());
         vo.setDescription(node.getDescription());
         vo.setNodeType(node.getNodeType());
         vo.setEstimatedDurationMinutes(node.getEstimatedDurationMinutes());
+        vo.setPlannedDurationDays(node.getPlannedDurationDays());
         vo.setDifficultyLevel(mapDifficulty(node.getDifficultyLevel()));
         vo.setSortOrder(node.getSortOrder());
         vo.setIsMilestone(node.getIsMilestone() != null && node.getIsMilestone() == 1);
@@ -149,6 +152,7 @@ public class SpaceDashboardServiceImpl implements ISpaceDashboardService {
     private PathEdgeVO toPathEdgeVO(LearningPathEdge edge) {
         PathEdgeVO vo = new PathEdgeVO();
         vo.setId(edge.getId());
+        vo.setSpaceId(edge.getSpaceId());
         vo.setFromNodeId(edge.getFromNodeId());
         vo.setToNodeId(edge.getToNodeId());
         vo.setEdgeType(edge.getEdgeType());

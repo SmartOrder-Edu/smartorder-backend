@@ -22,3 +22,5 @@ CREATE TABLE IF NOT EXISTS `agent_plan_draft` (
     INDEX `idx_user` (`user_id`),
     INDEX `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='智能体规划草稿表';
+
+

@@ -32,6 +32,10 @@ public class AgentPlanDraft {
     private Integer resumeStepIndex;
 
     private String status;
+    /** 该草稿确认后创建的学习空间 ID（幂等回查用，仅 LEARNING_PLAN 类型有值） */
+    private Long createdSpaceId;
+    /** 确认时间 */
+    private LocalDateTime confirmedAt;
     private LocalDateTime expireTime;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
