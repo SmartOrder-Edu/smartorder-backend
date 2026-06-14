@@ -82,6 +82,12 @@ public class SelfManagedReActEngine {
             messages.add(Math.min(1, messages.size()), SystemMessage.from(runtimeContext.getAttachmentContext()));
         }
 
+        // 注入 RAG 上下文（自动触发时生成）
+        if (runtimeContext.getRagContext() != null && !runtimeContext.getRagContext().isBlank()) {
+            messages.add(Math.min(1, messages.size()), SystemMessage.from(runtimeContext.getRagContext()));
+            log.info("[SelfManagedReActEngine] 注入 RAG 上下文，长度={}", runtimeContext.getRagContext().length());
+        }
+
         // 2. 构建工具规范
         List<ToolSpecification> tools = toolAdapter.buildToolSpecifications(routeResult.getRequiredTools());
 

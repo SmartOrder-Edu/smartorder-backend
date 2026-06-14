@@ -54,6 +54,8 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 .conversationId(conversationId)
                 .userId(request.getUserId())
                 .message(request.getMessage())
+                .knowledgeBaseIds(request.getKnowledgeBaseIds())
+                .fileIds(request.getFileIds())
                 .build();
 
         try {
@@ -92,36 +94,33 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 }
             }
 
-            // 0.6 RAG 知识库检索（当指定 knowledgeBaseIds 时）
-            String ragContext = null;
-            if (request.getKnowledgeBaseIds() != null && !request.getKnowledgeBaseIds().isEmpty()) {
-                try {
-                    RagQueryRequest ragRequest = RagQueryRequest.builder()
-                            .userId(request.getUserId())
-                            .query(request.getMessage())
-                            .knowledgeBaseIds(request.getKnowledgeBaseIds())
-                            .retrievalMode(request.getRagRetrievalMode() != null ?
-                                    request.getRagRetrievalMode() : "auto")
-                            .build();
-                    RagQueryResponse ragResponse = ragOrchestrator.retrieve(ragRequest);
-
-                    if (ragResponse.isSuccess() && ragResponse.getContextText() != null
-                            && !ragResponse.getContextText().isBlank()) {
-                        ragContext = ragResponse.getContextText();
-                        context.setRagContext(ragContext);
-                        dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
-                                "type", "rag_retrieval",
-                                "knowledgeBaseIds", request.getKnowledgeBaseIds(),
-                                "usedMode", ragResponse.getUsedRetrievalMode(),
-                                "chunkCount", ragResponse.getChunks() != null ?
-                                        ragResponse.getChunks().size() : 0,
-                                "degraded", ragResponse.isDegraded()
-                        ));
-                    }
-                } catch (Exception e) {
-                    log.warn("[AgentOrchestrator] RAG 知识库检索失败，继续执行: {}", e.getMessage());
-                }
-            }
+//            // 0.5 自动触发 RAG 检索（当提供了 fileIds 或 knowledgeBaseIds 时）
+//            if (shouldAutoTriggerRag(request)) {
+//                try {
+//                    RagQueryRequest ragRequest = RagQueryRequest.builder()
+//                            .userId(request.getUserId())
+//                            .query(request.getMessage())
+//                            .fileIds(request.getFileIds())
+//                            .knowledgeBaseIds(request.getKnowledgeBaseIds())
+//                            .topK(10)
+//                            .build();
+//                    RagQueryResponse ragResponse = ragOrchestrator.retrieve(ragRequest);
+//                    if (ragResponse.isSuccess() && ragResponse.getContextText() != null
+//                            && !ragResponse.getContextText().isBlank()) {
+//                        context.setRagContext(ragResponse.getContextText());
+//                        log.info("[AgentOrchestrator] 自动 RAG 检索成功，chunkCount={}",
+//                                ragResponse.getChunks() != null ? ragResponse.getChunks().size() : 0);
+//                    }
+//                    dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
+//                            "type", "auto_rag",
+//                            "fileIds", request.getFileIds() != null ? request.getFileIds() : List.of(),
+//                            "knowledgeBaseIds", request.getKnowledgeBaseIds() != null ? request.getKnowledgeBaseIds() : List.of(),
+//                            "hit", ragResponse.isSuccess()
+//                    ));
+//                } catch (Exception e) {
+//                    log.warn("[AgentOrchestrator] 自动 RAG 检索失败，继续执行", e);
+//                }
+//            }
 
             // 0.5 显式模式短路：跳过意图路由，直接按用户选择的模式执行
             if (request.getForceMode() != null && !request.getForceMode().isBlank()) {
@@ -139,6 +138,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
             IntentRouteResult routeResult = intentRouteService.route(routeCtx);
             context.setMode(routeResult.getRunMode());
             addAttachmentSearchToolIfNeeded(routeResult, context);
+            addRagToolIfNeeded(routeResult, context);
 
             // 2. 推送 TRACE_STARTED
             dispatcher.emit(emitter, context, AgentEventType.TRACE_STARTED, Map.of(
@@ -229,6 +229,34 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         routeResult.setRequiredTools(tools);
     }
 
+    /**
+     * 当用户指定了知识库ID或文件ID时，注入 ragRetrieve 工具供 LLM 自主调用
+     */
+    private void addRagToolIfNeeded(IntentRouteResult routeResult, AgentRuntimeContext context) {
+        if (routeResult.getRunMode() != AgentRunMode.REACT) {
+            return;
+        }
+        boolean hasKnowledgeBases = context.getKnowledgeBaseIds() != null
+                && !context.getKnowledgeBaseIds().isEmpty();
+        boolean hasFiles = context.getFileIds() != null
+                && !context.getFileIds().isEmpty();
+        if (!hasKnowledgeBases && !hasFiles) {
+            return;
+        }
+
+        List<String> currentTools = routeResult.getRequiredTools() != null
+                ? routeResult.getRequiredTools() : List.of();
+        if (currentTools.contains("ragRetrieve")) {
+            return;
+        }
+
+        List<String> tools = new ArrayList<>(currentTools);
+        tools.add("ragRetrieve");
+        routeResult.setRequiredTools(tools);
+        log.info("[AgentOrchestrator] 注入 ragRetrieve 工具，knowledgeBaseIds={}, fileIds={}",
+                context.getKnowledgeBaseIds(), context.getFileIds());
+    }
+
     // ============ 显式模式短路 ============
 
     /**
@@ -247,6 +275,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         IntentRouteResult forcedResult = buildForcedRouteResult(mode);
         context.setMode(forcedResult.getRunMode());
         addAttachmentSearchToolIfNeeded(forcedResult, context);
+        addRagToolIfNeeded(forcedResult, context);
 
         // 推送 TRACE_STARTED
         dispatcher.emit(emitter, context, AgentEventType.TRACE_STARTED, Map.of(
@@ -299,5 +328,16 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
             return List.of();
         }
         return new ArrayList<>(new LinkedHashSet<>(fileIds));
+    }
+
+    /**
+     * 判断是否需要自动触发 RAG 检索
+     */
+    private boolean shouldAutoTriggerRag(AgentChatRequest request) {
+        boolean hasKnowledgeBases = request.getKnowledgeBaseIds() != null
+                && !request.getKnowledgeBaseIds().isEmpty();
+        boolean hasFiles = request.getFileIds() != null
+                && !request.getFileIds().isEmpty();
+        return hasKnowledgeBases || hasFiles;
     }
 }
