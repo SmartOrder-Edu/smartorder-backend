@@ -4,6 +4,7 @@ import com.smartorder.edu.agent.config.AgentConfiguration;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.memory.ConversationCompressService;
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
+import com.smartorder.edu.agent.prompt.PromptLoader;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.tool.LangChain4jToolAdapter;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
@@ -63,6 +64,7 @@ public class SelfManagedReActEngine {
     private final TraceEventDispatcher dispatcher;
     private final ConversationMemoryService memoryService;
     private final ConversationCompressService compressService;
+    private final PromptLoader promptLoader;
 
     /**
      * 执行 ReAct 循环
@@ -333,7 +335,7 @@ public class SelfManagedReActEngine {
 
         // 7. 达到最大轮数仍未产出回答
         if (finalAnswer == null) {
-            finalAnswer = "我已经进行了多轮分析。建议你把问题拆成更小的部分，我可以继续帮你处理。";
+            finalAnswer = promptLoader.getMaxRoundsFallback();
             log.warn("[ReAct] 达到最大工具调用轮数, traceId={}", runtimeContext.getTraceId());
             if (options.streamTextToUser()) {
                 dispatcher.emit(emitter, runtimeContext, AgentEventType.TEXT_DELTA, Map.of(

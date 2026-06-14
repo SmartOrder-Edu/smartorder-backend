@@ -2,6 +2,7 @@ package com.smartorder.edu.agent.tool.impl;
 
 import com.smartorder.edu.agent.mapper.AgentResourceLogMapper;
 import com.smartorder.edu.agent.model.entity.AgentResourceLog;
+import com.smartorder.edu.agent.prompt.PromptLoader;
 import com.smartorder.edu.agent.tool.ToolCategory;
 import com.smartorder.edu.agent.tool.ToolHandler;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
@@ -24,6 +25,7 @@ public class GenerateResourceTool implements ToolHandler {
 
     private final ChatModel chatLanguageModel;
     private final AgentResourceLogMapper resourceLogMapper;
+    private final PromptLoader promptLoader;
 
     @Override
     public String name() {
@@ -79,20 +81,7 @@ public class GenerateResourceTool implements ToolHandler {
 
     private String buildResourcePrompt(String topic, String resourceType) {
         String typeName = resourceType != null ? resourceType : "学习资料";
-        return String.format("""
-                你是一位专业的教育资源设计师。请为以下知识点生成一份%s：
-
-                知识点：%s
-
-                要求：
-                1. 内容结构清晰，分点阐述
-                2. 包含核心概念解释
-                3. 提供典型例题或应用场景
-                4. 总结关键要点
-                5. 语言通俗易懂，适合大学生阅读
-
-                请直接输出内容，使用 Markdown 格式。
-                """, typeName, topic);
+        return PromptLoader.format(promptLoader.getResourceGenTemplate(), typeName, topic);
     }
 
     @Data

@@ -1,5 +1,6 @@
 package com.smartorder.edu.agent.tool.impl;
 
+import com.smartorder.edu.agent.prompt.PromptLoader;
 import com.smartorder.edu.agent.service.AgentConversationAttachmentService;
 import com.smartorder.edu.agent.tool.ToolCategory;
 import com.smartorder.edu.agent.tool.ToolHandler;
@@ -26,6 +27,7 @@ public class SearchConversationAttachmentsTool implements ToolHandler {
     private static final int MAX_TOP_K = 10;
 
     private final AgentConversationAttachmentService attachmentService;
+    private final PromptLoader promptLoader;
 
     @Override
     public String name() {
@@ -83,7 +85,7 @@ public class SearchConversationAttachmentsTool implements ToolHandler {
         result.put("fileIds", fileIds);
         result.put("hasEnoughEvidence", hasEnoughEvidence);
         result.put("contextText", contextText);
-        result.put("instruction", "回答中如使用附件内容，请用 contextText 中的 [1]、[2] 这样的编号标注来源；如果 hasEnoughEvidence=false，请明确说明附件中未找到足够依据。");
+        result.put("instruction", promptLoader.getCitationInstruction());
         return result;
     }
 

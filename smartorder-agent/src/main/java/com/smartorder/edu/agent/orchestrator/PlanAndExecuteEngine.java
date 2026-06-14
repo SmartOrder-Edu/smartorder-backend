@@ -13,6 +13,7 @@ import com.smartorder.edu.agent.plan.LLMStepVerifier;
 import com.smartorder.edu.agent.plan.PlanDraftService;
 import com.smartorder.edu.agent.plan.PlanSchemaValidator;
 import com.smartorder.edu.agent.plan.PlannerAgent;
+import com.smartorder.edu.agent.prompt.PromptLoader;
 import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentType;
@@ -58,6 +59,7 @@ public class PlanAndExecuteEngine {
     private final ConversationMemoryService memoryService;
     private final SelfManagedReActEngine reActEngine;
     private final LLMStepVerifier stepVerifier;
+    private final PromptLoader promptLoader;
 
     /** 单任务最大重试次数 */
     private static final int MAX_RETRIES_PER_TASK = 3;
@@ -94,6 +96,7 @@ public class PlanAndExecuteEngine {
         try {
             PlannerAgent plannerAgent = AiServices.builder(PlannerAgent.class)
                     .chatModel(planningChatModel)
+                    .systemMessageProvider(memoryId -> promptLoader.getPlannerCreatePrompt())
                     .build();
             planRaw = plannerAgent.createExecutionPlan(prompt);
             log.info("[PlanAndExecute] PlannerAgent 原始响应 (前500字符): {}",
@@ -536,14 +539,8 @@ public class PlanAndExecuteEngine {
 
         String planHint = routeResult.getPlanHint() != null ? routeResult.getPlanHint() : "general";
 
-        return """
-                用户目标：%s
-                学生画像：%s
-                路由提示（意图类型）：%s
-                %s
-
-                请生成任务列表。
-                """.formatted(request.getMessage(), profileJson, planHint, attachmentSection);
+        return PromptLoader.format(promptLoader.getPlannerInputTemplate(),
+                request.getMessage(), profileJson, planHint, attachmentSection);
     }
 
     private void handleClarificationGate(ExecutionPlan plan, int stepIndex,
@@ -689,14 +686,7 @@ public class PlanAndExecuteEngine {
     private ExecutionPlan buildProfileClarificationPlan(AgentChatRequest request) {
         ExecutionStep clarification = ExecutionStep.builder()
                 .stepId("step-1")
-                .description("""
-                        为了制定更准确的学习计划，请先补充几项信息：
-                        1. 你当前的基础水平或年级/专业背景；
-                        2. 目标考试、课程或项目，以及期望完成时间；
-                        3. 每天或每周可投入的学习时间；
-                        4. 已知薄弱点、偏好的学习方式或资料形式。
-                        可以用一两句话回答，不需要很正式。
-                        """)
+                .description(promptLoader.getProfileClarification())
                 .requiredTools(List.of())
                 .dependsOn(List.of())
                 .gate("CLARIFICATION")
@@ -737,20 +727,20 @@ public class PlanAndExecuteEngine {
     }
 
     private String buildTaskSystemMessage(ExecutionStep task, Map<String, String> previousOutputs) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("你正在执行学习计划中的任务 [").append(task.getStepId()).append("]。\n");
-        sb.append("任务描述：").append(task.getDescription()).append("\n");
-        sb.append("预期产出：").append(task.getExpectedOutput() != null ? task.getExpectedOutput() : "根据任务完成").append("\n");
-
+        StringBuilder prevSb = new StringBuilder();
         if (!previousOutputs.isEmpty()) {
-            sb.append("\n前置任务结果：\n");
+            prevSb.append("\n前置任务结果：\n");
             for (Map.Entry<String, String> entry : previousOutputs.entrySet()) {
-                sb.append("- ").append(entry.getKey()).append(": ")
+                prevSb.append("- ").append(entry.getKey()).append(": ")
                         .append(truncate(entry.getValue(), 300)).append("\n");
             }
         }
 
-        return sb.toString();
+        return PromptLoader.format(promptLoader.getTaskSystemMsgTemplate(),
+                task.getStepId(),
+                task.getDescription(),
+                task.getExpectedOutput() != null ? task.getExpectedOutput() : "根据任务完成",
+                prevSb.toString());
     }
 
     // ============ 验证与重规划 ============
@@ -879,6 +869,7 @@ public class PlanAndExecuteEngine {
             // 2. 调用 PlannerAgent.replan()
             PlannerAgent plannerAgent = AiServices.builder(PlannerAgent.class)
                     .chatModel(planningChatModel)
+                    .systemMessageProvider(memoryId -> promptLoader.getPlannerReplanPrompt())
                     .build();
             String replanResponse = plannerAgent.replan(replanPrompt);
 
@@ -933,37 +924,33 @@ public class PlanAndExecuteEngine {
 
     private String buildReplanPrompt(ExecutionPlan plan, ExecutionStep failedTask,
                                      Map<String, String> stepOutputs) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("用户原始目标：").append(plan.getUserGoal()).append("\n\n");
-
-        // 已完成的任务
-        sb.append("已完成的任务：\n");
+        StringBuilder completedSb = new StringBuilder();
         for (ExecutionStep task : plan.getSteps()) {
             if ("COMPLETED".equals(task.getStatus())) {
-                sb.append("- ").append(task.getStepId()).append(": ").append(task.getDescription()).append("\n");
-                sb.append("  结果: ").append(truncate(task.getResultSummary(), 200)).append("\n");
+                completedSb.append("- ").append(task.getStepId()).append(": ").append(task.getDescription()).append("\n");
+                completedSb.append("  结果: ").append(truncate(task.getResultSummary(), 200)).append("\n");
             }
         }
 
-        // 当前失败的任务
-        sb.append("\n验证失败的任务：\n");
-        sb.append("- ").append(failedTask.getStepId()).append(": ").append(failedTask.getDescription()).append("\n");
-        sb.append("  失败原因: ").append(failedTask.getErrorMessage() != null
+        StringBuilder failedSb = new StringBuilder();
+        failedSb.append("- ").append(failedTask.getStepId()).append(": ").append(failedTask.getDescription()).append("\n");
+        failedSb.append("  失败原因: ").append(failedTask.getErrorMessage() != null
                 ? failedTask.getErrorMessage() : "结果未通过质量验证").append("\n");
-        sb.append("  预期产出: ").append(failedTask.getExpectedOutput() != null
+        failedSb.append("  预期产出: ").append(failedTask.getExpectedOutput() != null
                 ? failedTask.getExpectedOutput() : "根据任务描述完成").append("\n");
 
-        // 原始计划的剩余任务
-        sb.append("\n原始计划中尚未执行的任务（供参考，可自由调整）：\n");
+        StringBuilder remainingSb = new StringBuilder();
         for (ExecutionStep task : plan.getSteps()) {
             if (!"COMPLETED".equals(task.getStatus()) && !task.getStepId().equals(failedTask.getStepId())) {
-                sb.append("- ").append(task.getStepId()).append(": ").append(task.getDescription()).append("\n");
+                remainingSb.append("- ").append(task.getStepId()).append(": ").append(task.getDescription()).append("\n");
             }
         }
 
-        sb.append("\n请根据以上信息，重新规划剩余任务。");
-
-        return sb.toString();
+        return PromptLoader.format(promptLoader.getReplanInputTemplate(),
+                plan.getUserGoal(),
+                completedSb.toString(),
+                failedSb.toString(),
+                remainingSb.toString());
     }
 
     private String extractJson(String response) {
