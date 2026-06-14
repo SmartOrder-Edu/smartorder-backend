@@ -82,6 +82,7 @@ public class AgentConfiguration {
                 .apiKey(apiKey)
                 .baseUrl(baseUrl)
                 .modelName(modelName)
+                .responseFormat("json_object")
                 .timeout(Duration.ofSeconds(120))
                 .build();
     }

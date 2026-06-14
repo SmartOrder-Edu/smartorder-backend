@@ -11,6 +11,8 @@ public class KnowledgeGraphNode {
     private Long id;
     private Long spaceId;
     private String name;
+    /** 知识点全局 UID（与 learning_path_node.kp_uid 一致） */
+    private String kpUid;
     private String description;
     private String category;
     private Integer importance;

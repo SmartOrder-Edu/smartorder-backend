@@ -7,6 +7,11 @@ import com.smartorder.edu.agent.model.entity.AgentTraceEvent;
 import com.smartorder.edu.agent.orchestrator.PlanAndExecuteEngine;
 import com.smartorder.edu.agent.plan.PlanConfirmService;
 import com.smartorder.edu.agent.plan.PlanDraftService;
+import com.smartorder.edu.agent.plan.PlanDraftService.DraftValidationResult;
+import com.smartorder.edu.agent.route.AgentRunMode;
+import com.smartorder.edu.agent.trace.AgentEventType;
+import com.smartorder.edu.agent.trace.AgentRuntimeContext;
+import com.smartorder.edu.agent.trace.TraceEventDispatcher;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
@@ -18,9 +23,11 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Agent 规划控制器——规划确认、trace 查询等非对话接口。
@@ -38,6 +45,7 @@ public class AgentPlanController {
     private final PlanDraftService planDraftService;
     private final PlanAndExecuteEngine planAndExecuteEngine;
     private final AgentTraceEventMapper traceEventMapper;
+    private final TraceEventDispatcher dispatcher;
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     @PostMapping(value = "/plan/confirm", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -48,38 +56,80 @@ public class AgentPlanController {
         String conversationId = request.getConversationId() != null
                 ? request.getConversationId() : UUID.randomUUID().toString();
         String traceId = UUID.randomUUID().toString();
+        String draftId = request.getDraftId();
 
         SseEmitter emitter = new SseEmitter(300_000L); // 5 分钟，执行步骤较多
-        log.info("[PlanConfirm] 开始执行规划: userId={}, draftId={}", userId, request.getDraftId());
+        log.info("[PlanConfirm] 开始执行规划: userId={}, draftId={}", userId, draftId);
 
         executor.execute(() -> {
-            // 根据 planType 分发到不同引擎
-            AgentPlanDraft draft = planDraftService.getByDraftId(request.getDraftId());
+            // 先按草稿类型路由（保持 EXECUTION_PLAN 链路不变）
+            AgentPlanDraft draft = planDraftService.getByDraftId(draftId);
             if (draft == null) {
-                log.error("[PlanConfirm] 草稿不存在: {}", request.getDraftId());
-                emitter.completeWithError(
-                        new IllegalArgumentException("规划草稿不存在: " + request.getDraftId()));
+                log.error("[PlanConfirm] 草稿不存在: {}", draftId);
+                emitErrorAndClose(emitter, conversationId, userId, traceId,
+                        "DRAFT_NOT_FOUND", "学习计划草稿不存在: " + draftId);
                 return;
             }
 
             String planType = draft.getPlanType();
-            if ("LEARNING_PLAN".equals(planType)) {
-                // 学习计划草稿：创建学习空间（空间 + 学习路径 + 知识图谱）
-                planConfirmService.createLearningSpace(
-                        request.getDraftId(), userId, conversationId, emitter, traceId);
-            } else if ("EXECUTION_PLAN".equals(planType)) {
-                // Agent 执行规划：从确认门恢复执行
+            if ("EXECUTION_PLAN".equals(planType)) {
+                // Agent 执行规划：从确认门恢复执行（保持现有逻辑）
                 planAndExecuteEngine.executeExecutionPlan(
-                        request.getDraftId(), userId, conversationId, emitter, traceId);
-            } else {
+                        draftId, userId, conversationId, emitter, traceId);
+                return;
+            }
+
+            if (!"LEARNING_PLAN".equals(planType)) {
                 log.error("[PlanConfirm] 未知的 planType: {}", planType);
-                emitter.completeWithError(
-                        new IllegalArgumentException("未知的草稿类型: " + planType));
+                emitErrorAndClose(emitter, conversationId, userId, traceId,
+                        "UNKNOWN_PLAN_TYPE", "未知的草稿类型: " + planType);
+                return;
+            }
+
+            // ============ LEARNING_PLAN 校验前置 ============
+            DraftValidationResult result = planDraftService.validateForConfirm(draftId, userId);
+            switch (result.status()) {
+                case OK:
+                    planConfirmService.createLearningSpace(
+                            draftId, userId, conversationId, emitter, traceId);
+                    return;
+                case ALREADY_CONFIRMED:
+                    log.info("[PlanConfirm] 草稿已确认（Controller 层快速返回）: draftId={}, spaceId={}",
+                            draftId, result.createdSpaceId());
+                    AgentRuntimeContext ctx = buildContext(traceId, conversationId, userId);
+                    dispatcher.emit(emitter, ctx, AgentEventType.STATUS, Map.of(
+                            "type", "space_already_created",
+                            "spaceId", result.createdSpaceId(),
+                            "message", "学习空间已创建过，直接进入即可。"
+                    ));
+                    dispatcher.complete(emitter, ctx);
+                    return;
+                case NOT_FOUND:
+                    emitErrorAndClose(emitter, conversationId, userId, traceId,
+                            "DRAFT_NOT_FOUND", result.message());
+                    return;
+                case FORBIDDEN:
+                    emitErrorAndClose(emitter, conversationId, userId, traceId,
+                            "FORBIDDEN", result.message());
+                    return;
+                case EXPIRED:
+                    emitErrorAndClose(emitter, conversationId, userId, traceId,
+                            "DRAFT_EXPIRED", result.message());
+                    return;
+                case WRONG_TYPE:
+                    emitErrorAndClose(emitter, conversationId, userId, traceId,
+                            "WRONG_PLAN_TYPE", result.message());
+                    return;
+                case WRONG_STATUS:
+                default:
+                    emitErrorAndClose(emitter, conversationId, userId, traceId,
+                            "DRAFT_WRONG_STATUS", result.message());
+                    return;
             }
         });
 
-        emitter.onTimeout(() -> log.warn("[PlanConfirm] SSE 超时: draftId={}", request.getDraftId()));
-        emitter.onError(ex -> log.error("[PlanConfirm] SSE 错误: draftId={}", request.getDraftId(), ex));
+        emitter.onTimeout(() -> log.warn("[PlanConfirm] SSE 超时: draftId={}", draftId));
+        emitter.onError(ex -> log.error("[PlanConfirm] SSE 错误: draftId={}", draftId, ex));
 
         return emitter;
     }
@@ -98,5 +148,22 @@ public class AgentPlanController {
     private Long getCurrentUserId() {
         Claims claims = ThreadLocalUtils.get();
         return claims.get("userId", Long.class);
+    }
+
+    private AgentRuntimeContext buildContext(String traceId, String conversationId, Long userId) {
+        return AgentRuntimeContext.builder()
+                .traceId(traceId)
+                .conversationId(conversationId)
+                .userId(userId)
+                .mode(AgentRunMode.PLAN_AND_EXECUTE)
+                .sequence(new AtomicInteger(0))
+                .build();
+    }
+
+    private void emitErrorAndClose(SseEmitter emitter, String conversationId, Long userId,
+                                    String traceId, String errorCode, String message) {
+        log.warn("[PlanConfirm] {} : {}", errorCode, message);
+        AgentRuntimeContext ctx = buildContext(traceId, conversationId, userId);
+        dispatcher.error(emitter, ctx, new IllegalStateException(errorCode + ": " + message));
     }
 }

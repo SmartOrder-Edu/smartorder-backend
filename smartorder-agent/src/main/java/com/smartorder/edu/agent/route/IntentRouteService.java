@@ -167,9 +167,10 @@ public class IntentRouteService {
         }
 
         // 1. 资源生成类（最高置信度，显式命令词）→ PlanAndExecute
+        //    工具由 PlannerAgent 动态决定，路由层不预设
         if (containsAny(message, RESOURCE_GEN_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.RESOURCE_GENERATION, AgentRunMode.PLAN_AND_EXECUTE,
-                    0.90, List.of("getStudentProfile", "queryKnowledge", "generateResource", "generateQuiz"),
+                    0.90, List.of(),
                     "用户需要复杂资源生成");
         }
 
@@ -181,16 +182,17 @@ public class IntentRouteService {
         }
 
         // 3. 明确学习规划请求 → PlanAndExecute
+        //    工具由 PlannerAgent 动态决定，路由层不预设
         if (containsAny(message, PLANNING_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.GOAL_PLANNING, AgentRunMode.PLAN_AND_EXECUTE,
-                    0.85, List.of("getStudentProfile"),
+                    0.85, List.of(),
                     "用户明确要求制定学习计划");
         }
 
         // 4. 习题答疑类
         if (containsAny(message, HELP_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.PROBLEM_HELP, AgentRunMode.REACT,
-                    0.85, List.of("getStudentProfile", "queryKnowledge", "queryTasks"),
+                    0.85, List.of("getStudentProfile", "queryKnowledge", "queryTasks", "webSearch"),
                     "用户需要学习辅导");
         }
 
@@ -204,7 +206,7 @@ public class IntentRouteService {
         // 6. 任务管理
         if (containsAny(message, TASK_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.TASK_MANAGEMENT, AgentRunMode.REACT,
-                    0.85, List.of("queryTasks", "manageLearningTask"),
+                    0.85, List.of("queryTasks"),
                     "用户管理学习任务");
         }
 
@@ -306,11 +308,10 @@ public class IntentRouteService {
         }
 
         return switch (intent) {
-            case PROBLEM_HELP -> List.of("getStudentProfile", "queryKnowledge", "queryTasks", "ragRetrieve");
+            case PROBLEM_HELP -> List.of("getStudentProfile", "queryKnowledge", "queryTasks", "webSearch");
             case PROGRESS_REVIEW -> List.of("queryLearningProgress", "getStudentProfile");
+            case KNOWLEDGE_QA, DIAGRAM_GENERATION, UNKNOWN -> List.of("webSearch","ragRetrieve");
             case TASK_MANAGEMENT -> List.of("queryTasks", "manageLearningTask");
-            case KNOWLEDGE_QA -> List.of("ragRetrieve");
-            case DIAGRAM_GENERATION, UNKNOWN -> List.of();
             default -> List.of(); // GOAL_PLANNING, PLAN_CONFIRMATION, RESOURCE_GENERATION → PLAN_AND_EXECUTE
         };
     }
@@ -321,7 +322,7 @@ public class IntentRouteService {
                 .intentEnum(IntentType.KNOWLEDGE_QA)
                 .complexity("简单")
                 .runMode(AgentRunMode.REACT)
-                .requiredTools(List.of())
+                .requiredTools(List.of("webSearch"))
                 .confidence(0.5)
                 .source(RoutingSource.KEYWORD)
                 .reason("未命中规则，默认使用 REACT 模式")

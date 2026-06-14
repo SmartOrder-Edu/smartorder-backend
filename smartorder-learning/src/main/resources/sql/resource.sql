@@ -23,3 +23,12 @@ CREATE TABLE IF NOT EXISTS `resource` (
     KEY `idx_path_node_id` (`path_node_id`),
     KEY `idx_task_id` (`task_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='学习资源表';
+
+-- ============================================================
+-- 迭代演进 ALTER（已合并到 doc/db_migration_iter1.sql 由 DBA 手动执行）
+-- ============================================================
+-- 迭代一（草案完整物化）：加 status（资源生命周期）
+-- 默认 'generated' 是为了不破坏现有数据语义；新草案落库的 phase.resources 写为 'planned'
+-- ALTER TABLE `resource`
+--     ADD COLUMN `status` VARCHAR(20) NOT NULL DEFAULT 'generated' COMMENT '资源状态：planned/generating/generated/failed' AFTER `source`,
+--     ADD INDEX `idx_space_status` (`space_id`, `status`);

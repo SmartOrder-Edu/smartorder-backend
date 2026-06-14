@@ -164,4 +164,73 @@ public class PlanDraftService {
         draft.setStatus("CONFIRMED");
         draftMapper.updateById(draft);
     }
+
+    // ============ 幂等校验（LEARNING_PLAN 草稿确认前置） ============
+
+    /**
+     * 校验草稿是否可被当前用户确认。不抛异常，由调用方根据 status 分支处理（SSE 错误事件）。
+     *
+     * @param draftId 草稿 ID
+     * @param currentUserId 当前用户 ID
+     * @return 校验结果（含具体错误状态、原 draft 实体、若已确认则带回 createdSpaceId）
+     */
+    public DraftValidationResult validateForConfirm(String draftId, Long currentUserId) {
+        AgentPlanDraft draft = draftMapper.selectByDraftId(draftId);
+        if (draft == null) {
+            return new DraftValidationResult(DraftValidationResult.Status.NOT_FOUND, null, null,
+                    "学习计划草稿不存在: " + draftId);
+        }
+        if (!draft.getUserId().equals(currentUserId)) {
+            return new DraftValidationResult(DraftValidationResult.Status.FORBIDDEN, draft, null,
+                    "无权操作他人的学习计划草稿");
+        }
+        if (!"LEARNING_PLAN".equals(draft.getPlanType())) {
+            return new DraftValidationResult(DraftValidationResult.Status.WRONG_TYPE, draft, null,
+                    "草稿类型不是 LEARNING_PLAN: " + draft.getPlanType());
+        }
+        // 已确认 → 幂等返回已创建的 spaceId
+        if ("CONFIRMED".equals(draft.getStatus())) {
+            return new DraftValidationResult(DraftValidationResult.Status.ALREADY_CONFIRMED, draft,
+                    draft.getCreatedSpaceId(),
+                    "草稿已确认，对应学习空间 ID=" + draft.getCreatedSpaceId());
+        }
+        if ("CANCELLED".equals(draft.getStatus())) {
+            return new DraftValidationResult(DraftValidationResult.Status.WRONG_STATUS, draft, null,
+                    "草稿已取消，无法确认");
+        }
+        if ("EXPIRED".equals(draft.getStatus())) {
+            return new DraftValidationResult(DraftValidationResult.Status.EXPIRED, draft, null,
+                    "草稿已过期");
+        }
+        if (!"PENDING".equals(draft.getStatus())) {
+            return new DraftValidationResult(DraftValidationResult.Status.WRONG_STATUS, draft, null,
+                    "草稿状态非 PENDING: " + draft.getStatus());
+        }
+        // 过期时间检查
+        if (draft.getExpireTime() != null && LocalDateTime.now().isAfter(draft.getExpireTime())) {
+            return new DraftValidationResult(DraftValidationResult.Status.EXPIRED, draft, null,
+                    "草稿已超过有效期 (expireTime=" + draft.getExpireTime() + ")");
+        }
+        return new DraftValidationResult(DraftValidationResult.Status.OK, draft, null, "OK");
+    }
+
+    /**
+     * 校验结果。OK 时 draft 非空；ALREADY_CONFIRMED 时 createdSpaceId 非空。
+     */
+    public record DraftValidationResult(
+            Status status,
+            AgentPlanDraft draft,
+            Long createdSpaceId,
+            String message
+    ) {
+        public enum Status {
+            OK,
+            NOT_FOUND,
+            FORBIDDEN,
+            EXPIRED,
+            ALREADY_CONFIRMED,
+            WRONG_TYPE,
+            WRONG_STATUS
+        }
+    }
 }

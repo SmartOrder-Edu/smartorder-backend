@@ -1,7 +1,6 @@
 package com.smartorder.edu.agent.orchestrator;
 
 import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.model.dto.ExecutionPlan;
@@ -18,12 +17,10 @@ import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentType;
 import com.smartorder.edu.agent.tool.LangChain4jToolAdapter;
-import com.smartorder.edu.agent.tool.ToolInvokeContext;
 import com.smartorder.edu.agent.tool.ToolRegistry;
 import com.smartorder.edu.agent.trace.AgentEventType;
 import com.smartorder.edu.agent.trace.AgentRuntimeContext;
 import com.smartorder.edu.agent.trace.TraceEventDispatcher;
-import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.AiServices;
 import lombok.RequiredArgsConstructor;
@@ -79,19 +76,10 @@ public class PlanAndExecuteEngine {
                 "message", "正在分析目标并生成任务计划"
         ));
 
-        // 2. 预取学生画像
-        String profileJson = preFetchProfile(request, context, emitter);
+        // 2. 构建 PlannerAgent prompt（工具需求由 PlannerAgent 在执行计划中动态决定）
+        String prompt = buildPlannerPrompt(request, routeResult, context);
 
-        if (shouldCollectProfileDetails(routeResult, profileJson)) {
-            ExecutionPlan clarificationPlan = buildProfileClarificationPlan(request);
-            handleClarificationGate(clarificationPlan, 0, context, emitter, request);
-            return;
-        }
-
-        // 3. 构建 PlannerAgent prompt
-        String prompt = buildPlannerPrompt(request, routeResult, profileJson, context);
-
-        // 4. 调用 PlannerAgent 生成 ExecutionPlan
+        // 3. 调用 PlannerAgent 生成 ExecutionPlan
         String planRaw;
         try {
             PlannerAgent plannerAgent = AiServices.builder(PlannerAgent.class)
@@ -113,7 +101,7 @@ public class PlanAndExecuteEngine {
             return;
         }
 
-        // 5. 校验 ExecutionPlan
+        // 4. 校验 ExecutionPlan
         ExecutionPlan plan;
         try {
             plan = schemaValidator.validateAndParseExecutionPlan(planRaw);
@@ -121,24 +109,24 @@ public class PlanAndExecuteEngine {
             log.error("[PlanAndExecute] ExecutionPlan 校验失败: {}, 原始响应(前300字符): {}",
                     e.getMessage(),
                     planRaw != null ? planRaw.substring(0, Math.min(300, planRaw.length())) : "null");
-            String errorMsg = "生成的任务计划格式不正确，请重新描述你的目标。";
+            String errorMsg = "抱歉，生成任务计划时机型返回格式异常，请稍后重试。";
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", errorMsg));
             memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                     errorMsg, null, context.getTraceId(), null);
             return;
         }
 
-        // 6. 初始化 ExecutionPlan 元数据
+        // 5. 初始化 ExecutionPlan 元数据
         plan.setStatus("DRAFT");
 
-        // 7. 检查第一个 task 是否是 CLARIFICATION gate → 立即处理
+        // 6. 检查第一个 task 是否是 CLARIFICATION gate → 立即处理
         ExecutionStep firstStep = plan.getSteps().get(0);
         if ("CLARIFICATION".equals(firstStep.getGate())) {
             handleClarificationGate(plan, 0, context, emitter, request);
             return;
         }
 
-        // 8. 检查是否有 CONFIRMATION gate → 保存草稿并暂停
+        // 7. 检查是否有 CONFIRMATION gate → 保存草稿并暂停
         boolean hasConfirmationGate = plan.getSteps().stream()
                 .anyMatch(t -> "CONFIRMATION".equals(t.getGate()));
 
@@ -185,7 +173,7 @@ public class PlanAndExecuteEngine {
             return;
         }
 
-        // 9. 无门 → 保存草稿，发射 PLAN_CREATED，等待用户确认后执行
+        // 8. 无门 → 保存草稿，发射 PLAN_CREATED，等待用户确认后执行
         String draftId = draftService.saveExecutionPlanDraft(
                 context.getConversationId(), context.getTraceId(),
                 request.getUserId(), plan);
@@ -505,33 +493,8 @@ public class PlanAndExecuteEngine {
 
     // ============ 私有方法 ============
 
-    private String preFetchProfile(AgentChatRequest request, AgentRuntimeContext context, SseEmitter emitter) {
-        if (!toolRegistry.contains("getStudentProfile")) {
-            return "{}";
-        }
-        try {
-            ToolInvokeContext toolCtx = ToolInvokeContext.builder()
-                    .userId(request.getUserId())
-                    .conversationId(context.getConversationId())
-                    .traceId(context.getTraceId())
-                    .runtimeContext(context)
-                    .emitter(emitter)
-                    .build();
-
-            ToolExecutionRequest toolReq = ToolExecutionRequest.builder()
-                    .name("getStudentProfile")
-                    .arguments("{}")
-                    .build();
-
-            return toolAdapter.execute(toolReq, toolCtx);
-        } catch (Exception e) {
-            log.warn("[PlanAndExecute] 获取学生画像失败，继续生成规划: {}", e.getMessage());
-            return "{}";
-        }
-    }
-
     private String buildPlannerPrompt(AgentChatRequest request, IntentRouteResult routeResult,
-                                       String profileJson, AgentRuntimeContext context) {
+                                       AgentRuntimeContext context) {
         String attachmentSection = "";
         if (context.getAttachmentContext() != null && !context.getAttachmentContext().isBlank()) {
             attachmentSection = "\n用户上传附件摘录：\n" + context.getAttachmentContext();
@@ -540,7 +503,7 @@ public class PlanAndExecuteEngine {
         String planHint = routeResult.getPlanHint() != null ? routeResult.getPlanHint() : "general";
 
         return PromptLoader.format(promptLoader.getPlannerInputTemplate(),
-                request.getMessage(), profileJson, planHint, attachmentSection);
+                request.getMessage(), planHint, attachmentSection);
     }
 
     private void handleClarificationGate(ExecutionPlan plan, int stepIndex,
@@ -650,80 +613,6 @@ public class PlanAndExecuteEngine {
         // 4. 通过 ReAct 引擎静默执行子任务，结果只进入步骤状态，不进入 AI 正文
         return reActEngine.executeInternalTask(taskRequest, taskRoute, context, emitter,
                 taskSystemMessage, previousOutputs, confirmationGranted);
-    }
-
-    private boolean shouldCollectProfileDetails(IntentRouteResult routeResult, String profileJson) {
-        boolean goalPlanning = IntentType.GOAL_PLANNING.equals(routeResult.getIntentEnum())
-                || "goal_planning".equals(routeResult.getPlanHint());
-        if (!goalPlanning) {
-            return false;
-        }
-        if (profileJson == null || profileJson.isBlank()
-                || "{}".equals(profileJson.trim()) || "null".equalsIgnoreCase(profileJson.trim())) {
-            return true;
-        }
-        try {
-            JSONObject profile = JSON.parseObject(profileJson);
-            boolean emptyCoreProfile = isEmptyProfileSection(profile.getJSONObject("basicProfile"))
-                    && isEmptyProfileSection(profile.getJSONObject("knowledgeProfile"))
-                    && isEmptyProfileSection(profile.getJSONObject("preferenceProfile"));
-            if (emptyCoreProfile) {
-                return true;
-            }
-
-            Number confidence = profile.getObject("confidenceScore", Number.class);
-            return confidence != null && confidence.doubleValue() < 30;
-        } catch (Exception e) {
-            log.warn("[PlanAndExecute] 画像完整性判断失败，继续正常规划: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    private boolean isEmptyProfileSection(JSONObject section) {
-        return section == null || section.isEmpty();
-    }
-
-    private ExecutionPlan buildProfileClarificationPlan(AgentChatRequest request) {
-        ExecutionStep clarification = ExecutionStep.builder()
-                .stepId("step-1")
-                .description(promptLoader.getProfileClarification())
-                .requiredTools(List.of())
-                .dependsOn(List.of())
-                .gate("CLARIFICATION")
-                .riskLevel("READ")
-                .expectedOutput("用户补充的学习背景、目标、时间投入和偏好")
-                .status("PENDING")
-                .build();
-
-        ExecutionStep createPlan = ExecutionStep.builder()
-                .stepId("step-2")
-                .description("基于用户原始目标、用户补充信息和现有画像生成完整学习计划草稿。必须使用 createLearningPlan 工具提交草稿，草稿包含 spaceName、type、goals、startDate、targetEndDate、phases 和 knowledgeGraph。")
-                .requiredTools(List.of("createLearningPlan"))
-                .dependsOn(List.of("step-1"))
-                .gate("NORMAL")
-                .riskLevel("WRITE_DRAFT")
-                .expectedOutput("学习计划草稿（含阶段、学习路径、知识图谱）")
-                .status("PENDING")
-                .build();
-
-        ExecutionStep confirm = ExecutionStep.builder()
-                .stepId("step-3")
-                .description("展示学习计划草稿，等待用户确认是否创建学习空间")
-                .requiredTools(List.of())
-                .dependsOn(List.of("step-2"))
-                .gate("CONFIRMATION")
-                .riskLevel("WRITE_CONFIRMED")
-                .expectedOutput("用户确认结果")
-                .status("PENDING")
-                .build();
-
-        return ExecutionPlan.builder()
-                .userGoal(request.getMessage())
-                .steps(List.of(clarification, createPlan, confirm))
-                .status("DRAFT")
-                .currentStepIndex(0)
-                .stepOutputs(new LinkedHashMap<>())
-                .build();
     }
 
     private String buildTaskSystemMessage(ExecutionStep task, Map<String, String> previousOutputs) {

@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.smartorder.edu.agent.model.dto.ExecutionPlan;
 import com.smartorder.edu.agent.model.dto.ExecutionStep;
+import com.smartorder.edu.agent.tool.ToolRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -16,6 +17,12 @@ import java.util.*;
 @Slf4j
 @Component
 public class PlanSchemaValidator {
+
+    private final ToolRegistry toolRegistry;
+
+    public PlanSchemaValidator(ToolRegistry toolRegistry) {
+        this.toolRegistry = toolRegistry;
+    }
 
     /**
      * 校验并解析规划 JSON
@@ -108,6 +115,19 @@ public class PlanSchemaValidator {
             String riskLevel = step.getString("riskLevel");
             if (riskLevel != null && !VALID_RISK_LEVELS.contains(riskLevel)) {
                 throw new IllegalArgumentException("riskLevel 值无效: " + riskLevel + "，应为 READ/WRITE_DRAFT/WRITE_CONFIRMED");
+            }
+
+            // 校验 requiredTools 中的工具名是否真实存在
+            JSONArray requiredTools = step.getJSONArray("requiredTools");
+            if (requiredTools != null) {
+                for (int j = 0; j < requiredTools.size(); j++) {
+                    String toolName = requiredTools.getString(j);
+                    if (!toolRegistry.contains(toolName)) {
+                        throw new IllegalArgumentException(
+                                "step " + stepId + " 引用了不存在的工具: " + toolName
+                                        + "，可用工具: " + toolRegistry.getRegisteredNames());
+                    }
+                }
             }
         }
 

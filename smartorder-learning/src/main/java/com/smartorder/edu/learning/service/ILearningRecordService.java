@@ -26,6 +26,11 @@ public interface ILearningRecordService {
     List<LearningRecord> getRecentByUserId(Long userId, int days);
 
     /**
+     * 查询指定空间在指定日期范围内的学习记录
+     */
+    List<LearningRecord> getBySpaceIdAndDateRange(Long spaceId, Long userId, LocalDate startDate, LocalDate endDate);
+
+    /**
      * 保存或更新学习记录
      */
     void saveOrUpdate(LearningRecord record);

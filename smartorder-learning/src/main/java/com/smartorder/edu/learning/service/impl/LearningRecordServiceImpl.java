@@ -41,6 +41,14 @@ public class LearningRecordServiceImpl implements ILearningRecordService {
     }
 
     @Override
+    public List<LearningRecord> getBySpaceIdAndDateRange(Long spaceId, Long userId, LocalDate startDate, LocalDate endDate) {
+        QueryWrapper<LearningRecord> qw = new QueryWrapper<>();
+        qw.eq("space_id", spaceId).eq("user_id", userId).eq("is_deleted", 0)
+                .ge("record_date", startDate).le("record_date", endDate).orderByDesc("record_date");
+        return learningRecordMapper.selectList(qw);
+    }
+
+    @Override
     public void saveOrUpdate(LearningRecord record) {
         if (record.getIsDeleted() == null) record.setIsDeleted(0);
         if (record.getId() == null) {

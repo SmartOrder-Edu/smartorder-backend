@@ -38,7 +38,9 @@
 1. stepId 从输入中已完成步骤的编号继续（如已执行到 step-3，则新步骤从 step-3 开始重新编号，或使用 step-3a, step-3b 表示插入的步骤）
 2. dependsOn 只能引用已存在的 stepId（包括已完成的步骤）
 3. 不能出现循环依赖
-4. requiredTools 只能从以下选择：getStudentProfile, queryKnowledge, queryLearningProgress, queryTasks, createLearningPlan, generateResource, generateQuiz, searchConversationAttachments
+4. requiredTools 只能从以下选择：{available_tools_list}
+   各工具说明：
+{available_tools_with_desc}
 5. 步骤总数（含已完成的）不超过 12 个
 6. 如果有无法解决的阻碍，使用 CLARIFICATION gate 向用户追问
 7. queryKnowledge 需要已存在的学习空间ID，无空间时不可用，应依赖 LLM 自身知识体系规划
