@@ -7,7 +7,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 @Component
-public class PromptLoader {
+public class StudentPromptFileLoader {
 
     public String load(String path) {
         try {
