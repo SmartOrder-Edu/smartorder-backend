@@ -35,9 +35,19 @@ public class AgentRuntimeContext {
     private String attachmentContext;
 
     /**
-     * RAG 知识库检索上下文
+     * RAG 检索上下文（自动触发时生成）
      */
     private String ragContext;
+
+    /**
+     * 前端传递的知识库ID列表（用于 RAG 检索）
+     */
+    private List<Long> knowledgeBaseIds;
+
+    /**
+     * 前端传递的文件ID列表（用于 RAG 检索）
+     */
+    private List<Long> fileIds;
 
     private List<Long> allowedAttachmentFileIds;
 
