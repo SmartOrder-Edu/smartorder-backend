@@ -12,7 +12,6 @@ import com.smartorder.edu.student.domain.vo.GenerateQuestionVO;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationItemMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationJobMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
-import com.smartorder.edu.student.util.PromptLoader;
 import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -53,7 +52,7 @@ class EvaluationQuestionServiceImplTest {
 
     @Test
     void createsGenerationJobAndExpandedItemsBeforeAsyncGenerationRuns() {
-        PromptLoader promptLoader = mock(PromptLoader.class);
+        StudentPromptFileLoader promptLoader = mock(StudentPromptFileLoader.class);
         QuestionAiService questionAiService = mock(QuestionAiService.class);
         EvaluationQuestionMapper evaluationQuestionMapper = mock(EvaluationQuestionMapper.class);
         LearningSpaceMapper learningSpaceMapper = mock(LearningSpaceMapper.class);
@@ -141,7 +140,7 @@ class EvaluationQuestionServiceImplTest {
 
     @Test
     void startsGenerationForDifferentQuestionTypesInParallel() {
-        PromptLoader promptLoader = mock(PromptLoader.class);
+        StudentPromptFileLoader promptLoader = mock(StudentPromptFileLoader.class);
         QuestionAiService questionAiService = mock(QuestionAiService.class);
         EvaluationQuestionMapper evaluationQuestionMapper = mock(EvaluationQuestionMapper.class);
         LearningSpaceMapper learningSpaceMapper = mock(LearningSpaceMapper.class);
@@ -218,7 +217,7 @@ class EvaluationQuestionServiceImplTest {
 
     @Test
     void doesNotStartAsyncGenerationWhenInitialItemInsertFails() {
-        PromptLoader promptLoader = mock(PromptLoader.class);
+        StudentPromptFileLoader promptLoader = mock(StudentPromptFileLoader.class);
         QuestionAiService questionAiService = mock(QuestionAiService.class);
         EvaluationQuestionMapper evaluationQuestionMapper = mock(EvaluationQuestionMapper.class);
         LearningSpaceMapper learningSpaceMapper = mock(LearningSpaceMapper.class);
@@ -256,7 +255,7 @@ class EvaluationQuestionServiceImplTest {
 
     @Test
     void listsSavedQuestionsForFrontendPreview() {
-        PromptLoader promptLoader = mock(PromptLoader.class);
+        StudentPromptFileLoader promptLoader = mock(StudentPromptFileLoader.class);
         QuestionAiService questionAiService = mock(QuestionAiService.class);
         EvaluationQuestionMapper evaluationQuestionMapper = mock(EvaluationQuestionMapper.class);
         LearningSpaceMapper learningSpaceMapper = mock(LearningSpaceMapper.class);
