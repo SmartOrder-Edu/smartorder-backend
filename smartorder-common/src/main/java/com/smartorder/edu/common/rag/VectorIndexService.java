@@ -93,7 +93,9 @@ public class VectorIndexService {
                     .annsField("dense_vector")
                     .topK(Math.max(1, topK))
                     .filter(filter)
-                    .outputFields(List.of("*"))
+                    .outputFields(List.of("vector_id", "content", "chunk_id", "user_id",
+                            "knowledge_base_id", "file_id", "document_id", "chunk_index",
+                            "chunk_type", "section_title", "title_path", "page_number", "embedding_model"))
                     .build();
 
             SearchResp resp = milvusClient.search(searchReq);
@@ -128,7 +130,9 @@ public class VectorIndexService {
                     .annsField("dense_vector")
                     .topK(Math.max(1, topK))
                     .filter(filter)
-                    .outputFields(List.of("*"))
+                    .outputFields(List.of("vector_id", "content", "chunk_id", "user_id",
+                            "knowledge_base_id", "file_id", "document_id", "chunk_index",
+                            "chunk_type", "section_title", "title_path", "page_number", "embedding_model"))
                     .build();
 
             SearchResp resp = milvusClient.search(searchReq);
