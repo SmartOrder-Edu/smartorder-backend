@@ -1,5 +1,6 @@
 package com.smartorder.edu.agent.rag.orchestrator;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.smartorder.edu.agent.rag.analysis.QueryAnalyzer;
 import com.smartorder.edu.agent.rag.config.RagConfig;
 import com.smartorder.edu.agent.rag.evaluation.RagEvaluator;
@@ -15,6 +16,8 @@ import com.smartorder.edu.agent.rag.rerank.RrfReranker;
 import com.smartorder.edu.agent.rag.retriever.Retriever;
 import com.smartorder.edu.agent.rag.retriever.RetrieverType;
 import com.smartorder.edu.agent.rag.router.RetrievalRouter;
+import com.smartorder.edu.common.mapper.KnowledgeChunkMapper;
+import com.smartorder.edu.common.model.entity.KnowledgeChunk;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -22,6 +25,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -39,6 +43,7 @@ public class RagOrchestrator {
     private final RrfReranker reranker;
     private final RagEvaluator ragEvaluator;
     private final RagConfig ragConfig;
+    private final KnowledgeChunkMapper knowledgeChunkMapper;
 
     public RagOrchestrator(RagHealthChecker healthChecker,
                            QueryAnalyzer queryAnalyzer,
@@ -46,13 +51,15 @@ public class RagOrchestrator {
                            List<Retriever> retrieverList,
                            RrfReranker reranker,
                            RagEvaluator ragEvaluator,
-                           RagConfig ragConfig) {
+                           RagConfig ragConfig,
+                           KnowledgeChunkMapper knowledgeChunkMapper) {
         this.healthChecker = healthChecker;
         this.queryAnalyzer = queryAnalyzer;
         this.retrievalRouter = retrievalRouter;
         this.reranker = reranker;
         this.ragEvaluator = ragEvaluator;
         this.ragConfig = ragConfig;
+        this.knowledgeChunkMapper = knowledgeChunkMapper;
 
         // 构建检索器映射
         this.retrievers = new HashMap<>();
@@ -110,6 +117,9 @@ public class RagOrchestrator {
 
             // 7. 重排
             List<RagChunk> rerankedChunks = reranker.rerank(chunks);
+
+            // 7.5 查询数据库获取完整分块信息
+            rerankedChunks = enrichChunksWithDbInfo(rerankedChunks);
 
             // 8. 评估
             RagEvaluationResult evaluationResult = ragEvaluator.evaluate(
@@ -257,5 +267,89 @@ public class RagOrchestrator {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * 从数据库查询完整分块信息，补充到 RagChunk 中
+     */
+    private List<RagChunk> enrichChunksWithDbInfo(List<RagChunk> chunks) {
+        if (chunks == null || chunks.isEmpty()) {
+            return chunks;
+        }
+
+        // 收集所有 vectorId
+        List<String> vectorIds = chunks.stream()
+                .map(RagChunk::getVectorId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+
+        if (vectorIds.isEmpty()) {
+            return chunks;
+        }
+
+        try {
+            // 批量查询数据库
+            List<KnowledgeChunk> dbChunks = knowledgeChunkMapper.selectList(
+                    new LambdaQueryWrapper<KnowledgeChunk>()
+                            .in(KnowledgeChunk::getVectorId, vectorIds)
+                            .eq(KnowledgeChunk::getStatus, "active")
+            );
+
+            // 构建 vectorId -> KnowledgeChunk 映射
+            Map<String, KnowledgeChunk> dbChunkMap = dbChunks.stream()
+                    .collect(Collectors.toMap(KnowledgeChunk::getVectorId, c -> c, (a, b) -> a));
+
+            // 补充信息到 RagChunk
+            for (RagChunk chunk : chunks) {
+                KnowledgeChunk dbChunk = dbChunkMap.get(chunk.getVectorId());
+                if (dbChunk != null) {
+                    // 如果 Milvus 中的字段为空，从数据库补充
+                    if (chunk.getChunkId() == null) {
+                        chunk.setChunkId(dbChunk.getId());
+                    }
+                    if (chunk.getKnowledgeBaseId() == null) {
+                        chunk.setKnowledgeBaseId(dbChunk.getKnowledgeBaseId());
+                    }
+                    if (chunk.getFileId() == null) {
+                        chunk.setFileId(dbChunk.getFileId());
+                    }
+                    if (chunk.getDocumentId() == null) {
+                        chunk.setDocumentId(dbChunk.getDocumentId());
+                    }
+                    if (chunk.getPageNumber() == null) {
+                        chunk.setPageNumber(dbChunk.getPageNumber());
+                    }
+                    if (chunk.getSectionTitle() == null) {
+                        chunk.setSectionTitle(dbChunk.getSectionTitle());
+                    }
+                    if (chunk.getTitlePath() == null) {
+                        chunk.setTitlePath(dbChunk.getTitlePath());
+                    }
+                    // 如果 Milvus 中没有内容，从数据库获取
+                    if (chunk.getContent() == null || chunk.getContent().isBlank()) {
+                        chunk.setContent(dbChunk.getContent());
+                    }
+
+                    // 添加额外的元数据
+                    if (chunk.getMetadata() == null) {
+                        chunk.setMetadata(new HashMap<>());
+                    }
+                    chunk.getMetadata().put("contentPreview", dbChunk.getContentPreview());
+                    chunk.getMetadata().put("tokenCount", dbChunk.getTokenCount());
+                    chunk.getMetadata().put("charCount", dbChunk.getCharCount());
+                    chunk.getMetadata().put("chunkType", dbChunk.getChunkType());
+                    chunk.getMetadata().put("sectionLevel", dbChunk.getSectionLevel());
+                }
+            }
+
+            log.info("[RagOrchestrator] 数据库补充分块信息完成，查询到 {} 条记录", dbChunks.size());
+
+        } catch (Exception e) {
+            log.error("[RagOrchestrator] 查询数据库分块信息失败", e);
+            // 不影响主流程，继续返回原结果
+        }
+
+        return chunks;
     }
 }

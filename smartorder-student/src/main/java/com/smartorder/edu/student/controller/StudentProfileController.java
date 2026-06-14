@@ -31,8 +31,8 @@ public class StudentProfileController {
     @Operation(summary = "获取当前用户画像", description = "返回当前登录用户的学生画像（JSON维度结构）")
     public Result<StudentProfile> getProfile() {
         Long userId = getCurrentUserId();
-        StudentProfile profile = studentProfileService.getByUserId(userId);
-        return Result.success(profile);
+//        StudentProfile profile = studentProfileService.getByUserId(userId);
+        return Result.success(null);
     }
 
     @PutMapping
