@@ -20,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 模板类提示词使用 MessageFormat 的 {0} {1} 占位符，调用方通过 format() 方法替换。
  */
 @Slf4j
-@Service
+@Service("agentPromptLoader")
 public class PromptLoader {
 
     private final ResourceLoader resourceLoader;
