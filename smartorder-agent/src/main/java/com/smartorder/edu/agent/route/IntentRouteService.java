@@ -211,7 +211,7 @@ public class IntentRouteService {
         // 7. 简单知识问答（短消息 + 定义类关键词）
         if (message.length() <= 30 && containsAny(message, "什么是", "解释一下", "定义")) {
             return buildKeywordResult(IntentType.KNOWLEDGE_QA, AgentRunMode.REACT,
-                    0.80, List.of(),
+                    0.80, List.of("ragRetrieve"),
                     "简单知识解释");
         }
 
@@ -306,10 +306,11 @@ public class IntentRouteService {
         }
 
         return switch (intent) {
-            case PROBLEM_HELP -> List.of("getStudentProfile", "queryKnowledge", "queryTasks");
+            case PROBLEM_HELP -> List.of("getStudentProfile", "queryKnowledge", "queryTasks", "ragRetrieve");
             case PROGRESS_REVIEW -> List.of("queryLearningProgress", "getStudentProfile");
             case TASK_MANAGEMENT -> List.of("queryTasks", "manageLearningTask");
-            case KNOWLEDGE_QA, DIAGRAM_GENERATION, UNKNOWN -> List.of();
+            case KNOWLEDGE_QA -> List.of("ragRetrieve");
+            case DIAGRAM_GENERATION, UNKNOWN -> List.of();
             default -> List.of(); // GOAL_PLANNING, PLAN_CONFIRMATION, RESOURCE_GENERATION → PLAN_AND_EXECUTE
         };
     }

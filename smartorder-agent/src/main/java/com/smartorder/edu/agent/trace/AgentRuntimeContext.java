@@ -24,10 +24,20 @@ public class AgentRuntimeContext {
 
     private Long userId;
 
+    /**
+     * 用户原始消息
+     */
+    private String message;
+
     @Builder.Default
     private AgentRunMode mode = AgentRunMode.REACT;
 
     private String attachmentContext;
+
+    /**
+     * RAG 知识库检索上下文
+     */
+    private String ragContext;
 
     private List<Long> allowedAttachmentFileIds;
 

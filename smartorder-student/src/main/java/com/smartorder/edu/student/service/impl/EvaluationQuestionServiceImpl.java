@@ -26,6 +26,7 @@ import com.smartorder.edu.student.util.PromptLoader;
 import dev.langchain4j.model.input.PromptTemplate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -56,6 +57,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         return thread;
     });
 
+    @Qualifier("studentPromptLoader")
     private final PromptLoader promptLoader;
     private final EvaluationQuestionMapper evaluationQuestionMapper;
     private final LearningSpaceMapper learningSpaceMapper;

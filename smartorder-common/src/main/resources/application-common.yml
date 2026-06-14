@@ -275,6 +275,32 @@ agent:
   llm:
     thinking-mode: ${AGENT_THINKING_MODE:disabled}
     reasoning-effort: ${AGENT_REASONING_EFFORT:high}
+  rag:
+    enabled: true
+    default-top-k: 10
+    max-top-k: 20
+    default-retrieval-mode: auto
+    analysis:
+      llm-enabled: true
+      simple-threshold: 0.3
+      complex-threshold: 0.7
+    retrieval:
+      vector-weight: 0.7
+      keyword-weight: 0.3
+      max-graph-hops: 3
+      graph-timeout-ms: 5000
+      round-robin-count: 5
+    evaluation:
+      enabled: true
+      pass-threshold: 0.6
+      context-relevance-weight: 0.4
+      faithfulness-weight: 0.3
+      answer-relevance-weight: 0.3
+    degrade:
+      enabled: true
+      complex-to-medium: true
+      medium-to-simple: true
+      alert-on-simple-failure: true
 
 # 讯飞虚拟人交互配置
 xfyun:
