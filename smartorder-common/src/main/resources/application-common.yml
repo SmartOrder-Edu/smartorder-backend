@@ -321,10 +321,3 @@ logging:
   charset:
     console: UTF-8
     file: UTF-8
-
-# MyBatis-Plus 使用数据库自增 ID，避免雪花算法生成的 Long ID 在
-# JavaScript 端精度丢失（JS Number 最大安全整数为 9007199254740991）
-mybatis-plus:
-  global-config:
-    db-config:
-      id-type: auto
