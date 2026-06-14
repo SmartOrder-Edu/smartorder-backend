@@ -108,7 +108,7 @@ public class PlanConfirmService {
             saveKnowledgeGraph(spaceId, plan);
 
             // 标记草稿为已确认
-            draftService.cancelDraft(draftId, userId);
+            draftService.confirmDraft(draftId, userId);
 
             // 通知前端
             dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(

@@ -152,4 +152,16 @@ public class PlanDraftService {
         draft.setStatus("CANCELLED");
         draftMapper.updateById(draft);
     }
+
+    /**
+     * 标记草稿已确认
+     */
+    public void confirmDraft(String draftId, Long userId) {
+        AgentPlanDraft draft = draftMapper.selectByDraftId(draftId);
+        if (draft == null || !draft.getUserId().equals(userId)) {
+            return;
+        }
+        draft.setStatus("CONFIRMED");
+        draftMapper.updateById(draft);
+    }
 }

@@ -146,12 +146,8 @@ public class PlanAndExecuteEngine {
 
                 // 先发送 plan.created 让前端立即展示 PlanChecklist，
                 // 避免前端在 NORMAL 任务执行期间（可能 30-60s）看不到计划结构
-                dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
-                        "draftId", draftId,
-                        "plan", plan,
-                        "needsConfirmation", true,
-                        "clarificationQuestion", ""
-                ));
+                dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
+                        planCreatedPayload(draftId, plan, true, ""));
 
                 // 再执行 NORMAL 任务（任务状态通过 plan.task.started/completed 实时同步前端）
                 executeTasksUntilGate(draftId, plan, firstConfirmationIndex, context, emitter, request);
@@ -168,12 +164,8 @@ public class PlanAndExecuteEngine {
             draftService.updateExecutionPlan(draftId, plan);
 
             // 发射 PLAN_CREATED 事件
-            dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
-                    "draftId", draftId,
-                    "plan", plan,
-                    "needsConfirmation", true,
-                    "clarificationQuestion", ""
-            ));
+            dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
+                    planCreatedPayload(draftId, plan, true, ""));
 
             // 输出摘要
             String summaryText = buildPlanSummaryText(plan);
@@ -192,12 +184,8 @@ public class PlanAndExecuteEngine {
         draftService.updateExecutionPlan(draftId, plan);
 
         // 发射 PLAN_CREATED 事件（前端依赖此事件初始化 currentExecutionPlan）
-        dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
-                "draftId", draftId,
-                "plan", plan,
-                "needsConfirmation", false,
-                "clarificationQuestion", ""
-        ));
+        dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
+                planCreatedPayload(draftId, plan, false, ""));
 
         // 输出计划摘要文本
         String summaryText = buildPlanSummaryText(plan);
@@ -335,12 +323,8 @@ public class PlanAndExecuteEngine {
                 plan.setConfirmationDraftId(draftId);
                 draftService.updateExecutionPlan(draftId, plan);
 
-                dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
-                        "draftId", draftId,
-                        "plan", plan,
-                        "needsConfirmation", true,
-                        "clarificationQuestion", ""
-                ));
+                dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
+                        planCreatedPayload(draftId, plan, true, ""));
 
                 String confirmText = buildConfirmationText(task, plan);
                 dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", confirmText));
@@ -381,6 +365,7 @@ public class PlanAndExecuteEngine {
                     replanStatus.put("remainingTasks", sortedSteps.size() - stepIndex);
                     replanStatus.put("totalReplans", totalReplans);
                     replanStatus.put("plan", plan);
+                    replanStatus.put("taskList", toTaskList(draftId, plan));
                     dispatcher.emit(emitter, context, AgentEventType.STATUS, replanStatus);
                 } else {
                     // 无法重规划，跳过当前任务
@@ -570,12 +555,8 @@ public class PlanAndExecuteEngine {
 
         // 先发射 PLAN_CREATED，确保前端初始化 currentExecutionPlan，
         // 再发射 PLAN_PAUSED 更新状态为暂停
-        dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
-                "draftId", draftId,
-                "plan", plan,
-                "needsConfirmation", false,
-                "clarificationQuestion", question
-        ));
+        dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
+                planCreatedPayload(draftId, plan, false, question));
 
         // 发射暂停事件
         dispatcher.emit(emitter, context, AgentEventType.PLAN_PAUSED, Map.of(
@@ -623,12 +604,8 @@ public class PlanAndExecuteEngine {
         plan.setConfirmationDraftId(draftId);
         draftService.updateExecutionPlan(draftId, plan);
 
-        dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
-                "draftId", draftId,
-                "plan", plan,
-                "needsConfirmation", true,
-                "clarificationQuestion", ""
-        ));
+        dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
+                planCreatedPayload(draftId, plan, true, ""));
 
         String summaryText = buildPlanSummaryText(plan);
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", summaryText));
@@ -986,6 +963,7 @@ public class PlanAndExecuteEngine {
     private Map<String, Object> stepToPayload(ExecutionStep task) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("stepId", task.getStepId());
+        payload.put("taskId", task.getStepId());
         payload.put("description", task.getDescription());
         payload.put("status", task.getStatus());
         payload.put("gate", task.getGate());
@@ -994,6 +972,48 @@ public class PlanAndExecuteEngine {
         if (task.getResultSummary() != null) payload.put("resultSummary", task.getResultSummary());
         if (task.getErrorMessage() != null) payload.put("errorMessage", task.getErrorMessage());
         return payload;
+    }
+
+    private Map<String, Object> planCreatedPayload(String draftId, ExecutionPlan plan,
+                                                   boolean needsConfirmation,
+                                                   String clarificationQuestion) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("draftId", draftId);
+        payload.put("plan", plan);
+        payload.put("taskList", toTaskList(draftId, plan));
+        payload.put("needsConfirmation", needsConfirmation);
+        payload.put("clarificationQuestion", clarificationQuestion != null ? clarificationQuestion : "");
+        return payload;
+    }
+
+    private Map<String, Object> toTaskList(String draftId, ExecutionPlan plan) {
+        Map<String, Object> taskList = new LinkedHashMap<>();
+        taskList.put("userGoal", plan.getUserGoal());
+        taskList.put("planId", plan.getPlanId() != null ? plan.getPlanId() : draftId);
+        taskList.put("tasks", plan.getSteps().stream().map(this::toTaskItem).toList());
+        taskList.put("status", plan.getStatus());
+        taskList.put("currentTaskIndex", plan.getCurrentStepIndex());
+        taskList.put("taskOutputs", plan.getStepOutputs() != null ? plan.getStepOutputs() : Map.of());
+        taskList.put("createdAt", plan.getCreatedAt() != null ? plan.getCreatedAt() : System.currentTimeMillis());
+        taskList.put("clarificationQuestion", plan.getClarificationQuestion() != null ? plan.getClarificationQuestion() : "");
+        taskList.put("confirmationDraftId", draftId);
+        return taskList;
+    }
+
+    private Map<String, Object> toTaskItem(ExecutionStep step) {
+        Map<String, Object> task = new LinkedHashMap<>();
+        task.put("taskId", step.getStepId());
+        task.put("description", step.getDescription());
+        task.put("requiredTools", step.getRequiredTools() != null ? step.getRequiredTools() : List.of());
+        task.put("dependsOn", step.getDependsOn() != null ? step.getDependsOn() : List.of());
+        task.put("gate", step.getGate());
+        task.put("riskLevel", step.getRiskLevel());
+        task.put("expectedOutput", step.getExpectedOutput() != null ? step.getExpectedOutput() : "");
+        task.put("status", step.getStatus());
+        task.put("resultSummary", step.getResultSummary() != null ? step.getResultSummary() : "");
+        task.put("errorMessage", step.getErrorMessage() != null ? step.getErrorMessage() : "");
+        task.put("retryCount", step.getRetryCount());
+        return task;
     }
 
     private String buildPlanSummaryText(ExecutionPlan plan) {
