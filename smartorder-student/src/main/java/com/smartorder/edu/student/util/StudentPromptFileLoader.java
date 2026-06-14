@@ -6,8 +6,8 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
-@Component("studentPromptLoader")
-public class PromptLoader {
+@Component
+public class StudentPromptFileLoader {
 
     public String load(String path) {
         try {

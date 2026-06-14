@@ -22,11 +22,10 @@ import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationItemMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationJobMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
 import com.smartorder.edu.student.service.IEvaluationQuestionService;
-import com.smartorder.edu.student.util.PromptLoader;
+import com.smartorder.edu.student.util.StudentPromptFileLoader;
 import dev.langchain4j.model.input.PromptTemplate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -57,8 +56,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         return thread;
     });
 
-    @Qualifier("studentPromptLoader")
-    private final PromptLoader promptLoader;
+    private final StudentPromptFileLoader studentPromptFileLoader;
     private final EvaluationQuestionMapper evaluationQuestionMapper;
     private final LearningSpaceMapper learningSpaceMapper;
     private final ObjectMapper objectMapper;
@@ -339,8 +337,8 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                                    int optionCount) {
 
         PromptFile promptFile = PromptFile.fromCode(questionType);
-        String commonPrompt = promptLoader.load(COMMON_RULES_FILE);
-        String typeRulePrompt = promptLoader.load(PROMPTS_DIR + promptFile.getPromptFileName());
+        String commonPrompt = studentPromptFileLoader.load(COMMON_RULES_FILE);
+        String typeRulePrompt = studentPromptFileLoader.load(PROMPTS_DIR + promptFile.getPromptFileName());
         String mergedPrompt = commonPrompt.replace("{{questionTypeRules}}", typeRulePrompt);
 
         return PromptTemplate.from(mergedPrompt)
