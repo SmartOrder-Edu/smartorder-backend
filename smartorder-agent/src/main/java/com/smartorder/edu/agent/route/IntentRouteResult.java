@@ -52,7 +52,7 @@ public class IntentRouteResult {
     @Builder.Default
     private List<String> missingSlots = List.of();
 
-    /** 是否需要先规划（生成 TaskList）再执行 */
+    /** 是否需要先规划（生成 ExecutionPlan）再执行 */
     @Builder.Default
     private boolean needsPlanning = false;
 

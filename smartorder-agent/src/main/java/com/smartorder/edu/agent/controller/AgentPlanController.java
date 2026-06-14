@@ -23,9 +23,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Agent 规划控制器——规划确认、trace 查询等非对话接口
+ * Agent 规划控制器——规划确认、trace 查询等非对话接口。
  * <p>
- * 支持 LEGACY（旧 PlanConfirmService）和 TASK_LIST（新 PlanAndExecuteEngine）两种草稿类型。
+ * 支持 EXECUTION_PLAN（Agent 执行规划）和 LEARNING_PLAN（学习计划草稿）两种草稿类型。
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -64,17 +64,17 @@ public class AgentPlanController {
 
             String planType = draft.getPlanType();
             if ("LEARNING_PLAN".equals(planType)) {
-                // 学习计划草稿：仅创建大纲（空间、路径、知识图谱），不创建每日任务
-                planConfirmService.createEntitiesOutlineOnly(
+                // 学习计划草稿：创建学习空间（空间 + 学习路径 + 知识图谱）
+                planConfirmService.createLearningSpace(
                         request.getDraftId(), userId, conversationId, emitter, traceId);
-            } else if ("TASK_LIST".equals(planType)) {
-                // 新架构：PlanAndExecuteEngine 从确认门恢复执行
-                planAndExecuteEngine.executeTaskList(
+            } else if ("EXECUTION_PLAN".equals(planType)) {
+                // Agent 执行规划：从确认门恢复执行
+                planAndExecuteEngine.executeExecutionPlan(
                         request.getDraftId(), userId, conversationId, emitter, traceId);
             } else {
-                // 旧架构（LEGACY 或无 planType）：PlanConfirmService 创建学习空间
-                planConfirmService.confirmAndExecute(
-                        request.getDraftId(), userId, conversationId, emitter, traceId);
+                log.error("[PlanConfirm] 未知的 planType: {}", planType);
+                emitter.completeWithError(
+                        new IllegalArgumentException("未知的草稿类型: " + planType));
             }
         });
 

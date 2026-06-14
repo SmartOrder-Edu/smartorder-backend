@@ -2,7 +2,7 @@ package com.smartorder.edu.agent.route;
 
 import com.alibaba.fastjson.JSON;
 import com.smartorder.edu.agent.mapper.AgentPlanDraftMapper;
-import com.smartorder.edu.agent.model.dto.TaskList;
+import com.smartorder.edu.agent.model.dto.ExecutionPlan;
 import com.smartorder.edu.agent.model.entity.AgentPlanDraft;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,9 +17,7 @@ import java.util.List;
  * 只有在会话状态明确指示某条路径时才返回结果；
  * 否则返回 null，交由下层（关键词/LLM）处理。
  * <p>
- * 支持两种草稿类型：
- * - TASK_LIST（新 PlanAndExecute 架构）：检测 PAUSED_CLARIFICATION / PAUSED_CONFIRMATION
- * - LEGACY（旧 PlanExecuteEngine 架构）：检测 PENDING + 确认词
+ * 支持 EXECUTION_PLAN 草稿类型：检测 PAUSED_CLARIFICATION / PAUSED_CONFIRMATION
  */
 @Slf4j
 @Component
@@ -39,14 +37,14 @@ public class StateRuleRouter {
             return null;
         }
 
-        // ===== 新架构：检测 TASK_LIST 类型的暂停草稿 =====
-        AgentPlanDraft taskListDraft = planDraftMapper.selectActiveTaskListDraft(conversationId);
-        if (taskListDraft != null && "TASK_LIST".equals(taskListDraft.getPlanType())) {
-            TaskList tl = JSON.parseObject(taskListDraft.getTaskListJson(), TaskList.class);
+        // ===== 检测 EXECUTION_PLAN 类型的暂停草稿 =====
+        AgentPlanDraft executionPlanDraft = planDraftMapper.selectActiveExecutionPlanDraft(conversationId);
+        if (executionPlanDraft != null && "EXECUTION_PLAN".equals(executionPlanDraft.getPlanType())) {
+            ExecutionPlan ep = JSON.parseObject(executionPlanDraft.getExecutionPlanJson(), ExecutionPlan.class);
 
             // PAUSED_CLARIFICATION：用户提供了补充信息
-            if ("PAUSED_CLARIFICATION".equals(tl.getStatus())) {
-                log.info("[StateRule] TaskList PAUSED_CLARIFICATION → 恢复规划, draftId={}", taskListDraft.getDraftId());
+            if ("PAUSED_CLARIFICATION".equals(ep.getStatus())) {
+                log.info("[StateRule] ExecutionPlan PAUSED_CLARIFICATION → 恢复规划, draftId={}", executionPlanDraft.getDraftId());
                 return IntentRouteResult.builder()
                         .intentType("规划澄清回复")
                         .intentEnum(IntentType.GOAL_PLANNING)
@@ -61,9 +59,9 @@ public class StateRuleRouter {
             }
 
             // PAUSED_CONFIRMATION + 确认词
-            if ("PAUSED_CONFIRMATION".equals(tl.getStatus())
+            if ("PAUSED_CONFIRMATION".equals(ep.getStatus())
                     && ConfirmationWords.isConfirmationOnly(ctx.getMessage())) {
-                log.info("[StateRule] TaskList PAUSED_CONFIRMATION + 确认词 → 确认执行, draftId={}", taskListDraft.getDraftId());
+                log.info("[StateRule] ExecutionPlan PAUSED_CONFIRMATION + 确认词 → 确认执行, draftId={}", executionPlanDraft.getDraftId());
                 return IntentRouteResult.builder()
                         .intentType(IntentType.PLAN_CONFIRMATION.getChineseName())
                         .intentEnum(IntentType.PLAN_CONFIRMATION)

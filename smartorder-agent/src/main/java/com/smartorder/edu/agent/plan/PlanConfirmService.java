@@ -2,8 +2,6 @@ package com.smartorder.edu.agent.plan;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import com.smartorder.edu.agent.model.entity.AgentResourceLog;
-import com.smartorder.edu.agent.mapper.AgentResourceLogMapper;
 import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.trace.AgentEventType;
 import com.smartorder.edu.agent.trace.AgentRuntimeContext;
@@ -14,7 +12,6 @@ import com.smartorder.edu.knowledge.service.IKnowledgeGraphService;
 import com.smartorder.edu.learning.dto.LearningSpaceDTO;
 import com.smartorder.edu.learning.domain.entity.LearningPathEdge;
 import com.smartorder.edu.learning.domain.entity.LearningPathNode;
-import com.smartorder.edu.learning.domain.entity.Task;
 import com.smartorder.edu.learning.domain.vo.LearningSpaceVO;
 import com.smartorder.edu.learning.service.*;
 import lombok.RequiredArgsConstructor;
@@ -28,10 +25,10 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 规划确认服务——用户确认规划后的执行阶段
- *
- * 执行步骤：
- * 创建空间 → 创建路径节点/边 → 创建任务 → 保存知识图谱 → 生成第一阶段资源 → 登记后续资源
+ * 学习计划确认服务——用户审阅学习计划后的执行阶段。
+ * <p>
+ * 根据学习计划草稿创建学习空间实体：学习空间 → 学习路径节点/边 → 知识图谱。
+ * 不预生成每日学习任务（由 Master Agent 根据当日情况动态调度）。
  */
 @Slf4j
 @Service
@@ -42,23 +39,18 @@ public class PlanConfirmService {
     private final ILearningSpaceService spaceService;
     private final ILearningPathNodeService nodeService;
     private final ILearningPathEdgeService edgeService;
-    private final ITaskService taskService;
     private final IKnowledgeGraphService kgService;
-    private final AgentResourceLogMapper resourceLogMapper;
     private final TraceEventDispatcher dispatcher;
 
     /**
-     * 确认并创建学习空间大纲（LEARNING_PLAN 路径）。
+     * 确认学习计划草稿，创建学习空间（空间 + 学习路径 + 知识图谱）。
      * <p>
-     * 与 {@link #createEntities} 的区别：仅创建结构性实体（空间、路径节点/边、知识图谱），
-     * 不创建每日任务和资源记录。适用于用户审阅学习计划草稿后的确认操作。
-     * <p>
-     * 后续版本可通过独立的 "展开每日任务" 工具补充 task 和 resource。
+     * 不预生成每日学习任务；任务由 Master Agent 根据学生当日情况动态调度。
      */
     @Transactional(rollbackFor = Exception.class)
-    public LearningSpaceVO createEntitiesOutlineOnly(String draftId, Long userId,
-                                                      String conversationId,
-                                                      SseEmitter emitter, String traceId) {
+    public LearningSpaceVO createLearningSpace(String draftId, Long userId,
+                                               String conversationId,
+                                               SseEmitter emitter, String traceId) {
         JSONObject plan = draftService.getLearningPlanJson(draftId);
 
         AgentRuntimeContext context = AgentRuntimeContext.builder()
@@ -87,7 +79,7 @@ public class PlanConfirmService {
                 spaceDTO.setStartDate(plan.getString("startDate") != null
                         ? LocalDate.parse(plan.getString("startDate")) : LocalDate.now());
             } catch (Exception e) {
-                log.warn("[PlanConfirm-outline] startDate 解析失败: {}", plan.getString("startDate"));
+                log.warn("[PlanConfirm] startDate 解析失败: {}", plan.getString("startDate"));
                 spaceDTO.setStartDate(LocalDate.now());
             }
 
@@ -95,13 +87,13 @@ public class PlanConfirmService {
                 try {
                     spaceDTO.setTargetEndDate(LocalDate.parse(plan.getString("targetEndDate")));
                 } catch (Exception e) {
-                    log.warn("[PlanConfirm-outline] targetEndDate 解析失败: {}", plan.getString("targetEndDate"));
+                    log.warn("[PlanConfirm] targetEndDate 解析失败: {}", plan.getString("targetEndDate"));
                 }
             }
 
             LearningSpaceVO spaceVO = spaceService.createSpace(userId, spaceDTO);
             Long spaceId = spaceVO.getId();
-            log.info("[PlanConfirm-outline] 学习空间已创建: spaceId={}", spaceId);
+            log.info("[PlanConfirm] 学习空间已创建: spaceId={}", spaceId);
 
             // 2. 创建学习路径节点和边
             dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
@@ -114,8 +106,6 @@ public class PlanConfirmService {
                     "message", "正在保存知识图谱"
             ));
             saveKnowledgeGraph(spaceId, plan);
-
-            // 跳过 createTasks() 和资源生成登记（outlineOnly 模式）
 
             // 标记草稿为已确认
             draftService.cancelDraft(draftId, userId);
@@ -136,162 +126,14 @@ public class PlanConfirmService {
             ));
 
             dispatcher.complete(emitter, context);
-            log.info("[PlanConfirm-outline] 大纲创建完成: spaceId={}", spaceId);
+            log.info("[PlanConfirm] 学习空间创建完成: spaceId={}", spaceId);
 
             return spaceVO;
         } catch (Exception e) {
-            log.error("[PlanConfirm-outline] 执行失败: draftId={}", draftId, e);
+            log.error("[PlanConfirm] 执行失败: draftId={}", draftId, e);
             dispatcher.error(emitter, context, e);
             throw e;
         }
-    }
-
-    /**
-     * 确认并执行学习规划（LEGACY 路径：从草稿加载 plan JSON）
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public void confirmAndExecute(String draftId, Long userId, String conversationId,
-                                   SseEmitter emitter, String traceId) {
-        JSONObject plan = draftService.confirmAndGet(draftId, userId);
-        AgentRuntimeContext context = AgentRuntimeContext.builder()
-                .traceId(traceId)
-                .conversationId(conversationId)
-                .userId(userId)
-                .mode(AgentRunMode.PLAN_AND_EXECUTE)
-                .sequence(new AtomicInteger(0))
-                .build();
-        try {
-            createEntities(plan, userId, conversationId, emitter, context);
-            dispatcher.complete(emitter, context);
-        } catch (Exception e) {
-            log.error("[PlanConfirm] 执行失败: draftId={}", draftId, e);
-            dispatcher.error(emitter, context, e);
-        }
-    }
-
-    /**
-     * 直接从 plan JSON 创建学习空间实体（无需草稿）。
-     * <p>
-     * 供 TASK_LIST 确认路径使用：用户已通过 PlanAndExecute 的 CONFIRMATION gate 确认，
-     * ManageLearningPlanTool 直接调用此方法创建实体，不再保存 LEGACY 草稿。
-     * <p>
-     * 注意：调用者负责管理 SSE 流的生命周期（complete/error），
-     * 本方法只发射事件不关闭流，以便嵌入到 ReAct 循环中。
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public LearningSpaceVO createEntities(JSONObject plan, Long userId, String conversationId,
-                                          SseEmitter emitter, AgentRuntimeContext context) {
-
-        dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
-                "message", "第1步：创建学习空间"
-        ));
-
-        LearningSpaceDTO spaceDTO = new LearningSpaceDTO();
-        spaceDTO.setName(plan.getString("spaceName"));
-        spaceDTO.setType(plan.getString("type") != null ? plan.getString("type") : "course");
-        spaceDTO.setDescription(plan.getString("description"));
-
-        // goals null-safe
-        JSONArray goalsArr = plan.getJSONArray("goals");
-        spaceDTO.setGoals(goalsArr != null ? goalsArr.toJSONString() : "[]");
-
-        // startDate 解析防御
-        try {
-            spaceDTO.setStartDate(plan.getString("startDate") != null
-                    ? LocalDate.parse(plan.getString("startDate")) : LocalDate.now());
-        } catch (Exception e) {
-            log.warn("[PlanConfirm] startDate 解析失败，使用默认值: {}", plan.getString("startDate"));
-            spaceDTO.setStartDate(LocalDate.now());
-        }
-
-        // targetEndDate 设置
-        if (plan.getString("targetEndDate") != null) {
-            try {
-                spaceDTO.setTargetEndDate(LocalDate.parse(plan.getString("targetEndDate")));
-            } catch (Exception e) {
-                log.warn("[PlanConfirm] targetEndDate 解析失败，忽略: {}", plan.getString("targetEndDate"));
-            }
-        }
-
-        LearningSpaceVO spaceVO = spaceService.createSpace(userId, spaceDTO);
-        Long spaceId = spaceVO.getId();
-        log.info("[PlanConfirm] 学习空间已创建: spaceId={}, name={}", spaceId, spaceVO.getName());
-
-        // 2. 创建学习路径节点和边
-        dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
-                "message", "第2步：创建学习路径和任务"
-        ));
-
-        Map<Integer, Long> phaseIndexToNodeId = createPathNodesAndEdges(spaceId, plan);
-
-        // 3. 创建任务
-        createTasks(userId, spaceId, plan, phaseIndexToNodeId);
-
-        // 4. 保存知识图谱
-        dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
-                "message", "第3步：保存知识图谱"
-        ));
-
-        saveKnowledgeGraph(spaceId, plan);
-
-        // 5. 生成第一阶段资源 + 登记后续资源
-        dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
-                "message", "第4步：准备学习资源"
-        ));
-
-        JSONArray phases = plan.getJSONArray("phases");
-        if (phases == null || phases.isEmpty()) {
-            log.warn("[PlanConfirm] 规划缺少 phases，跳过资源登记");
-        } else {
-            for (int i = 0; i < phases.size(); i++) {
-                JSONObject phase = phases.getJSONObject(i);
-                int phaseIndex = phase.getIntValue("phaseIndex");
-                JSONArray resources = phase.getJSONArray("resources");
-
-                if (resources == null || resources.isEmpty()) continue;
-
-                for (int j = 0; j < resources.size(); j++) {
-                    JSONObject resource = resources.getJSONObject(j);
-                    AgentResourceLog logEntity = new AgentResourceLog();
-                    logEntity.setSpaceId(spaceId);
-                    logEntity.setPhaseIndex(phaseIndex);
-                    logEntity.setResourceType(resource.getString("resourceType"));
-                    logEntity.setTitle(resource.getString("title"));
-                    logEntity.setUserId(userId);
-
-                    if (phaseIndex == 1) {
-                        logEntity.setStatus("PENDING");
-                        logEntity.setGenerationParams(JSONObject.toJSONString(Map.of(
-                                "knowledgePoints", phase.getJSONArray("knowledgePoints"),
-                                "spaceId", spaceId
-                        )));
-                    } else {
-                        logEntity.setStatus("PENDING");
-                    }
-                    resourceLogMapper.insert(logEntity);
-                }
-            }
-        }
-
-        // 6. 通知前端学习空间已创建
-        dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
-                "type", "space_created",
-                "spaceId", spaceId,
-                "spaceName", spaceVO.getName(),
-                "message", "学习空间「" + spaceVO.getName() + "」已创建完成！"
-        ));
-
-        // 7. 完成提示（不关闭 emitter，由调用者管理流生命周期）
-        int phaseCount = plan.getJSONArray("phases") != null ? plan.getJSONArray("phases").size() : 0;
-        dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of(
-                "text", "学习空间「" + spaceVO.getName() + "」已创建完成！\n" +
-                        "包含 " + phaseCount + " 个学习阶段，第一阶段学习资料准备中。\n" +
-                        "你可以进入学习空间开始学习了！"
-        ));
-
-        log.info("[PlanConfirm] 实体创建完成: spaceId={}", spaceId);
-
-        return spaceVO;
     }
 
     // ============ Private Methods ============
@@ -309,8 +151,8 @@ public class PlanConfirmService {
             LearningPathNode node = new LearningPathNode();
             node.setSpaceId(spaceId);
             node.setTitle(phase.getString("phaseName"));
-            node.setDescription(String.join(", ", phase.getJSONArray("knowledgePoints")
-                    .toJavaList(String.class)));
+            JSONArray kps = phase.getJSONArray("knowledgePoints");
+            node.setDescription(kps != null ? String.join(", ", kps.toJavaList(String.class)) : "");
             node.setNodeType("stage");
             node.setSortOrder(phase.getIntValue("phaseIndex"));
             node.setEstimatedDurationMinutes(phase.getIntValue("weeks") * 7 * 60);
@@ -343,46 +185,6 @@ public class PlanConfirmService {
         }
 
         return phaseIndexToNodeId;
-    }
-
-    private void createTasks(Long userId, Long spaceId, JSONObject plan, Map<Integer, Long> phaseIndexToNodeId) {
-        JSONArray phases = plan.getJSONArray("phases");
-        if (phases == null || phases.isEmpty()) return;
-
-        LocalDate startDate = plan.getString("startDate") != null
-                ? LocalDate.parse(plan.getString("startDate")) : LocalDate.now();
-
-        List<Task> tasks = new ArrayList<>();
-        int sortOrder = 0;
-
-        for (int i = 0; i < phases.size(); i++) {
-            JSONObject phase = phases.getJSONObject(i);
-            int phaseIndex = phase.getIntValue("phaseIndex");
-            Long nodeId = phaseIndexToNodeId.get(phaseIndex);
-
-            JSONArray kps = phase.getJSONArray("knowledgePoints");
-            if (kps == null) continue;
-
-            for (int j = 0; j < kps.size(); j++) {
-                Task task = new Task();
-                task.setUserId(userId);
-                task.setSpaceId(spaceId);
-                task.setPathNodeId(nodeId);
-                task.setTitle("学习：" + kps.getString(j));
-                task.setDescription("掌握「" + kps.getString(j) + "」相关知识");
-                task.setTaskType("daily");
-                task.setPriority(3);
-                task.setStatus("pending");
-                task.setDueDate(startDate.plusDays((phaseIndex - 1) * 7L + j));
-                task.setEstimatedDurationMinutes(60);
-                task.setSortOrder(++sortOrder);
-                tasks.add(task);
-            }
-        }
-
-        if (!tasks.isEmpty()) {
-            taskService.batchInsert(tasks);
-        }
     }
 
     private void saveKnowledgeGraph(Long spaceId, JSONObject plan) {

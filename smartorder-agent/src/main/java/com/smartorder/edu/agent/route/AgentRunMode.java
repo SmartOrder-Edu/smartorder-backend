@@ -17,7 +17,7 @@ import lombok.Getter;
 public enum AgentRunMode {
 
     REACT("REACT", "简单问答：直接 ReAct 循环"),
-    PLAN_AND_EXECUTE("PLAN_AND_EXECUTE", "复杂任务：先规划 TaskList，再逐任务 ReAct 执行");
+    PLAN_AND_EXECUTE("PLAN_AND_EXECUTE", "复杂任务：先规划 ExecutionPlan，再逐步 ReAct 执行");
 
     private final String code;
     private final String description;

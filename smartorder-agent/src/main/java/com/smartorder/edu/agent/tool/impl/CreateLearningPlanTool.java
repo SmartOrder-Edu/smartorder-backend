@@ -16,29 +16,25 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 
 /**
- * 学习计划草稿工具——生成并保存完整的学习计划草稿，用于用户审阅。
+ * 创建学习计划工具——生成并保存完整的学习计划草稿，用于用户审阅。
  * <p>
- * 与 {@link ManageLearningPlanTool} 的关键区别：
- * <ul>
- *   <li>本工具只保存草稿（{@code WRITE_DRAFT}），不创建学习空间实体</li>
- *   <li>本工具的 Request DTO 包含完整字段：goals、startDate、targetEndDate、knowledgeGraph</li>
- *   <li>执行后发射 {@code agent.learning_plan.created} 事件，前端展示学习计划预览</li>
- * </ul>
+ * 这是 Plan-and-Execute 流程中产出<b>学习计划</b>的核心工具。
+ * 执行后保存 LEARNING_PLAN 类型草稿，发射 {@code agent.learning_plan.created} 事件，
+ * 前端展示学习计划预览（学习路径 + 知识图谱 + 阶段计划）。
  * <p>
- * 用户审阅后通过 {@code /agent/plan/confirm} 确认创建学习空间，
- * 后端对 LEARNING_PLAN 类型草稿调用 {@code PlanConfirmService.createEntitiesOutlineOnly()}。
+ * 用户审阅后通过 {@code /agent/plan/confirm} 确认，后端创建学习空间。
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class DraftLearningPlanTool implements ToolHandler {
+public class CreateLearningPlanTool implements ToolHandler {
 
     private final PlanDraftService draftService;
     private final TraceEventDispatcher dispatcher;
 
     @Override
     public String name() {
-        return "draftLearningPlan";
+        return "createLearningPlan";
     }
 
     @Override
@@ -54,7 +50,7 @@ public class DraftLearningPlanTool implements ToolHandler {
 
     @Override
     public Class<?> requestType() {
-        return DraftLearningPlanRequest.class;
+        return CreateLearningPlanRequest.class;
     }
 
     @Override
@@ -69,7 +65,7 @@ public class DraftLearningPlanTool implements ToolHandler {
 
     @Override
     public Object execute(Object request, ToolInvokeContext context) {
-        DraftLearningPlanRequest req = (DraftLearningPlanRequest) request;
+        CreateLearningPlanRequest req = (CreateLearningPlanRequest) request;
         Long userId = context.getUserId();
 
         String goalDescription = req.getGoalDescription();
@@ -80,7 +76,7 @@ public class DraftLearningPlanTool implements ToolHandler {
             );
         }
 
-        log.info("[DraftLearningPlan] userId={}, goal={}", userId, goalDescription);
+        log.info("[CreateLearningPlan] userId={}, goal={}", userId, goalDescription);
 
         // 构建完整的 plan JSON
         JSONObject planJson = new JSONObject();
@@ -107,7 +103,7 @@ public class DraftLearningPlanTool implements ToolHandler {
             try {
                 planJson.put("phases", JSONArray.parseArray(req.getPhases()));
             } catch (Exception e) {
-                log.warn("[DraftLearningPlan] phases 解析失败: {}", e.getMessage());
+                log.warn("[CreateLearningPlan] phases 解析失败: {}", e.getMessage());
             }
         }
 
@@ -116,7 +112,7 @@ public class DraftLearningPlanTool implements ToolHandler {
             try {
                 planJson.put("knowledgeGraph", JSONObject.parseObject(req.getKnowledgeGraph()));
             } catch (Exception e) {
-                log.warn("[DraftLearningPlan] knowledgeGraph 解析失败: {}", e.getMessage());
+                log.warn("[CreateLearningPlan] knowledgeGraph 解析失败: {}", e.getMessage());
             }
         }
 
@@ -134,7 +130,7 @@ public class DraftLearningPlanTool implements ToolHandler {
                     ));
         }
 
-        log.info("[DraftLearningPlan] 学习计划草稿已生成: draftId={}, spaceName={}",
+        log.info("[CreateLearningPlan] 学习计划草稿已生成: draftId={}, spaceName={}",
                 draftId, req.getSpaceName());
 
         return Map.of(
@@ -147,7 +143,7 @@ public class DraftLearningPlanTool implements ToolHandler {
     }
 
     @Data
-    public static class DraftLearningPlanRequest {
+    public static class CreateLearningPlanRequest {
         @dev.langchain4j.model.output.structured.Description("学习空间名称，如'数据结构学习'")
         private String spaceName;
 

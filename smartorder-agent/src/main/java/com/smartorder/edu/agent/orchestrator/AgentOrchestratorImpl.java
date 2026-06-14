@@ -156,7 +156,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
     private void handlePlanAndExecute(AgentChatRequest request, IntentRouteResult routeResult,
                                        AgentRuntimeContext context, SseEmitter emitter) {
         if (routeResult.isNeedsPlanning()) {
-            // 首次进入：生成 TaskList
+            // 首次进入：生成 ExecutionPlan
             planAndExecuteEngine.runPlanning(request, routeResult, context, emitter);
         } else {
             // 恢复执行：StateRuleRouter 检测到暂停的计划
