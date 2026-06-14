@@ -5,6 +5,7 @@ import com.smartorder.edu.agent.tool.ToolRegistry;
 import dev.langchain4j.data.message.SystemMessage;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Service;
@@ -33,7 +34,7 @@ public class PromptLoader {
 
     private static final String BASE_PATH = "classpath:prompts/";
 
-    public PromptLoader(ResourceLoader resourceLoader, ToolRegistry toolRegistry) {
+    public PromptLoader(ResourceLoader resourceLoader, @Lazy ToolRegistry toolRegistry) {
         this.resourceLoader = resourceLoader;
         this.toolRegistry = toolRegistry;
     }
