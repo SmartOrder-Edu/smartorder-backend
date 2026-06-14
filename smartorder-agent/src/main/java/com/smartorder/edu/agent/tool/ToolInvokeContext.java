@@ -30,6 +30,8 @@ public class ToolInvokeContext {
 
     private AgentRuntimeContext runtimeContext;
 
+    private String currentUserMessage;
+
     private SseEmitter emitter;
 
     @Builder.Default
