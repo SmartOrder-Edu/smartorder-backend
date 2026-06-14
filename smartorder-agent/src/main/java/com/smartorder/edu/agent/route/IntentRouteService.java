@@ -167,9 +167,10 @@ public class IntentRouteService {
         }
 
         // 1. 资源生成类（最高置信度，显式命令词）→ PlanAndExecute
+        //    工具由 PlannerAgent 动态决定，路由层不预设
         if (containsAny(message, RESOURCE_GEN_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.RESOURCE_GENERATION, AgentRunMode.PLAN_AND_EXECUTE,
-                    0.90, List.of("getStudentProfile", "queryKnowledge", "generateResource", "generateQuiz"),
+                    0.90, List.of(),
                     "用户需要复杂资源生成");
         }
 
@@ -181,9 +182,10 @@ public class IntentRouteService {
         }
 
         // 3. 明确学习规划请求 → PlanAndExecute
+        //    工具由 PlannerAgent 动态决定，路由层不预设
         if (containsAny(message, PLANNING_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.GOAL_PLANNING, AgentRunMode.PLAN_AND_EXECUTE,
-                    0.85, List.of("getStudentProfile"),
+                    0.85, List.of(),
                     "用户明确要求制定学习计划");
         }
 

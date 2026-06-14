@@ -137,10 +137,6 @@ public class PromptLoader {
         return cache.get("clarification/resource-topic.md");
     }
 
-    public String getProfileClarification() {
-        return cache.get("clarification/profile-clarification.md");
-    }
-
     public String getCitationInstruction() {
         return cache.get("clarification/citation-instruction.md");
     }
