@@ -11,6 +11,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -52,7 +53,11 @@ public class OutboxService {
         List<MessageOutbox> list = outboxMapper.selectList(wrapper);
         for (MessageOutbox outbox : list) {
             try {
-                rabbitTemplate.convertAndSend(outbox.getExchangeName(), outbox.getRoutingKey(), outbox.getPayload());
+                // payload 在 saveOutbox 时已由 fastjson 序列化为 JSON 字符串，
+                // 这里需要还原为对象后再交给 RabbitTemplate（配置了 Jackson2JsonMessageConverter），
+                // 否则 Jackson 会把 String 再序列化一次，导致消费者收到双重转义的 JSON。
+                Object payloadObj = JSON.parse(outbox.getPayload());
+                rabbitTemplate.convertAndSend(outbox.getExchangeName(), outbox.getRoutingKey(), payloadObj);
                 log.info("rag定时任务执行成功");
                 outbox.setStatus("sent");
                 outbox.setUpdatedAt(LocalDateTime.now());

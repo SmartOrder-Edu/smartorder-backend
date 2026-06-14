@@ -1,0 +1,1 @@
+回答中如使用附件内容，请用 contextText 中的 [1]、[2] 这样的编号标注来源；如果 hasEnoughEvidence=false，请明确说明附件中未找到足够依据。

@@ -68,6 +68,24 @@ public class AgentConfiguration {
                 .build();
     }
 
+    /**
+     * 规划专用 ChatModel — 禁用 thinking，确保 PlannerAgent 返回纯 JSON。
+     * <p>
+     * MIMO 模型在启用 reasoning_content 时可能把推理文本混入 content 字段，
+     * 导致 PlannerAgent 输出的 JSON 不可解析。规划场景不需要思考过程展示，
+     * 使用此 Bean 可获得稳定的结构化输出。
+     */
+    @Bean
+    public ChatModel planningChatModel() {
+        return OpenAiChatModel.builder()
+                .httpClientBuilder(JdkLangChain4jHttpClientBuilder.withDefaults())
+                .apiKey(apiKey)
+                .baseUrl(baseUrl)
+                .modelName(modelName)
+                .timeout(Duration.ofSeconds(120))
+                .build();
+    }
+
     @Primary
     @Bean
     public StreamingChatModel streamingChatLanguageModel() {

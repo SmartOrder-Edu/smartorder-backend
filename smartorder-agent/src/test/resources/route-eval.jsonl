@@ -1,10 +1,10 @@
 {"id":"001","message":"好的","conversationId":null,"hasPendingDraft":false,"expectedIntent":"UNKNOWN","expectedMode":"REACT","expectedSource":"KEYWORD","description":"确认词但无待确认草稿 → 不应路由到PLAN_EXECUTE，走默认REACT"}
-{"id":"002","message":"好的","conversationId":"mock-cid-1","hasPendingDraft":true,"expectedIntent":"PLAN_CONFIRMATION","expectedMode":"PLAN_EXECUTE","expectedSource":"STATE","description":"确认词+待确认草稿 → 确认创建计划"}
-{"id":"003","message":"可以","conversationId":"mock-cid-1","hasPendingDraft":true,"expectedIntent":"PLAN_CONFIRMATION","expectedMode":"PLAN_EXECUTE","expectedSource":"STATE","description":"确认词'可以'+待确认草稿"}
+{"id":"002","message":"好的","conversationId":"mock-cid-1","hasPendingDraft":true,"expectedIntent":"PLAN_CONFIRMATION","expectedMode":"PLAN_AND_EXECUTE","expectedSource":"STATE","description":"确认词+待确认草稿 → 确认创建计划"}
+{"id":"003","message":"可以","conversationId":"mock-cid-1","hasPendingDraft":true,"expectedIntent":"PLAN_CONFIRMATION","expectedMode":"PLAN_AND_EXECUTE","expectedSource":"STATE","description":"确认词'可以'+待确认草稿"}
 {"id":"004","message":"什么是死锁","conversationId":null,"hasPendingDraft":false,"expectedIntent":"KNOWLEDGE_QA","expectedMode":"REACT","expectedSource":"KEYWORD","description":"短消息+定义类关键词 → 知识问答"}
-{"id":"005","message":"帮我制定操作系统学习计划","conversationId":null,"hasPendingDraft":false,"expectedIntent":"GOAL_PLANNING","expectedMode":"PLAN_EXECUTE","expectedSource":"KEYWORD","description":"明确的学习规划请求"}
-{"id":"006","message":"生成线性代数复习资料和PPT","conversationId":null,"hasPendingDraft":false,"expectedIntent":"RESOURCE_GENERATION","expectedMode":"MULTI_AGENT","expectedSource":"KEYWORD","description":"资源生成请求"}
-{"id":"007","message":"帮我规划一下考研复习","conversationId":null,"hasPendingDraft":false,"expectedIntent":"GOAL_PLANNING","expectedMode":"PLAN_EXECUTE","expectedSource":"KEYWORD","description":"'帮我规划'关键词语 → 目标规划"}
+{"id":"005","message":"帮我制定操作系统学习计划","conversationId":null,"hasPendingDraft":false,"expectedIntent":"GOAL_PLANNING","expectedMode":"PLAN_AND_EXECUTE","expectedSource":"KEYWORD","description":"明确的学习规划请求"}
+{"id":"006","message":"生成线性代数复习资料和PPT","conversationId":null,"hasPendingDraft":false,"expectedIntent":"RESOURCE_GENERATION","expectedMode":"PLAN_AND_EXECUTE","expectedSource":"KEYWORD","description":"资源生成请求"}
+{"id":"007","message":"帮我规划一下考研复习","conversationId":null,"hasPendingDraft":false,"expectedIntent":"GOAL_PLANNING","expectedMode":"PLAN_AND_EXECUTE","expectedSource":"KEYWORD","description":"'帮我规划'关键词语 → 目标规划"}
 {"id":"008","message":"洛必达法则我不理解","conversationId":null,"hasPendingDraft":false,"expectedIntent":"PROBLEM_HELP","expectedMode":"REACT","expectedSource":"KEYWORD","description":"'不理解'关键词 → 习题答疑"}
 {"id":"009","message":"最近学习进度怎么样","conversationId":null,"hasPendingDraft":false,"expectedIntent":"PROGRESS_REVIEW","expectedMode":"REACT","expectedSource":"KEYWORD","description":"进度查询"}
 {"id":"010","message":"今天学什么","conversationId":null,"hasPendingDraft":false,"expectedIntent":"TASK_MANAGEMENT","expectedMode":"REACT","expectedSource":"KEYWORD","description":"任务管理请求"}
@@ -12,8 +12,8 @@
 {"id":"012","message":"学习","conversationId":null,"hasPendingDraft":false,"expectedIntent":"UNKNOWN","expectedMode":"REACT","expectedSource":"KEYWORD","description":"模糊的'学习'不再触发任何规则（已删除过宽关键词），走默认REACT"}
 {"id":"013","message":"帮我讲讲这个递归的复杂度怎么分析","conversationId":null,"hasPendingDraft":false,"expectedIntent":"PROBLEM_HELP","expectedMode":"REACT","expectedSource":"KEYWORD","description":"'帮我讲讲'关键词 → 习题答疑"}
 {"id":"014","message":"有什么没完成的","conversationId":null,"hasPendingDraft":false,"expectedIntent":"TASK_MANAGEMENT","expectedMode":"REACT","expectedSource":"KEYWORD","description":"'还有什么没完成'关键词 → 任务管理"}
-{"id":"015","message":"帮我制定六级备考计划","conversationId":null,"hasPendingDraft":false,"expectedIntent":"GOAL_PLANNING","expectedMode":"PLAN_EXECUTE","expectedSource":"KEYWORD","description":"'帮我制定'关键词 → 目标规划"}
-{"id":"016","message":"ok","conversationId":"mock-cid-1","hasPendingDraft":true,"expectedIntent":"PLAN_CONFIRMATION","expectedMode":"PLAN_EXECUTE","expectedSource":"STATE","description":"英文确认词+待确认草稿"}
-{"id":"017","message":"出题","conversationId":null,"hasPendingDraft":false,"expectedIntent":"RESOURCE_GENERATION","expectedMode":"MULTI_AGENT","expectedSource":"KEYWORD","description":"'出题'关键词 → 资源生成"}
+{"id":"015","message":"帮我制定六级备考计划","conversationId":null,"hasPendingDraft":false,"expectedIntent":"GOAL_PLANNING","expectedMode":"PLAN_AND_EXECUTE","expectedSource":"KEYWORD","description":"'帮我制定'关键词 → 目标规划"}
+{"id":"016","message":"ok","conversationId":"mock-cid-1","hasPendingDraft":true,"expectedIntent":"PLAN_CONFIRMATION","expectedMode":"PLAN_AND_EXECUTE","expectedSource":"STATE","description":"英文确认词+待确认草稿"}
+{"id":"017","message":"出题","conversationId":null,"hasPendingDraft":false,"expectedIntent":"RESOURCE_GENERATION","expectedMode":"PLAN_AND_EXECUTE","expectedSource":"KEYWORD","description":"'出题'关键词 → 资源生成"}
 {"id":"018","message":"我最近学得怎么样","conversationId":null,"hasPendingDraft":false,"expectedIntent":"PROGRESS_REVIEW","expectedMode":"REACT","expectedSource":"KEYWORD","description":"'学得怎么样'关键词 → 进度回顾"}
 {"id":"019","message":"给我关于登录实现全流程的技术图mermaid","conversationId":null,"hasPendingDraft":false,"expectedIntent":"DIAGRAM_GENERATION","expectedMode":"REACT","expectedSource":"KEYWORD","description":"Mermaid 技术图是格式化技术说明，不应进入多智能体资源生成"}

@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -25,6 +26,10 @@ public class AgentRuntimeContext {
 
     @Builder.Default
     private AgentRunMode mode = AgentRunMode.REACT;
+
+    private String attachmentContext;
+
+    private List<Long> allowedAttachmentFileIds;
 
     @Builder.Default
     private AtomicInteger sequence = new AtomicInteger(0);

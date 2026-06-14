@@ -36,4 +36,8 @@ public class ToolInvokeContext {
     private String agentName = "MainAgent";
 
     private Map<String, Object> attributes;
+
+    /** 用户是否已通过确认门（确认后 WRITE_CONFIRMED 工具可执行） */
+    @Builder.Default
+    private boolean confirmationGranted = false;
 }

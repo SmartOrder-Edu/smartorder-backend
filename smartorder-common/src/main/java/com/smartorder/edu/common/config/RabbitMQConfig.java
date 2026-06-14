@@ -8,6 +8,7 @@ import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.amqp.support.converter.Jackson2JavaTypeMapper;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -38,10 +39,14 @@ public class RabbitMQConfig {
 
     /**
      * 配置 JSON 转换器，确保消息以 JSON 格式序列化/反序列化
+     * 使用 INFERRED 类型优先级，让 @RabbitListener 方法参数类型决定反序列化目标，
+     * 而非依赖 __TypeId__ header，避免发送端与接收端类型不匹配的问题。
      */
     @Bean
     public Jackson2JsonMessageConverter jsonMessageConverter() {
-        return new Jackson2JsonMessageConverter();
+        Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter();
+        converter.setTypePrecedence(Jackson2JavaTypeMapper.TypePrecedence.INFERRED);
+        return converter;
     }
 
     @Bean
