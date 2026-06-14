@@ -2,7 +2,7 @@
 
 你必须输出严格 JSON，不要输出 Markdown 代码块，不要输出解释文字。
 
-JSON 格式：
+输出格式：
 {
   "userGoal": "用户的原始目标",
   "steps": [

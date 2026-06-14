@@ -109,7 +109,7 @@ public class PlanAndExecuteEngine {
             log.error("[PlanAndExecute] ExecutionPlan 校验失败: {}, 原始响应(前300字符): {}",
                     e.getMessage(),
                     planRaw != null ? planRaw.substring(0, Math.min(300, planRaw.length())) : "null");
-            String errorMsg = "生成的任务计划格式不正确，请重新描述你的目标。";
+            String errorMsg = "抱歉，生成任务计划时机型返回格式异常，请稍后重试。";
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", errorMsg));
             memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                     errorMsg, null, context.getTraceId(), null);
