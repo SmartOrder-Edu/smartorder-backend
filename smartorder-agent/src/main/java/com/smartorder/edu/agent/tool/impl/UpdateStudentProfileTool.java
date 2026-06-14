@@ -40,7 +40,8 @@ public class UpdateStudentProfileTool implements ToolHandler {
             "cognitive_profile",
             "weakness_profile",
             "behavior_profile",
-            "emotion_profile"
+            "emotion_profile",
+            "full_profile_snapshot"
     );
 
     private static final double MIN_CONFIDENCE = 0.8;
@@ -72,6 +73,9 @@ public class UpdateStudentProfileTool implements ToolHandler {
             ),
             "emotion_profile", List.of(
                     "我紧张", "我焦虑", "我害怕", "我担心", "压力很大", "一到考试"
+            ),
+            "full_profile_snapshot", List.of(
+                    "完整画像", "全部画像", "所有维度", "综合画像", "整体画像"
             )
     );
 
@@ -85,7 +89,8 @@ public class UpdateStudentProfileTool implements ToolHandler {
         return "仅在当前用户消息中存在明确自述证据时，更新学生画像的指定维度（支持同时更新多个维度）。"
                 + "普通提问和一次性格式要求不属于画像证据。"
                 + "支持的维度：basic_profile, knowledge_profile, ability_profile, "
-                + "preference_profile, cognitive_profile, weakness_profile, behavior_profile, emotion_profile。"
+                + "preference_profile, cognitive_profile, weakness_profile, behavior_profile, emotion_profile, "
+                + "full_profile_snapshot（完整画像快照，可单独更新或由其他维度变更自动同步）。"
                 + "数据会与现有画像深度合并，不会覆盖其他维度。"
                 + "每项必须提供当前用户原话 evidence、0.8 以上的 confidence 和明确 reason。"
                 + "如果一次对话中发现多个维度的新信息，请在 dimensionUpdate 数组中传入多项，一次调用完成所有更新。";
@@ -212,7 +217,8 @@ public class UpdateStudentProfileTool implements ToolHandler {
         @Data
         public static class DimensionUpdate {
             @Description("画像维度名称，可选值：basic_profile, knowledge_profile, ability_profile, "
-                    + "preference_profile, cognitive_profile, weakness_profile, behavior_profile, emotion_profile")
+                    + "preference_profile, cognitive_profile, weakness_profile, behavior_profile, emotion_profile, "
+                    + "full_profile_snapshot（完整画像快照）")
             private String dimensionKey;
 
             @Description("该维度的增量数据 JSON 对象，将与现有数据深度合并。"

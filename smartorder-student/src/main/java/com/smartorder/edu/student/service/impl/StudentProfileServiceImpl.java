@@ -109,6 +109,9 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         profile.setProfileVersion(profile.getProfileVersion() == null ? 1 : profile.getProfileVersion() + 1);
         profile.setLastUpdateReason("引导页初始化");
 
+        // 同步完整画像快照
+        syncFullProfileSnapshot(profile);
+
         saveOrUpdate(profile);
         log.info("引导页画像初始化完成: userId={}", userId);
     }
@@ -142,6 +145,9 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         profile.setProfileVersion(
                 (profile.getProfileVersion() == null ? 0 : profile.getProfileVersion()) + 1);
         profile.setLastUpdateReason(reason);
+
+        // 自动同步完整画像快照
+        syncFullProfileSnapshot(profile);
 
         saveOrUpdate(profile);
         log.info("画像维度增量更新: userId={}, dimension={}, reason={}", userId, dimensionKey, reason);
@@ -185,6 +191,9 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         profile.setProfileVersion(
                 (profile.getProfileVersion() == null ? 0 : profile.getProfileVersion()) + 1);
         profile.setLastUpdateReason(reasonBuilder.toString());
+
+        // 自动同步完整画像快照
+        syncFullProfileSnapshot(profile);
 
         saveOrUpdate(profile);
         log.info("画像批量更新完成: userId={}, dimensions={}, reason={}",
@@ -252,7 +261,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         }
     }
 
-    /** 初始化所有 8 个维度为空 Map */
+    /** 初始化所有 9 个维度为空 Map（含完整画像快照） */
     private void initEmptyDimensions(StudentProfile profile) {
         profile.setBasicProfile(new HashMap<>());
         profile.setKnowledgeProfile(new HashMap<>());
@@ -262,5 +271,23 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         profile.setWeaknessProfile(new HashMap<>());
         profile.setBehaviorProfile(new HashMap<>());
         profile.setEmotionProfile(new HashMap<>());
+        profile.setFullProfileSnapshot(new HashMap<>());
+    }
+
+    /**
+     * 同步完整画像快照：将 8 个维度聚合到 fullProfileSnapshot
+     * 用于快速读取完整画像，无需分别读取每个维度
+     */
+    private void syncFullProfileSnapshot(StudentProfile profile) {
+        Map<String, Object> snapshot = new HashMap<>();
+        snapshot.put("basic_profile", profile.getBasicProfile());
+        snapshot.put("knowledge_profile", profile.getKnowledgeProfile());
+        snapshot.put("ability_profile", profile.getAbilityProfile());
+        snapshot.put("preference_profile", profile.getPreferenceProfile());
+        snapshot.put("cognitive_profile", profile.getCognitiveProfile());
+        snapshot.put("weakness_profile", profile.getWeaknessProfile());
+        snapshot.put("behavior_profile", profile.getBehaviorProfile());
+        snapshot.put("emotion_profile", profile.getEmotionProfile());
+        profile.setFullProfileSnapshot(snapshot);
     }
 }

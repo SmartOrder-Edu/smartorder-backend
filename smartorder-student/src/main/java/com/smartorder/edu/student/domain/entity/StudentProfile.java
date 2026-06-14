@@ -33,6 +33,12 @@ public class StudentProfile {
 
     private Integer profileVersion;
 
+    // ====== 完整画像快照 ======
+
+    /** 存放所有的画像 JSON 字段 */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<String, Object> fullProfileSnapshot;
+
     // ====== 8 个 JSON 画像维度 ======
 
     @TableField(typeHandler = JacksonTypeHandler.class)
