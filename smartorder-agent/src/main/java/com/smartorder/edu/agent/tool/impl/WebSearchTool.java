@@ -37,9 +37,13 @@ public class WebSearchTool implements ToolHandler {
     @Override
     public String description() {
         return "在互联网上搜索信息以获取最新实时信息。"
-                + "当问题具有时效性（用户提到「最新」「最近」「当前」「今天」等）、"
-                + "需要实时数据（天气、股票、新闻、事件等）、"
-                + "或你无法确定事实需要验证时，优先使用此工具。";
+                + "当你遇到以下情况时，必须使用此工具：\n"
+                + "1. 时效性问题（用户提到「最新」「最近」「当前」「今天」「现在」「今年」等）\n"
+                + "2. 需要实时数据（天气、股票、新闻、赛事、考试时间等）\n"
+                + "3. 你对事实不确定，需要验证时\n"
+                + "4. 需要比较或推荐，且涉及可能变化的信息\n"
+                + "5. 用户明确要求查阅资料或引用来源\n"
+                + "不要搜索的情况：数学计算、代码语法、通用常识、闲聊问候、已有确定知识的概念解释";
     }
 
     @Override
@@ -61,9 +65,16 @@ public class WebSearchTool implements ToolHandler {
             throw new IllegalArgumentException("搜索关键词 query 不能为空");
         }
 
-        log.info("[WebSearch] userId={}, query={}, thought={}", context.getUserId(), query, req.getThought());
+        log.info("[WebSearch] userId={}, query={}, thought={}, maxResults={}",
+                context.getUserId(), query, req.getThought(), req.getMaxResults());
 
-        WebSearchResults results = tavilySearchEngine.search(query);
+        // 构建带参数的搜索请求
+        dev.langchain4j.web.search.WebSearchRequest.Builder reqBuilder =
+                dev.langchain4j.web.search.WebSearchRequest.builder().searchTerms(query);
+        if (req.getMaxResults() != null) {
+            reqBuilder.maxResults(Math.max(1, Math.min(10, req.getMaxResults())));
+        }
+        WebSearchResults results = tavilySearchEngine.search(reqBuilder.build());
 
         List<Map<String, String>> referenceList = new ArrayList<>();
         StringBuilder llmContext = new StringBuilder();
@@ -72,14 +83,16 @@ public class WebSearchTool implements ToolHandler {
             llmContext.append("【网络搜索结果】：\n");
             int index = 1;
             for (WebSearchOrganicResult result : results.results()) {
+                String urlStr = result.url() != null ? result.url().toString() : "";
                 Map<String, String> ref = new LinkedHashMap<>();
+                ref.put("citationIndex", String.valueOf(index));
                 ref.put("title", result.title());
-                ref.put("url", result.url() != null ? result.url().toString() : "");
+                ref.put("url", urlStr);
                 ref.put("snippet", result.snippet());
                 referenceList.add(ref);
 
-                llmContext.append(String.format("[%d] 标题：%s\n内容摘要：%s\n\n",
-                        index++, result.title(), result.snippet()));
+                llmContext.append(String.format("[%d] 标题：%s\n链接：%s\n内容摘要：%s\n\n",
+                        index++, result.title(), urlStr, result.snippet()));
             }
         }
 
@@ -89,6 +102,12 @@ public class WebSearchTool implements ToolHandler {
             emptyResult.put("references", Collections.emptyList());
             return emptyResult;
         }
+
+        // 将 references 存入 context attributes，供 TracingToolExecutor 传递给前端
+        if (context.getAttributes() == null) {
+            context.setAttributes(new LinkedHashMap<>());
+        }
+        context.getAttributes().put("webSearchReferences", referenceList);
 
         Map<String, Object> finalResult = new LinkedHashMap<>();
         finalResult.put("llmContext", llmContext.toString());
@@ -103,5 +122,8 @@ public class WebSearchTool implements ToolHandler {
 
         @dev.langchain4j.model.output.structured.Description("【必填】调用此工具前，你对当前进度的分析以及为什么需要搜索的思考过程")
         private String thought;
+
+        @dev.langchain4j.model.output.structured.Description("最大返回结果数，默认5，范围1-10。信息验证类用3，深度研究类用8-10")
+        private Integer maxResults;
     }
 }

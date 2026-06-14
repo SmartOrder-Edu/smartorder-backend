@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -51,16 +52,23 @@ public class TracingToolExecutor {
             // 4. 结果截断
             Object truncatedResult = resultTruncator.truncate(result);
 
-            // 5. 推送 TOOL_COMPLETED
+            // 5. 推送 TOOL_COMPLETED（含工具自定义 metadata）
+            Map<String, Object> completedPayload = new LinkedHashMap<>();
+            completedPayload.put("toolName", handler.name());
+            completedPayload.put("result", truncatedResult);
+            completedPayload.put("durationMs", duration);
+            // 从 context attributes 中提取工具附加数据（完整，不截断）
+            if (context.getAttributes() != null) {
+                Object webSearchRefs = context.getAttributes().get("webSearchReferences");
+                if (webSearchRefs != null) {
+                    completedPayload.put("webSearchReferences", webSearchRefs);
+                }
+            }
             dispatcher.emit(
                     context.getEmitter(),
                     context.getRuntimeContext(),
                     AgentEventType.TOOL_COMPLETED,
-                    Map.of(
-                            "toolName", handler.name(),
-                            "result", truncatedResult,
-                            "durationMs", duration
-                    )
+                    completedPayload
             );
 
             log.info("[TracingToolExecutor] {} 执行成功, 耗时{}ms", handler.name(), duration);
