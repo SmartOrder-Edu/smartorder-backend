@@ -1,5 +1,6 @@
 package com.smartorder.edu.agent.tool.impl;
 
+import com.smartorder.edu.agent.prompt.PromptLoader;
 import com.smartorder.edu.agent.tool.ToolCategory;
 import com.smartorder.edu.agent.tool.ToolHandler;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
@@ -28,6 +29,7 @@ public class GenerateQuizTool implements ToolHandler {
     private final ChatModel chatLanguageModel;
     private final AssessmentMapper assessmentMapper;
     private final AssessmentQuestionMapper assessmentQuestionMapper;
+    private final PromptLoader promptLoader;
 
     @Override
     public String name() {
@@ -95,23 +97,7 @@ public class GenerateQuizTool implements ToolHandler {
     private String buildQuizPrompt(String topic, int count, String type, Integer difficulty) {
         String typeDesc = type != null ? type : "选择题";
         String diffDesc = difficulty != null ? "难度等级" + difficulty + "/5" : "中等难度";
-        return String.format("""
-                你是一位专业的教育测评专家。请根据以下要求生成练习题：
-
-                知识点：%s
-                题目数量：%d道
-                题型：%s
-                难度：%s
-
-                要求：
-                1. 每道题标注题号
-                2. 选择题需要4个选项（A/B/C/D）
-                3. 标注正确答案
-                4. 附上简要解析
-                5. 如果是指定的难度等级，题目难度要有梯度
-
-                请直接输出题目，不要输出其他说明文字。
-                """, topic, count, typeDesc, diffDesc);
+        return PromptLoader.format(promptLoader.getQuizGenTemplate(), topic, String.valueOf(count), typeDesc, diffDesc);
     }
 
     @Data

@@ -1,6 +1,5 @@
 package com.smartorder.edu.common.listener;
 
-import com.alibaba.fastjson.JSON;
 import com.smartorder.edu.common.config.RabbitMQConfig;
 
 import com.smartorder.edu.common.mapper.KnowledgeChunkMapper;
@@ -50,12 +49,6 @@ public class KnowledgeFileProcessListener {
 
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE_FILE_PROCESS, containerFactory = "rabbitListenerContainerFactory")
-    public void handleFileProcess(String payload) throws Exception {
-        KnowledgeFileProcessMessage msg = JSON.parseObject(payload, KnowledgeFileProcessMessage.class);
-        handleFileProcess(msg);
-    }
-
-
     public void handleFileProcess(KnowledgeFileProcessMessage msg) throws Exception {
         Long jobId = msg.getJobId();
         try {

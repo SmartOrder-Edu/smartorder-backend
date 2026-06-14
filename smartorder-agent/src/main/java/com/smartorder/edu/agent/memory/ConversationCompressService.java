@@ -4,6 +4,7 @@ import com.smartorder.edu.agent.model.entity.ConversationMessage;
 import com.smartorder.edu.agent.model.entity.ConversationSummary;
 import com.smartorder.edu.agent.mapper.ConversationMessageMapper;
 import com.smartorder.edu.agent.mapper.ConversationSummaryMapper;
+import com.smartorder.edu.agent.prompt.PromptLoader;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.AiServices;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,7 @@ public class ConversationCompressService {
     private final ConversationSummaryMapper summaryMapper;
     private final ConversationMemoryService memoryService;
     private final ChatModel chatLanguageModel;
+    private final PromptLoader promptLoader;
 
     /**
      * 检查并触发压缩（异步执行，不阻塞聊天）
@@ -72,6 +74,7 @@ public class ConversationCompressService {
             // 4. 使用 SummaryAgent 生成增量摘要
             SummaryAgent summaryAgent = AiServices.builder(SummaryAgent.class)
                     .chatModel(chatLanguageModel)
+                    .systemMessageProvider(memoryId -> promptLoader.getSummarizerPrompt())
                     .build();
 
             String summaryText = summaryAgent.summarize(compressInput);

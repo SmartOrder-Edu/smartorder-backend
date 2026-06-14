@@ -23,7 +23,7 @@ public class KnowledgeFileDLQListener {
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE_FILE_PROCESS_DLQ)
     public void handleDLQ(Message message) {
-        String payload = new String(message.getBody());
+        String payload = new String(message.getBody(), java.nio.charset.StandardCharsets.UTF_8);
         log.error("收到死信消息: exchange={}, routingKey={}, payload={}",
                 message.getMessageProperties().getReceivedExchange(),
                 message.getMessageProperties().getReceivedRoutingKey(),

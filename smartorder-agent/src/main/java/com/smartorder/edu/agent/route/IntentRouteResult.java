@@ -51,4 +51,11 @@ public class IntentRouteResult {
     /** 缺失的槽位列表 */
     @Builder.Default
     private List<String> missingSlots = List.of();
+
+    /** 是否需要先规划（生成 ExecutionPlan）再执行 */
+    @Builder.Default
+    private boolean needsPlanning = false;
+
+    /** 给 Planner 的提示（意图类别，如 goal_planning / resource_generation） */
+    private String planHint;
 }

@@ -24,13 +24,17 @@ public enum AgentEventType {
 
     PLAN_CREATED("agent.plan.created", "规划草稿创建", true),
     PLAN_CONFIRMED("agent.plan.confirmed", "规划已确认", true),
+    LEARNING_PLAN_CREATED("agent.learning_plan.created", "学习计划草稿已创建", true),
 
     PHASE_CHANGE("agent.phase.change", "阶段切换", true),
     STATUS("agent.status", "状态提示", true),
 
-    SUB_AGENT_STARTED("agent.sub_agent.started", "子智能体开始", true),
-    SUB_AGENT_COMPLETED("agent.sub_agent.completed", "子智能体完成", true),
-    SUB_AGENT_FAILED("agent.sub_agent.failed", "子智能体失败", true),
+    // ====== PlanAndExecute 事件 ======
+    EXECUTION_STEP_STARTED("agent.plan.task.started", "执行步骤开始执行", true),
+    EXECUTION_STEP_COMPLETED("agent.plan.task.completed", "执行步骤执行完成", true),
+    EXECUTION_STEP_FAILED("agent.plan.task.failed", "执行步骤执行失败", true),
+    PLAN_PAUSED("agent.plan.paused", "计划暂停（澄清/确认门）", true),
+    PLAN_RESUMED("agent.plan.resumed", "计划从暂停点恢复", true),
 
     ERROR("agent.error", "错误事件", true),
 

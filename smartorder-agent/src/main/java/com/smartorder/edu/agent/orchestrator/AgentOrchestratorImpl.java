@@ -2,10 +2,14 @@ package com.smartorder.edu.agent.orchestrator;
 
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
-import com.smartorder.edu.agent.plan.PlanExecuteEngine;
+import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentRouteService;
+import com.smartorder.edu.agent.route.IntentType;
 import com.smartorder.edu.agent.route.RouteContext;
+import com.smartorder.edu.agent.route.RoutingSource;
+import com.smartorder.edu.agent.service.AgentConversationAttachmentService;
+import com.smartorder.edu.agent.service.AttachmentNotReadyException;
 import com.smartorder.edu.agent.trace.AgentEventType;
 import com.smartorder.edu.agent.trace.AgentRuntimeContext;
 import com.smartorder.edu.agent.trace.TraceEventDispatcher;
@@ -14,13 +18,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 /**
  * Agent 编排器实现——编排主流程
- *
- * 阶段五：REACT + PLAN_EXECUTE + MULTI_AGENT 全部接入
+ * <p>
+ * 两种运行模式：PureReAct（简单问答）+ PlanAndExecute（复杂任务）。
  */
 @Slf4j
 @Service
@@ -29,10 +36,10 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
 
     private final IntentRouteService intentRouteService;
     private final SelfManagedReActEngine reActEngine;
-    private final PlanExecuteEngine planExecuteEngine;
-    private final MultiAgentCoordinator multiAgentCoordinator;
+    private final PlanAndExecuteEngine planAndExecuteEngine;
     private final TraceEventDispatcher dispatcher;
     private final ConversationMemoryService memoryService;
+    private final AgentConversationAttachmentService attachmentService;
 
     @Override
     public void handle(AgentChatRequest request, SseEmitter emitter) {
@@ -45,8 +52,47 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 .build();
 
         try {
-            // 0. 统一保存用户消息（所有模式都落库）
-            memoryService.saveUserMessage(conversationId, request.getUserId(), request.getMessage());
+            // 0. 统一保存用户消息（所有模式都落库，含附件关联）
+            memoryService.saveUserMessage(conversationId, request.getUserId(), request.getMessage(),
+                    request.getFileIds());
+            request.setConversationId(conversationId);
+
+            if (request.getFileIds() != null && !request.getFileIds().isEmpty()) {
+                try {
+                    String attachmentContext = attachmentService.buildRagContext(
+                            request.getUserId(), conversationId, request.getFileIds(), request.getMessage());
+                    context.setAttachmentContext(attachmentContext);
+                    context.setAllowedAttachmentFileIds(normalizeFileIds(request.getFileIds()));
+                    dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
+                            "type", "attachment_rag",
+                            "fileIds", request.getFileIds(),
+                            "hit", attachmentContext != null && !attachmentContext.isBlank()
+                    ));
+                } catch (AttachmentNotReadyException e) {
+                    String answer = e.getMessage();
+                    dispatcher.emit(emitter, context, AgentEventType.TRACE_STARTED, Map.of(
+                            "mode", context.getMode().getCode()
+                    ));
+                    dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
+                            "type", "attachment_status",
+                            "message", answer
+                    ));
+                    dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of(
+                            "text", answer
+                    ));
+                    memoryService.saveAssistantMessage(conversationId, request.getUserId(), answer,
+                            null, context.getTraceId(), null);
+                    dispatcher.complete(emitter, context);
+                    return;
+                }
+            }
+
+            // 0.5 显式模式短路：跳过意图路由，直接按用户选择的模式执行
+            if (request.getForceMode() != null && !request.getForceMode().isBlank()) {
+                handleForcedMode(request, emitter, context, conversationId);
+                dispatcher.complete(emitter, context);
+                return;
+            }
 
             // 1. 意图路由（带会话上下文）
             RouteContext routeCtx = RouteContext.builder()
@@ -56,6 +102,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                     .build();
             IntentRouteResult routeResult = intentRouteService.route(routeCtx);
             context.setMode(routeResult.getRunMode());
+            addAttachmentSearchToolIfNeeded(routeResult, context);
 
             // 2. 推送 TRACE_STARTED
             dispatcher.emit(emitter, context, AgentEventType.TRACE_STARTED, Map.of(
@@ -72,14 +119,26 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                     "confidence", routeResult.getConfidence(),
                     "source", routeResult.getSource().name(),
                     "needsClarification", routeResult.isNeedsClarification(),
+                    "needsPlanning", routeResult.isNeedsPlanning(),
                     "reason", routeResult.getReason()
             ));
 
             // 4. 按运行模式分发
             switch (routeResult.getRunMode()) {
-                case REACT -> reActEngine.execute(request, routeResult, context, emitter);
-                case PLAN_EXECUTE -> handlePlanExecute(request, routeResult, context, emitter);
-                case MULTI_AGENT -> handleMultiAgent(request, routeResult, context, emitter);
+                case REACT -> {
+                    if (routeResult.isNeedsClarification()) {
+                        // 澄清短路：直接输出澄清文本，不走 ReAct
+                        String clarificationMsg = routeResult.getReason();
+                        dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of(
+                                "text", clarificationMsg
+                        ));
+                        memoryService.saveAssistantMessage(conversationId, request.getUserId(),
+                                clarificationMsg, null, context.getTraceId(), null);
+                    } else {
+                        reActEngine.execute(request, routeResult, context, emitter);
+                    }
+                }
+                case PLAN_AND_EXECUTE -> handlePlanAndExecute(request, routeResult, context, emitter);
                 default -> throw new IllegalStateException("不支持的运行模式: " + routeResult.getRunMode());
             }
 
@@ -92,16 +151,17 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         }
     }
 
-    // ============ 模式处理（PLAN_EXECUTE / MULTI_AGENT 后续阶段完善） ============
+    // ============ PlanAndExecute 分发 ============
 
-    private void handlePlanExecute(AgentChatRequest request, IntentRouteResult routeResult,
-                                   AgentRuntimeContext context, SseEmitter emitter) {
-        planExecuteEngine.runPlanning(request, routeResult, context, emitter);
-    }
-
-    private void handleMultiAgent(AgentChatRequest request, IntentRouteResult routeResult,
-                                  AgentRuntimeContext context, SseEmitter emitter) {
-        multiAgentCoordinator.execute(request, routeResult, context, emitter);
+    private void handlePlanAndExecute(AgentChatRequest request, IntentRouteResult routeResult,
+                                       AgentRuntimeContext context, SseEmitter emitter) {
+        if (routeResult.isNeedsPlanning()) {
+            // 首次进入：生成 ExecutionPlan
+            planAndExecuteEngine.runPlanning(request, routeResult, context, emitter);
+        } else {
+            // 恢复执行：StateRuleRouter 检测到暂停的计划
+            planAndExecuteEngine.resumePlan(request, context, emitter);
+        }
     }
 
     // ============ Private Methods ============
@@ -111,5 +171,97 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
             return request.getConversationId();
         }
         return UUID.randomUUID().toString();
+    }
+
+    private void addAttachmentSearchToolIfNeeded(IntentRouteResult routeResult, AgentRuntimeContext context) {
+        if (routeResult.getRunMode() != AgentRunMode.REACT) {
+            return;
+        }
+        List<Long> fileIds = context.getAllowedAttachmentFileIds();
+        if (fileIds == null || fileIds.isEmpty()) {
+            return;
+        }
+
+        List<String> currentTools = routeResult.getRequiredTools() != null
+                ? routeResult.getRequiredTools() : List.of();
+        if (currentTools.contains("searchConversationAttachments")) {
+            return;
+        }
+
+        List<String> tools = new ArrayList<>(currentTools);
+        tools.add("searchConversationAttachments");
+        routeResult.setRequiredTools(tools);
+    }
+
+    // ============ 显式模式短路 ============
+
+    /**
+     * 用户手动选择模式时，跳过意图路由，直接执行
+     */
+    private void handleForcedMode(AgentChatRequest request, SseEmitter emitter,
+                                  AgentRuntimeContext context, String conversationId) {
+        AgentRunMode mode;
+        try {
+            mode = AgentRunMode.valueOf(request.getForceMode().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            log.warn("[AgentOrchestrator] 无效的 forceMode: {}, 回退到 REACT", request.getForceMode());
+            mode = AgentRunMode.REACT;
+        }
+
+        IntentRouteResult forcedResult = buildForcedRouteResult(mode);
+        context.setMode(forcedResult.getRunMode());
+        addAttachmentSearchToolIfNeeded(forcedResult, context);
+
+        // 推送 TRACE_STARTED
+        dispatcher.emit(emitter, context, AgentEventType.TRACE_STARTED, Map.of(
+                "mode", forcedResult.getRunMode().getCode()
+        ));
+
+        // 推送 ROUTE_COMPLETED
+        dispatcher.emit(emitter, context, AgentEventType.ROUTE_COMPLETED, Map.of(
+                "intentType", forcedResult.getIntentType(),
+                "intentEnum", forcedResult.getIntentEnum() != null ? forcedResult.getIntentEnum().name() : "",
+                "complexity", forcedResult.getComplexity(),
+                "runMode", forcedResult.getRunMode().getCode(),
+                "requiredTools", forcedResult.getRequiredTools(),
+                "confidence", forcedResult.getConfidence(),
+                "source", forcedResult.getSource().name(),
+                "needsClarification", forcedResult.isNeedsClarification(),
+                "needsPlanning", forcedResult.isNeedsPlanning(),
+                "reason", forcedResult.getReason()
+        ));
+
+        // 按模式分发
+        switch (forcedResult.getRunMode()) {
+            case REACT -> reActEngine.execute(request, forcedResult, context, emitter);
+            case PLAN_AND_EXECUTE -> handlePlanAndExecute(request, forcedResult, context, emitter);
+            default -> throw new IllegalStateException("不支持的运行模式: " + forcedResult.getRunMode());
+        }
+    }
+
+    private IntentRouteResult buildForcedRouteResult(AgentRunMode mode) {
+        boolean needsPlanning = mode == AgentRunMode.PLAN_AND_EXECUTE;
+        List<String> tools = needsPlanning
+                ? List.of()
+                : List.of("getStudentProfile", "queryKnowledge", "queryTasks");
+        return IntentRouteResult.builder()
+                .intentType(needsPlanning ? "目标规划（手动选择）" : "知识问答（手动选择）")
+                .intentEnum(needsPlanning ? IntentType.GOAL_PLANNING : IntentType.KNOWLEDGE_QA)
+                .complexity(needsPlanning ? "复杂" : "简单")
+                .runMode(mode)
+                .requiredTools(tools)
+                .confidence(1.0)
+                .source(RoutingSource.USER_SELECTED)
+                .reason("用户手动选择模式")
+                .needsPlanning(needsPlanning)
+                .planHint(needsPlanning ? "goal_planning" : null)
+                .build();
+    }
+
+    private List<Long> normalizeFileIds(List<Long> fileIds) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            return List.of();
+        }
+        return new ArrayList<>(new LinkedHashSet<>(fileIds));
     }
 }
