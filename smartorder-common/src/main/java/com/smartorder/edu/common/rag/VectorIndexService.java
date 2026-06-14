@@ -102,6 +102,45 @@ public class VectorIndexService {
             return Collections.emptyList();
         }
     }
+
+    /**
+     * 按知识库ID检索向量
+     */
+    public List<AttachmentRagSearchResult> searchByKnowledgeBaseIds(String query, Long userId,
+                                                                     List<Long> knowledgeBaseIds, int topK) {
+        if (query == null || query.isBlank() || knowledgeBaseIds == null || knowledgeBaseIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        try {
+            Embedding embedding = embeddingModel.embed(TextSegment.from(query)).content();
+            List<BaseVector> data = Collections.singletonList(new FloatVec(embedding.vectorAsList()));
+            String filter = buildKnowledgeBaseIdsFilter(userId, knowledgeBaseIds);
+
+            // 调试日志
+            log.info("[VectorIndexService] 按知识库检索，userId={}, knowledgeBaseIds={}, filter={}",
+                    userId, knowledgeBaseIds, filter);
+
+            SearchReq searchReq = SearchReq.builder()
+                    .collectionName(collectionName)
+                    .data(data)
+                    .annsField("dense_vector")
+                    .topK(Math.max(1, topK))
+                    .filter(filter)
+                    .build();
+
+            SearchResp resp = milvusClient.search(searchReq);
+            List<AttachmentRagSearchResult> results = parseAttachmentSearchResults(resp);
+
+            // 结果日志
+            log.info("[VectorIndexService] 知识库检索完成，结果数量: {}", results.size());
+
+            return results;
+        } catch (Exception e) {
+            log.error("按知识库检索向量失败: userId={}, knowledgeBaseIds={}", userId, knowledgeBaseIds, e);
+            return Collections.emptyList();
+        }
+    }
     
     /**
      * 处理单个批次的文档块
@@ -213,6 +252,16 @@ public class VectorIndexService {
                 .map(id -> "file_id == " + id)
                 .collect(Collectors.joining(" || "));
         return "user_id == " + userId + " && (" + fileExpr + ")";
+    }
+
+    private String buildKnowledgeBaseIdsFilter(Long userId, List<Long> knowledgeBaseIds) {
+        String kbExpr = knowledgeBaseIds.stream()
+                .distinct()
+                .map(id -> "knowledge_base_id == " + id)
+                .collect(Collectors.joining(" || "));
+        // 按知识库检索时，不强制要求 user_id 匹配
+        // 因为知识库可能是共享的，或者数据的 user_id 可能与当前用户不同
+        return kbExpr;
     }
 
     private List<AttachmentRagSearchResult> parseAttachmentSearchResults(SearchResp resp) {

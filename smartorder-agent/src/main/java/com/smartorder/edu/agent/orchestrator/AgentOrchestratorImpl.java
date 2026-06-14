@@ -2,6 +2,9 @@ package com.smartorder.edu.agent.orchestrator;
 
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
+import com.smartorder.edu.agent.rag.model.RagQueryRequest;
+import com.smartorder.edu.agent.rag.model.RagQueryResponse;
+import com.smartorder.edu.agent.rag.orchestrator.RagOrchestrator;
 import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentRouteService;
@@ -40,6 +43,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
     private final TraceEventDispatcher dispatcher;
     private final ConversationMemoryService memoryService;
     private final AgentConversationAttachmentService attachmentService;
+    private final RagOrchestrator ragOrchestrator;
 
     @Override
     public void handle(AgentChatRequest request, SseEmitter emitter) {
@@ -49,6 +53,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 .traceId(UUID.randomUUID().toString())
                 .conversationId(conversationId)
                 .userId(request.getUserId())
+                .message(request.getMessage())
                 .build();
 
         try {
@@ -84,6 +89,37 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                             null, context.getTraceId(), null);
                     dispatcher.complete(emitter, context);
                     return;
+                }
+            }
+
+            // 0.6 RAG 知识库检索（当指定 knowledgeBaseIds 时）
+            String ragContext = null;
+            if (request.getKnowledgeBaseIds() != null && !request.getKnowledgeBaseIds().isEmpty()) {
+                try {
+                    RagQueryRequest ragRequest = RagQueryRequest.builder()
+                            .userId(request.getUserId())
+                            .query(request.getMessage())
+                            .knowledgeBaseIds(request.getKnowledgeBaseIds())
+                            .retrievalMode(request.getRagRetrievalMode() != null ?
+                                    request.getRagRetrievalMode() : "auto")
+                            .build();
+                    RagQueryResponse ragResponse = ragOrchestrator.retrieve(ragRequest);
+
+                    if (ragResponse.isSuccess() && ragResponse.getContextText() != null
+                            && !ragResponse.getContextText().isBlank()) {
+                        ragContext = ragResponse.getContextText();
+                        context.setRagContext(ragContext);
+                        dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
+                                "type", "rag_retrieval",
+                                "knowledgeBaseIds", request.getKnowledgeBaseIds(),
+                                "usedMode", ragResponse.getUsedRetrievalMode(),
+                                "chunkCount", ragResponse.getChunks() != null ?
+                                        ragResponse.getChunks().size() : 0,
+                                "degraded", ragResponse.isDegraded()
+                        ));
+                    }
+                } catch (Exception e) {
+                    log.warn("[AgentOrchestrator] RAG 知识库检索失败，继续执行: {}", e.getMessage());
                 }
             }
 
