@@ -93,6 +93,7 @@ public class VectorIndexService {
                     .annsField("dense_vector")
                     .topK(Math.max(1, topK))
                     .filter(filter)
+                    .outputFields(List.of("*"))
                     .build();
 
             SearchResp resp = milvusClient.search(searchReq);
@@ -127,6 +128,7 @@ public class VectorIndexService {
                     .annsField("dense_vector")
                     .topK(Math.max(1, topK))
                     .filter(filter)
+                    .outputFields(List.of("*"))
                     .build();
 
             SearchResp resp = milvusClient.search(searchReq);
