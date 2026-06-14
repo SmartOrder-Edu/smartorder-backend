@@ -1,5 +1,7 @@
 package com.smartorder.edu.agent.prompt;
 
+import com.smartorder.edu.agent.tool.ToolHandler;
+import com.smartorder.edu.agent.tool.ToolRegistry;
 import dev.langchain4j.data.message.SystemMessage;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * 统一提示词加载器——从 classpath:prompts/ 目录加载所有 .md 提示词文件。
@@ -24,18 +27,21 @@ import java.util.concurrent.ConcurrentHashMap;
 public class PromptLoader {
 
     private final ResourceLoader resourceLoader;
+    private final ToolRegistry toolRegistry;
 
     private final Map<String, String> cache = new ConcurrentHashMap<>();
 
     private static final String BASE_PATH = "classpath:prompts/";
 
-    public PromptLoader(ResourceLoader resourceLoader) {
+    public PromptLoader(ResourceLoader resourceLoader, ToolRegistry toolRegistry) {
         this.resourceLoader = resourceLoader;
+        this.toolRegistry = toolRegistry;
     }
 
     @PostConstruct
     void init() {
         loadAll();
+        replacePlaceholders();
         log.info("[PromptLoader] 提示词加载完成，共 {} 个文件", cache.size());
     }
 
@@ -174,6 +180,30 @@ public class PromptLoader {
         load("clarification/profile-clarification.md");
         load("clarification/citation-instruction.md");
         load("clarification/max-rounds-fallback.md");
+    }
+
+    /**
+     * 替换提示词中的动态占位符。
+     * {available_tools_list} → 工具名列表（逗号分隔）
+     * {available_tools_with_desc} → 工具名：描述（每行一个）
+     */
+    private void replacePlaceholders() {
+        String toolNames = toolRegistry.getRegisteredNames().stream().sorted().collect(Collectors.joining(", "));
+        String toolsWithDesc = toolRegistry.getAll().stream()
+                .sorted((a, b) -> a.name().compareToIgnoreCase(b.name()))
+                .map(h -> "   " + h.name() + "：" + h.description())
+                .collect(Collectors.joining("\n"));
+
+        for (Map.Entry<String, String> entry : cache.entrySet()) {
+            String content = entry.getValue();
+            if (content.contains("{available_tools_list}") || content.contains("{available_tools_with_desc}")) {
+                content = content.replace("{available_tools_list}", toolNames);
+                content = content.replace("{available_tools_with_desc}", toolsWithDesc);
+                cache.put(entry.getKey(), content);
+                log.info("[PromptLoader] 动态注入工具列表到: {} ({} 个工具)", entry.getKey(),
+                        toolRegistry.getRegisteredNames().size());
+            }
+        }
     }
 
     private void load(String path) {

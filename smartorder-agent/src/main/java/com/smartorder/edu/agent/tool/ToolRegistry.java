@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -50,5 +51,10 @@ public class ToolRegistry {
 
     public boolean contains(String name) {
         return toolMap.containsKey(name);
+    }
+
+    /** 返回所有已注册工具的名称列表（供提示词动态注入和校验错误信息使用） */
+    public Set<String> getRegisteredNames() {
+        return Set.copyOf(toolMap.keySet());
     }
 }

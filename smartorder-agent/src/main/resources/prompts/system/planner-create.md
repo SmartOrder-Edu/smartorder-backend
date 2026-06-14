@@ -40,7 +40,9 @@ JSON 格式：
 1. stepId 必须从 step-1 开始递增编号
 2. dependsOn 中只能引用已存在的 stepId
 3. 不能出现循环依赖
-4. 每个步骤的 requiredTools 只能包含以下工具：getStudentProfile, queryKnowledge, queryLearningProgress, queryTasks, createLearningPlan, generateResource, generateQuiz, searchConversationAttachments
+4. 每个步骤的 requiredTools 只能包含以下工具（格式 "工具名"）：{available_tools_list}
+   各工具说明：
+{available_tools_with_desc}
 5. gate 决定执行前是否需要暂停：
    - NORMAL: 直接执行
    - CLARIFICATION: 需要先向用户提问，获得补充信息后继续
