@@ -113,8 +113,11 @@ public class LearningSpaceServiceImpl implements ILearningSpaceService {
         UpdateWrapper<LearningSpace> updateWrapper = new UpdateWrapper<>();
         updateWrapper.eq("id", spaceId).eq("user_id", userId).eq("is_deleted", 0)
                 .set("is_deleted", 1);
-        learningSpaceMapper.update(null, updateWrapper);
-        log.info("用户{}删除学习空间{}成功", userId, spaceId);
+        int rows = learningSpaceMapper.update(null, updateWrapper);
+        if (rows == 0) {
+            throw new BusinessException("删除失败，未找到可删除的学习空间记录");
+        }
+        log.info("用户{}删除学习空间{}成功，影响行数: {}", userId, spaceId, rows);
     }
 
     @Override
