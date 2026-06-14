@@ -39,4 +39,19 @@ public interface ITaskService {
      * 查询用户延期任务
      */
     List<Task> getOverdueTasks(Long userId);
+
+    /**
+     * 查询指定学习空间指定日期的任务
+     */
+    List<Task> getBySpaceIdAndDate(Long spaceId, Long userId, LocalDate date);
+
+    /**
+     * 查询指定学习空间的待完成任务
+     */
+    List<Task> getPendingBySpaceId(Long spaceId, Long userId);
+
+    /**
+     * 查询指定学习空间的逾期任务
+     */
+    List<Task> getOverdueBySpaceId(Long spaceId, Long userId);
 }
