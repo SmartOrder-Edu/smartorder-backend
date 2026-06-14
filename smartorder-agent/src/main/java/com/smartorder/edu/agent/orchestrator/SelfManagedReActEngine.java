@@ -51,6 +51,10 @@ import java.util.concurrent.TimeUnit;
 public class SelfManagedReActEngine {
 
     private static final int MAX_TOOL_ROUNDS = 5;
+    private static final ReActRunOptions USER_VISIBLE_OPTIONS =
+            new ReActRunOptions(true, true, true);
+    private static final ReActRunOptions INTERNAL_TASK_OPTIONS =
+            new ReActRunOptions(false, false, false);
 
     private final AgentConfiguration agentConfiguration;
     private final ChatModel chatLanguageModel;
@@ -79,7 +83,8 @@ public class SelfManagedReActEngine {
         // 2. 构建工具规范
         List<ToolSpecification> tools = toolAdapter.buildToolSpecifications(routeResult.getRequiredTools());
 
-        runReActLoop(request, routeResult, runtimeContext, emitter, messages, tools, false);
+        runReActLoop(request, routeResult, runtimeContext, emitter, messages, tools,
+                false, USER_VISIBLE_OPTIONS);
     }
 
     /**
@@ -134,7 +139,64 @@ public class SelfManagedReActEngine {
         // 2. 构建工具规范
         List<ToolSpecification> tools = toolAdapter.buildToolSpecifications(routeResult.getRequiredTools());
 
-        return runReActLoop(request, routeResult, runtimeContext, emitter, messages, tools, confirmationGranted);
+        return runReActLoop(request, routeResult, runtimeContext, emitter, messages, tools,
+                confirmationGranted, USER_VISIBLE_OPTIONS);
+    }
+
+    /**
+     * 带任务上下文的内部 ReAct 执行。
+     * <p>
+     * 用于 Plan-and-Execute 子步骤：保留 think/tool 事件给执行面板，
+     * 但不把子步骤最终回答流式输出到用户正文，也不写入对话历史。
+     */
+    public String executeInternalTask(
+            AgentChatRequest request,
+            IntentRouteResult routeResult,
+            AgentRuntimeContext runtimeContext,
+            SseEmitter emitter,
+            String taskSystemMessage,
+            Map<String, String> previousOutputs,
+            boolean confirmationGranted
+    ) {
+        List<ChatMessage> messages = buildTaskMessages(request, runtimeContext, taskSystemMessage, previousOutputs);
+        List<ToolSpecification> tools = toolAdapter.buildToolSpecifications(routeResult.getRequiredTools());
+
+        return runReActLoop(request, routeResult, runtimeContext, emitter, messages, tools,
+                confirmationGranted, INTERNAL_TASK_OPTIONS);
+    }
+
+    private List<ChatMessage> buildTaskMessages(
+            AgentChatRequest request,
+            AgentRuntimeContext runtimeContext,
+            String taskSystemMessage,
+            Map<String, String> previousOutputs
+    ) {
+        List<ChatMessage> messages = new ArrayList<>();
+
+        messages.add(SystemMessage.from(memoryService.getSystemPrompt()));
+
+        if (taskSystemMessage != null && !taskSystemMessage.isBlank()) {
+            messages.add(SystemMessage.from(taskSystemMessage));
+        }
+
+        if (previousOutputs != null && !previousOutputs.isEmpty()) {
+            StringBuilder ctxBuilder = new StringBuilder("前置任务结果：\n");
+            for (Map.Entry<String, String> entry : previousOutputs.entrySet()) {
+                ctxBuilder.append("- ").append(entry.getKey()).append(": ")
+                        .append(entry.getValue().length() > 300
+                                ? entry.getValue().substring(0, 300) + "..."
+                                : entry.getValue())
+                        .append("\n");
+            }
+            messages.add(SystemMessage.from(ctxBuilder.toString()));
+        }
+
+        if (runtimeContext.getAttachmentContext() != null && !runtimeContext.getAttachmentContext().isBlank()) {
+            messages.add(SystemMessage.from(runtimeContext.getAttachmentContext()));
+        }
+
+        messages.add(UserMessage.from(request.getMessage()));
+        return messages;
     }
 
     /**
@@ -149,7 +211,8 @@ public class SelfManagedReActEngine {
             SseEmitter emitter,
             List<ChatMessage> messages,
             List<ToolSpecification> tools,
-            boolean confirmationGranted
+            boolean confirmationGranted,
+            ReActRunOptions options
     ) {
         // 4. ReAct 循环 — 每轮非流式 LLM 返回的 AiMessage.thinking() 即为真实思考过程
         String finalAnswer = null;
@@ -230,10 +293,11 @@ public class SelfManagedReActEngine {
                         toolCall.put("durationMs", durationMs);
                         seg.put("toolCall", toolCall);
 
-                        // 保存工具消息到 DB
-                        memoryService.saveToolMessage(
-                                runtimeContext.getConversationId(), request.getUserId(),
-                                toolRequest.name(), toolResult);
+                        if (options.saveToolMessages()) {
+                            memoryService.saveToolMessage(
+                                    runtimeContext.getConversationId(), request.getUserId(),
+                                    toolRequest.name(), toolResult);
+                        }
 
                         messages.add(ToolExecutionResultMessage.from(toolRequest, toolResult));
 
@@ -260,7 +324,7 @@ public class SelfManagedReActEngine {
 
             // 6. 无工具调用 → 使用流式模型逐 token 输出最终回答
             String[] result = streamFinalAnswer(messages, tools, emitter, runtimeContext,
-                    allThinkingBuilder, currentThinkingBuilder, reasoningSegments);
+                    allThinkingBuilder, currentThinkingBuilder, reasoningSegments, options.streamTextToUser());
             finalAnswer = result[0];
 
             log.info("[ReAct] 完成, traceId={}, rounds={}", runtimeContext.getTraceId(), round);
@@ -271,20 +335,22 @@ public class SelfManagedReActEngine {
         if (finalAnswer == null) {
             finalAnswer = "我已经进行了多轮分析。建议你把问题拆成更小的部分，我可以继续帮你处理。";
             log.warn("[ReAct] 达到最大工具调用轮数, traceId={}", runtimeContext.getTraceId());
-            dispatcher.emit(emitter, runtimeContext, AgentEventType.TEXT_DELTA, Map.of(
-                    "text", finalAnswer
-            ));
+            if (options.streamTextToUser()) {
+                dispatcher.emit(emitter, runtimeContext, AgentEventType.TEXT_DELTA, Map.of(
+                        "text", finalAnswer
+                ));
+            }
         }
 
-        // 8. 保存助手回复（含 reasoning_content + 思考分段，用于前端还原实时展示效果）
-        String reasoningContent = allThinkingBuilder.length() > 0 ? allThinkingBuilder.toString() : null;
-        String segmentsJson = reasoningSegments.isEmpty() ? null : JSON.toJSONString(reasoningSegments);
-        memoryService.saveAssistantMessage(
-                runtimeContext.getConversationId(), request.getUserId(), finalAnswer, reasoningContent,
-                runtimeContext.getTraceId(), segmentsJson);
+        if (options.saveAssistantMessage()) {
+            String reasoningContent = allThinkingBuilder.length() > 0 ? allThinkingBuilder.toString() : null;
+            String segmentsJson = reasoningSegments.isEmpty() ? null : JSON.toJSONString(reasoningSegments);
+            memoryService.saveAssistantMessage(
+                    runtimeContext.getConversationId(), request.getUserId(), finalAnswer, reasoningContent,
+                    runtimeContext.getTraceId(), segmentsJson);
 
-        // 9. 异步检查是否需要压缩
-        compressService.checkAndCompress(runtimeContext.getConversationId(), request.getUserId());
+            compressService.checkAndCompress(runtimeContext.getConversationId(), request.getUserId());
+        }
 
         return finalAnswer;
     }
@@ -302,7 +368,8 @@ public class SelfManagedReActEngine {
             AgentRuntimeContext runtimeContext,
             StringBuilder allThinkingBuilder,
             StringBuilder currentThinkingBuilder,
-            List<Map<String, Object>> reasoningSegments
+            List<Map<String, Object>> reasoningSegments,
+            boolean streamTextToUser
     ) {
         StringBuilder answerBuilder = new StringBuilder();
         StringBuilder thinkingBuilder = new StringBuilder();
@@ -333,9 +400,11 @@ public class SelfManagedReActEngine {
             public void onPartialResponse(String partialResponse) {
                 if (partialResponse != null && !partialResponse.isEmpty()) {
                     answerBuilder.append(partialResponse);
-                    dispatcher.emit(emitter, runtimeContext, AgentEventType.TEXT_DELTA, Map.of(
-                            "text", partialResponse
-                    ));
+                    if (streamTextToUser) {
+                        dispatcher.emit(emitter, runtimeContext, AgentEventType.TEXT_DELTA, Map.of(
+                                "text", partialResponse
+                        ));
+                    }
                 }
             }
 
@@ -379,5 +448,12 @@ public class SelfManagedReActEngine {
                 answerBuilder.toString(),
                 thinkingBuilder.length() > 0 ? thinkingBuilder.toString() : null
         };
+    }
+
+    private record ReActRunOptions(
+            boolean streamTextToUser,
+            boolean saveAssistantMessage,
+            boolean saveToolMessages
+    ) {
     }
 }

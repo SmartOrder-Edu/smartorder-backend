@@ -1,6 +1,7 @@
 package com.smartorder.edu.agent.orchestrator;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.model.dto.ExecutionPlan;
@@ -78,6 +79,12 @@ public class PlanAndExecuteEngine {
 
         // 2. 预取学生画像
         String profileJson = preFetchProfile(request, context, emitter);
+
+        if (shouldCollectProfileDetails(routeResult, profileJson)) {
+            ExecutionPlan clarificationPlan = buildProfileClarificationPlan(request);
+            handleClarificationGate(clarificationPlan, 0, context, emitter, request);
+            return;
+        }
 
         // 3. 构建 PlannerAgent prompt
         String prompt = buildPlannerPrompt(request, routeResult, profileJson, context);
@@ -282,6 +289,9 @@ public class PlanAndExecuteEngine {
 
         // 2. 执行任务（带验证+动态重规划）
         Map<String, String> stepOutputs = new LinkedHashMap<>(plan.getStepOutputs());
+        if (plan.getUserGoal() != null && !plan.getUserGoal().isBlank()) {
+            stepOutputs.putIfAbsent("__userGoal", plan.getUserGoal());
+        }
         plan.setStatus("EXECUTING");
 
         int totalReplans = 0;
@@ -578,6 +588,9 @@ public class PlanAndExecuteEngine {
                                         AgentRuntimeContext context, SseEmitter emitter,
                                         AgentChatRequest request) {
         Map<String, String> stepOutputs = new LinkedHashMap<>(plan.getStepOutputs());
+        if (plan.getUserGoal() != null && !plan.getUserGoal().isBlank()) {
+            stepOutputs.putIfAbsent("__userGoal", plan.getUserGoal());
+        }
         String conversationId = context.getConversationId();
         Long userId = request != null ? request.getUserId() : context.getUserId();
 
@@ -637,9 +650,90 @@ public class PlanAndExecuteEngine {
         taskRequest.setConversationId(context.getConversationId());
         taskRequest.setMessage(task.getDescription());
 
-        // 4. 通过 ReAct 引擎执行（带任务上下文），直接返回执行结果
-        return reActEngine.executeWithTaskContext(taskRequest, taskRoute, context, emitter,
+        // 4. 通过 ReAct 引擎静默执行子任务，结果只进入步骤状态，不进入 AI 正文
+        return reActEngine.executeInternalTask(taskRequest, taskRoute, context, emitter,
                 taskSystemMessage, previousOutputs, confirmationGranted);
+    }
+
+    private boolean shouldCollectProfileDetails(IntentRouteResult routeResult, String profileJson) {
+        boolean goalPlanning = IntentType.GOAL_PLANNING.equals(routeResult.getIntentEnum())
+                || "goal_planning".equals(routeResult.getPlanHint());
+        if (!goalPlanning) {
+            return false;
+        }
+        if (profileJson == null || profileJson.isBlank()
+                || "{}".equals(profileJson.trim()) || "null".equalsIgnoreCase(profileJson.trim())) {
+            return true;
+        }
+        try {
+            JSONObject profile = JSON.parseObject(profileJson);
+            boolean emptyCoreProfile = isEmptyProfileSection(profile.getJSONObject("basicProfile"))
+                    && isEmptyProfileSection(profile.getJSONObject("knowledgeProfile"))
+                    && isEmptyProfileSection(profile.getJSONObject("preferenceProfile"));
+            if (emptyCoreProfile) {
+                return true;
+            }
+
+            Number confidence = profile.getObject("confidenceScore", Number.class);
+            return confidence != null && confidence.doubleValue() < 30;
+        } catch (Exception e) {
+            log.warn("[PlanAndExecute] 画像完整性判断失败，继续正常规划: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean isEmptyProfileSection(JSONObject section) {
+        return section == null || section.isEmpty();
+    }
+
+    private ExecutionPlan buildProfileClarificationPlan(AgentChatRequest request) {
+        ExecutionStep clarification = ExecutionStep.builder()
+                .stepId("step-1")
+                .description("""
+                        为了制定更准确的学习计划，请先补充几项信息：
+                        1. 你当前的基础水平或年级/专业背景；
+                        2. 目标考试、课程或项目，以及期望完成时间；
+                        3. 每天或每周可投入的学习时间；
+                        4. 已知薄弱点、偏好的学习方式或资料形式。
+                        可以用一两句话回答，不需要很正式。
+                        """)
+                .requiredTools(List.of())
+                .dependsOn(List.of())
+                .gate("CLARIFICATION")
+                .riskLevel("READ")
+                .expectedOutput("用户补充的学习背景、目标、时间投入和偏好")
+                .status("PENDING")
+                .build();
+
+        ExecutionStep createPlan = ExecutionStep.builder()
+                .stepId("step-2")
+                .description("基于用户原始目标、用户补充信息和现有画像生成完整学习计划草稿。必须使用 createLearningPlan 工具提交草稿，草稿包含 spaceName、type、goals、startDate、targetEndDate、phases 和 knowledgeGraph。")
+                .requiredTools(List.of("createLearningPlan"))
+                .dependsOn(List.of("step-1"))
+                .gate("NORMAL")
+                .riskLevel("WRITE_DRAFT")
+                .expectedOutput("学习计划草稿（含阶段、学习路径、知识图谱）")
+                .status("PENDING")
+                .build();
+
+        ExecutionStep confirm = ExecutionStep.builder()
+                .stepId("step-3")
+                .description("展示学习计划草稿，等待用户确认是否创建学习空间")
+                .requiredTools(List.of())
+                .dependsOn(List.of("step-2"))
+                .gate("CONFIRMATION")
+                .riskLevel("WRITE_CONFIRMED")
+                .expectedOutput("用户确认结果")
+                .status("PENDING")
+                .build();
+
+        return ExecutionPlan.builder()
+                .userGoal(request.getMessage())
+                .steps(List.of(clarification, createPlan, confirm))
+                .status("DRAFT")
+                .currentStepIndex(0)
+                .stepOutputs(new LinkedHashMap<>())
+                .build();
     }
 
     private String buildTaskSystemMessage(ExecutionStep task, Map<String, String> previousOutputs) {
