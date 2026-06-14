@@ -6,7 +6,11 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 /**
- * 学习规划草稿实体
+ * 规划草稿实体——存储两种类型的规划数据：
+ * <ul>
+ *   <li><b>EXECUTION_PLAN</b>：Agent 执行步骤列表（Plan-and-Execute 模式产出）</li>
+ *   <li><b>LEARNING_PLAN</b>：学习计划草稿（含阶段、路径、知识图谱），用户审阅确认后创建学习空间</li>
+ * </ul>
  */
 @Data
 @NoArgsConstructor
@@ -18,14 +22,14 @@ public class AgentPlanDraft {
     private Long userId;
     private String planJson;
 
-    /** TaskList JSON（PlanAndExecute 新架构） */
-    private String taskListJson;
+    /** ExecutionPlan JSON（当 planType=EXECUTION_PLAN 时有值） */
+    private String executionPlanJson;
 
-    /** 计划类型：LEGACY（旧 planJson） | TASK_LIST（新 TaskList） */
+    /** 计划类型：EXECUTION_PLAN | LEARNING_PLAN */
     private String planType;
 
-    /** 断点恢复：当前执行到的任务索引 */
-    private Integer resumeTaskIndex;
+    /** 断点恢复：当前执行到的步骤索引 */
+    private Integer resumeStepIndex;
 
     private String status;
     private LocalDateTime expireTime;

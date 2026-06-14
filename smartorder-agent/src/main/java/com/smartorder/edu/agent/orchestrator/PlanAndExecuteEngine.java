@@ -3,8 +3,8 @@ package com.smartorder.edu.agent.orchestrator;
 import com.alibaba.fastjson.JSON;
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
-import com.smartorder.edu.agent.model.dto.TaskItem;
-import com.smartorder.edu.agent.model.dto.TaskList;
+import com.smartorder.edu.agent.model.dto.ExecutionPlan;
+import com.smartorder.edu.agent.model.dto.ExecutionStep;
 import com.smartorder.edu.agent.model.entity.AgentPlanDraft;
 import com.smartorder.edu.agent.model.dto.VerificationResult;
 import com.smartorder.edu.agent.model.dto.VerificationResult.SuggestedAction;
@@ -66,7 +66,7 @@ public class PlanAndExecuteEngine {
     // ============ 公开 API ============
 
     /**
-     * Phase 1: 规划——生成 TaskList
+     * Phase 1: 规划——生成 ExecutionPlan
      */
     public void runPlanning(AgentChatRequest request, IntentRouteResult routeResult,
                             AgentRuntimeContext context, SseEmitter emitter) {
@@ -82,15 +82,15 @@ public class PlanAndExecuteEngine {
         // 3. 构建 PlannerAgent prompt
         String prompt = buildPlannerPrompt(request, routeResult, profileJson, context);
 
-        // 4. 调用 PlannerAgent 生成 TaskList
-        String taskListRaw;
+        // 4. 调用 PlannerAgent 生成 ExecutionPlan
+        String planRaw;
         try {
             PlannerAgent plannerAgent = AiServices.builder(PlannerAgent.class)
                     .chatModel(planningChatModel)
                     .build();
-            taskListRaw = plannerAgent.createTaskList(prompt);
+            planRaw = plannerAgent.createExecutionPlan(prompt);
             log.info("[PlanAndExecute] PlannerAgent 原始响应 (前500字符): {}",
-                    taskListRaw != null ? taskListRaw.substring(0, Math.min(500, taskListRaw.length())) : "null");
+                    planRaw != null ? planRaw.substring(0, Math.min(500, planRaw.length())) : "null");
         } catch (Exception e) {
             log.error("[PlanAndExecute] PlannerAgent 调用失败", e);
             String errorMsg = "抱歉，生成任务计划时遇到了问题，请稍后再试。";
@@ -103,14 +103,14 @@ public class PlanAndExecuteEngine {
             return;
         }
 
-        // 5. 校验 TaskList
-        TaskList taskList;
+        // 5. 校验 ExecutionPlan
+        ExecutionPlan plan;
         try {
-            taskList = schemaValidator.validateAndParseTaskList(taskListRaw);
+            plan = schemaValidator.validateAndParseExecutionPlan(planRaw);
         } catch (Exception e) {
-            log.error("[PlanAndExecute] TaskList 校验失败: {}, 原始响应(前300字符): {}",
+            log.error("[PlanAndExecute] ExecutionPlan 校验失败: {}, 原始响应(前300字符): {}",
                     e.getMessage(),
-                    taskListRaw != null ? taskListRaw.substring(0, Math.min(300, taskListRaw.length())) : "null");
+                    planRaw != null ? planRaw.substring(0, Math.min(300, planRaw.length())) : "null");
             String errorMsg = "生成的任务计划格式不正确，请重新描述你的目标。";
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", errorMsg));
             memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
@@ -118,65 +118,65 @@ public class PlanAndExecuteEngine {
             return;
         }
 
-        // 6. 初始化 TaskList 元数据
-        taskList.setStatus("DRAFT");
+        // 6. 初始化 ExecutionPlan 元数据
+        plan.setStatus("DRAFT");
 
         // 7. 检查第一个 task 是否是 CLARIFICATION gate → 立即处理
-        TaskItem firstTask = taskList.getTasks().get(0);
-        if ("CLARIFICATION".equals(firstTask.getGate())) {
-            handleClarificationGate(taskList, 0, context, emitter, request);
+        ExecutionStep firstStep = plan.getSteps().get(0);
+        if ("CLARIFICATION".equals(firstStep.getGate())) {
+            handleClarificationGate(plan, 0, context, emitter, request);
             return;
         }
 
         // 8. 检查是否有 CONFIRMATION gate → 保存草稿并暂停
-        boolean hasConfirmationGate = taskList.getTasks().stream()
+        boolean hasConfirmationGate = plan.getSteps().stream()
                 .anyMatch(t -> "CONFIRMATION".equals(t.getGate()));
 
         if (hasConfirmationGate) {
             // 先执行 CONFIRMATION gate 之前的 NORMAL 任务
-            int firstConfirmationIndex = findFirstConfirmationIndex(taskList);
+            int firstConfirmationIndex = findFirstConfirmationIndex(plan);
             if (firstConfirmationIndex > 0) {
                 // 有前置 NORMAL 任务
-                taskList.setStatus("EXECUTING");
-                String draftId = draftService.saveTaskListDraft(
+                plan.setStatus("EXECUTING");
+                String draftId = draftService.saveExecutionPlanDraft(
                         context.getConversationId(), context.getTraceId(),
-                        request.getUserId(), taskList);
-                taskList.setConfirmationDraftId(draftId);
-                draftService.updateTaskList(draftId, taskList);
+                        request.getUserId(), plan);
+                plan.setConfirmationDraftId(draftId);
+                draftService.updateExecutionPlan(draftId, plan);
 
                 // 先发送 plan.created 让前端立即展示 PlanChecklist，
                 // 避免前端在 NORMAL 任务执行期间（可能 30-60s）看不到计划结构
                 dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
                         "draftId", draftId,
-                        "taskList", taskList,
+                        "plan", plan,
                         "needsConfirmation", true,
                         "clarificationQuestion", ""
                 ));
 
                 // 再执行 NORMAL 任务（任务状态通过 plan.task.started/completed 实时同步前端）
-                executeTasksUntilGate(draftId, taskList, firstConfirmationIndex, context, emitter, request);
+                executeTasksUntilGate(draftId, plan, firstConfirmationIndex, context, emitter, request);
                 return;
             }
 
             // 第一个任务就是 CONFIRMATION，直接暂停
-            String draftId = draftService.saveTaskListDraft(
+            String draftId = draftService.saveExecutionPlanDraft(
                     context.getConversationId(), context.getTraceId(),
-                    request.getUserId(), taskList);
+                    request.getUserId(), plan);
 
-            taskList.setStatus("PAUSED_CONFIRMATION");
-            taskList.setConfirmationDraftId(draftId);
-            draftService.updateTaskList(draftId, taskList);
+            plan.setStatus("PAUSED_CONFIRMATION");
+            plan.setConfirmationDraftId(draftId);
+            draftService.updateExecutionPlan(draftId, plan);
 
             // 发射 PLAN_CREATED 事件
             dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
                     "draftId", draftId,
-                    "taskList", taskList,
+                    "plan", plan,
                     "needsConfirmation", true,
                     "clarificationQuestion", ""
             ));
 
             // 输出摘要
-            String summaryText = buildPlanSummaryText(taskList);
+            String summaryText = buildPlanSummaryText(plan);
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", summaryText));
             memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                     summaryText, null, context.getTraceId(), null);
@@ -184,36 +184,36 @@ public class PlanAndExecuteEngine {
         }
 
         // 9. 无门 → 保存草稿，发射 PLAN_CREATED，等待用户确认后执行
-        String draftId = draftService.saveTaskListDraft(
+        String draftId = draftService.saveExecutionPlanDraft(
                 context.getConversationId(), context.getTraceId(),
-                request.getUserId(), taskList);
-        taskList.setStatus("PENDING_CONFIRM");
-        taskList.setConfirmationDraftId(draftId);
-        draftService.updateTaskList(draftId, taskList);
+                request.getUserId(), plan);
+        plan.setStatus("PENDING_CONFIRM");
+        plan.setConfirmationDraftId(draftId);
+        draftService.updateExecutionPlan(draftId, plan);
 
-        // 发射 PLAN_CREATED 事件（前端依赖此事件初始化 currentTaskList）
+        // 发射 PLAN_CREATED 事件（前端依赖此事件初始化 currentExecutionPlan）
         dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
                 "draftId", draftId,
-                "taskList", taskList,
+                "plan", plan,
                 "needsConfirmation", false,
                 "clarificationQuestion", ""
         ));
 
         // 输出计划摘要文本
-        String summaryText = buildPlanSummaryText(taskList);
+        String summaryText = buildPlanSummaryText(plan);
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", summaryText));
         memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                 summaryText, null, context.getTraceId(), null);
     }
 
     /**
-     * Phase 2: 执行 TaskList（确认后调用）
+     * Phase 2: 执行 ExecutionPlan（确认后调用）
      * <p>
      * 由 AgentPlanController 调用，创建全新的执行上下文。
      */
-    public void executeTaskList(String draftId, Long userId, String conversationId,
+    public void executeExecutionPlan(String draftId, Long userId, String conversationId,
                                 SseEmitter emitter, String traceId) {
-        // 1. 从 DB 加载 TaskList
+        // 1. 从 DB 加载 ExecutionPlan
         AgentPlanDraft draft = draftService.getByDraftId(draftId);
         if (draft == null) {
             log.error("[PlanAndExecute] 草稿不存在: {}", draftId);
@@ -222,8 +222,8 @@ public class PlanAndExecuteEngine {
             return;
         }
 
-        TaskList taskList = JSON.parseObject(draft.getTaskListJson(), TaskList.class);
-        boolean resumed = resumeConfirmationGateIfNeeded(draftId, taskList, null);
+        ExecutionPlan plan = JSON.parseObject(draft.getExecutionPlanJson(), ExecutionPlan.class);
+        boolean resumed = resumeConfirmationGateIfNeeded(draftId, plan, null);
 
         // 2. 构建运行时上下文
         AgentRuntimeContext context = AgentRuntimeContext.builder()
@@ -231,25 +231,25 @@ public class PlanAndExecuteEngine {
                 .conversationId(conversationId)
                 .userId(userId)
                 .mode(AgentRunMode.PLAN_AND_EXECUTE)
-                .sequence(draft.getResumeTaskIndex() != null
-                        ? new java.util.concurrent.atomic.AtomicInteger(draft.getResumeTaskIndex() * 100)
+                .sequence(draft.getResumeStepIndex() != null
+                        ? new java.util.concurrent.atomic.AtomicInteger(draft.getResumeStepIndex() * 100)
                         : new java.util.concurrent.atomic.AtomicInteger(0))
                 .build();
 
         if (resumed) {
-            emitResumeIfConfirmationWasCleared(taskList, context, emitter);
+            emitResumeIfConfirmationWasCleared(plan, context, emitter);
         }
 
-        executeTaskListInternal(draft, taskList, context, emitter, draftId,
+        executeExecutionPlanInternal(draft, plan, context, emitter, draftId,
                 userId, conversationId, resumed);
     }
 
     /**
-     * Phase 2 (with context): 使用父级上下文执行 TaskList，保持 traceId 和序列号连续性。
+     * Phase 2 (with context): 使用父级上下文执行 ExecutionPlan，保持 traceId 和序列号连续性。
      * <p>
      * 由 resumePlan 等内部调用方使用，避免丢失 attachmentContext 等父级状态。
      */
-    public void executeTaskListWithContext(String draftId, Long userId,
+    public void executeExecutionPlanWithContext(String draftId, Long userId,
                                            AgentRuntimeContext parentContext, SseEmitter emitter) {
         AgentPlanDraft draft = draftService.getByDraftId(draftId);
         if (draft == null) {
@@ -259,8 +259,8 @@ public class PlanAndExecuteEngine {
             return;
         }
 
-        TaskList taskList = JSON.parseObject(draft.getTaskListJson(), TaskList.class);
-        boolean resumed = resumeConfirmationGateIfNeeded(draftId, taskList, null);
+        ExecutionPlan plan = JSON.parseObject(draft.getExecutionPlanJson(), ExecutionPlan.class);
+        boolean resumed = resumeConfirmationGateIfNeeded(draftId, plan, null);
 
         // 构建子上下文（继承父级关键字段，保持 traceId 连续性）
         AgentRuntimeContext context = AgentRuntimeContext.builder()
@@ -275,74 +275,74 @@ public class PlanAndExecuteEngine {
                 .build();
 
         if (resumed) {
-            emitResumeIfConfirmationWasCleared(taskList, context, emitter);
+            emitResumeIfConfirmationWasCleared(plan, context, emitter);
         }
 
-        executeTaskListInternal(draft, taskList, context, emitter, draftId,
+        executeExecutionPlanInternal(draft, plan, context, emitter, draftId,
                 userId, parentContext.getConversationId(), resumed);
     }
 
     /**
-     * 执行 TaskList 的核心逻辑（共享实现）
+     * 执行 ExecutionPlan 的核心逻辑（共享实现）
      */
-    private void executeTaskListInternal(AgentPlanDraft draft, TaskList taskList,
+    private void executeExecutionPlanInternal(AgentPlanDraft draft, ExecutionPlan plan,
                                          AgentRuntimeContext context, SseEmitter emitter,
                                          String draftId, Long userId, String conversationId,
                                          boolean userConfirmed) {
         // 1. 拓扑排序
-        List<TaskItem> sortedTasks = topologicalSort(taskList.getTasks());
+        List<ExecutionStep> sortedSteps = topologicalSort(plan.getSteps());
 
         // 2. 执行任务（带验证+动态重规划）
-        Map<String, String> taskOutputs = new LinkedHashMap<>(taskList.getTaskOutputs());
-        taskList.setStatus("EXECUTING");
+        Map<String, String> stepOutputs = new LinkedHashMap<>(plan.getStepOutputs());
+        plan.setStatus("EXECUTING");
 
         int totalReplans = 0;
-        int taskIndex = taskList.getCurrentTaskIndex();
+        int stepIndex = plan.getCurrentStepIndex();
 
-        while (taskIndex < sortedTasks.size()) {
-            TaskItem task = sortedTasks.get(taskIndex);
+        while (stepIndex < sortedSteps.size()) {
+            ExecutionStep task = sortedSteps.get(stepIndex);
 
             // 跳过已完成的任务
             if ("COMPLETED".equals(task.getStatus())) {
-                taskIndex++;
+                stepIndex++;
                 continue;
             }
 
             // 检查依赖
-            if (!allDependenciesCompleted(task, taskOutputs)) {
+            if (!allDependenciesCompleted(task, stepOutputs)) {
                 task.setStatus("FAILED");
                 task.setErrorMessage("依赖任务未完成: " + task.getDependsOn());
-                dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_FAILED, taskToPayload(task));
-                taskIndex++;
+                dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_FAILED, stepToPayload(task));
+                stepIndex++;
                 continue;
             }
 
             // 根据门类型分发（门任务不受验证循环控制）
             if ("CLARIFICATION".equals(task.getGate())) {
                 task.setStatus("RUNNING");
-                dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_STARTED, taskToPayload(task));
-                handleClarificationGate(taskList, taskIndex, context, emitter, null);
-                taskList.setCurrentTaskIndex(taskIndex);
-                draftService.updateTaskList(draftId, taskList);
+                dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_STARTED, stepToPayload(task));
+                handleClarificationGate(plan, stepIndex, context, emitter, null);
+                plan.setCurrentStepIndex(stepIndex);
+                draftService.updateExecutionPlan(draftId, plan);
                 return;
             }
 
             if ("CONFIRMATION".equals(task.getGate())) {
                 task.setStatus("RUNNING");
-                dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_STARTED, taskToPayload(task));
-                taskList.setCurrentTaskIndex(taskIndex);
-                taskList.setStatus("PAUSED_CONFIRMATION");
-                taskList.setConfirmationDraftId(draftId);
-                draftService.updateTaskList(draftId, taskList);
+                dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_STARTED, stepToPayload(task));
+                plan.setCurrentStepIndex(stepIndex);
+                plan.setStatus("PAUSED_CONFIRMATION");
+                plan.setConfirmationDraftId(draftId);
+                draftService.updateExecutionPlan(draftId, plan);
 
                 dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
                         "draftId", draftId,
-                        "taskList", taskList,
+                        "plan", plan,
                         "needsConfirmation", true,
                         "clarificationQuestion", ""
                 ));
 
-                String confirmText = buildConfirmationText(task, taskList);
+                String confirmText = buildConfirmationText(task, plan);
                 dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", confirmText));
                 memoryService.saveAssistantMessage(conversationId, userId, confirmText, null,
                         context.getTraceId(), null);
@@ -350,12 +350,12 @@ public class PlanAndExecuteEngine {
             }
 
             // NORMAL 任务：执行 → 验证 → 重试/重规划 循环
-            boolean taskCompleted = executeAndVerifyTask(task, taskOutputs, taskList, draftId,
+            boolean taskCompleted = executeAndVerifyTask(task, stepOutputs, plan, draftId,
                     context, emitter, conversationId, userId, userConfirmed);
 
             if (!taskCompleted) {
                 // 检查是否因 CLARIFY 而暂停，若是则退出主循环
-                if ("PAUSED_CLARIFICATION".equals(taskList.getStatus())) {
+                if ("PAUSED_CLARIFICATION".equals(plan.getStatus())) {
                     return;
                 }
                 // 任务验证失败，尝试重规划剩余任务
@@ -363,54 +363,54 @@ public class PlanAndExecuteEngine {
                     log.warn("[PlanAndExecute] 达到最大重规划次数 {}, 终止计划", MAX_TOTAL_REPLANS);
                     task.setStatus("FAILED");
                     task.setErrorMessage("超出最大重规划次数限制");
-                    dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_FAILED, taskToPayload(task));
+                    dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_FAILED, stepToPayload(task));
                     break;
                 }
 
                 totalReplans++;
-                boolean replanned = replanRemainingTasks(taskList, sortedTasks, taskIndex,
-                        task, taskOutputs, context, emitter, draftId);
+                boolean replanned = replanRemainingTasks(plan, sortedSteps, stepIndex,
+                        task, stepOutputs, context, emitter, draftId);
                 if (replanned) {
                     // 重新拓扑排序，从当前索引继续
-                    sortedTasks = topologicalSort(taskList.getTasks());
-                    // taskIndex 保持不变，继续执行重规划后的新任务
+                    sortedSteps = topologicalSort(plan.getSteps());
+                    // stepIndex 保持不变，继续执行重规划后的新任务
                     java.util.Map<String, Object> replanStatus = new java.util.LinkedHashMap<>();
                     replanStatus.put("type", "plan_replanned");
                     replanStatus.put("message", "计划已根据执行反馈动态调整");
-                    replanStatus.put("taskIndex", taskIndex);
-                    replanStatus.put("remainingTasks", sortedTasks.size() - taskIndex);
+                    replanStatus.put("stepIndex", stepIndex);
+                    replanStatus.put("remainingTasks", sortedSteps.size() - stepIndex);
                     replanStatus.put("totalReplans", totalReplans);
-                    replanStatus.put("taskList", taskList);
+                    replanStatus.put("plan", plan);
                     dispatcher.emit(emitter, context, AgentEventType.STATUS, replanStatus);
                 } else {
                     // 无法重规划，跳过当前任务
-                    log.warn("[PlanAndExecute] 重规划失败，跳过任务: taskId={}", task.getTaskId());
-                    taskIndex++;
+                    log.warn("[PlanAndExecute] 重规划失败，跳过任务: taskId={}", task.getStepId());
+                    stepIndex++;
                 }
             } else {
-                taskIndex++;
+                stepIndex++;
             }
 
             // 更新 DB
-            taskList.setCurrentTaskIndex(taskIndex);
-            draftService.updateTaskList(draftId, taskList);
+            plan.setCurrentStepIndex(stepIndex);
+            draftService.updateExecutionPlan(draftId, plan);
         }
 
         // 3. 根据任务实际状态设置最终结果
-        boolean hasFailed = taskList.getTasks().stream()
+        boolean hasFailed = plan.getSteps().stream()
                 .anyMatch(t -> "FAILED".equals(t.getStatus()));
-        boolean hasCompleted = taskList.getTasks().stream()
+        boolean hasCompleted = plan.getSteps().stream()
                 .anyMatch(t -> "COMPLETED".equals(t.getStatus()));
         if (hasFailed && hasCompleted) {
-            taskList.setStatus("PARTIAL_COMPLETED");
+            plan.setStatus("PARTIAL_COMPLETED");
         } else if (hasFailed && !hasCompleted) {
-            taskList.setStatus("FAILED");
+            plan.setStatus("FAILED");
         } else {
-            taskList.setStatus("COMPLETED");
+            plan.setStatus("COMPLETED");
         }
-        draftService.updateTaskList(draftId, taskList);
+        draftService.updateExecutionPlan(draftId, plan);
 
-        String finalSummary = buildFinalSummary(taskList);
+        String finalSummary = buildFinalSummary(plan);
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", finalSummary));
         memoryService.saveAssistantMessage(conversationId, userId,
                 finalSummary, null, context.getTraceId(), null);
@@ -418,15 +418,15 @@ public class PlanAndExecuteEngine {
         dispatcher.complete(emitter, context);
     }
 
-    private boolean resumeConfirmationGateIfNeeded(String draftId, TaskList taskList, TaskItem explicitTask) {
-        if (!"PAUSED_CONFIRMATION".equals(taskList.getStatus()) && !"PENDING_CONFIRM".equals(taskList.getStatus())) {
+    private boolean resumeConfirmationGateIfNeeded(String draftId, ExecutionPlan plan, ExecutionStep explicitTask) {
+        if (!"PAUSED_CONFIRMATION".equals(plan.getStatus()) && !"PENDING_CONFIRM".equals(plan.getStatus())) {
             return false;
         }
 
-        TaskItem task = explicitTask;
-        if (task == null && taskList.getCurrentTaskIndex() >= 0
-                && taskList.getCurrentTaskIndex() < taskList.getTasks().size()) {
-            task = taskList.getTasks().get(taskList.getCurrentTaskIndex());
+        ExecutionStep task = explicitTask;
+        if (task == null && plan.getCurrentStepIndex() >= 0
+                && plan.getCurrentStepIndex() < plan.getSteps().size()) {
+            task = plan.getSteps().get(plan.getCurrentStepIndex());
         }
 
         if (task != null && "CONFIRMATION".equals(task.getGate())) {
@@ -434,21 +434,21 @@ public class PlanAndExecuteEngine {
             task.setStatus("PENDING");
         }
 
-        taskList.setStatus("EXECUTING");
-        draftService.updateTaskList(draftId, taskList);
+        plan.setStatus("EXECUTING");
+        draftService.updateExecutionPlan(draftId, plan);
         return true;
     }
 
-    private void emitResumeIfConfirmationWasCleared(TaskList taskList, AgentRuntimeContext context, SseEmitter emitter) {
-        int taskIndex = taskList.getCurrentTaskIndex();
-        if (taskIndex < 0 || taskIndex >= taskList.getTasks().size()) {
+    private void emitResumeIfConfirmationWasCleared(ExecutionPlan plan, AgentRuntimeContext context, SseEmitter emitter) {
+        int stepIndex = plan.getCurrentStepIndex();
+        if (stepIndex < 0 || stepIndex >= plan.getSteps().size()) {
             return;
         }
-        TaskItem task = taskList.getTasks().get(taskIndex);
+        ExecutionStep task = plan.getSteps().get(stepIndex);
         dispatcher.emit(emitter, context, AgentEventType.PLAN_RESUMED, Map.of(
                 "reason", "CONFIRMATION",
-                "taskId", task.getTaskId(),
-                "resumeFromIndex", taskIndex
+                "taskId", task.getStepId(),
+                "resumeFromIndex", stepIndex
         ));
     }
 
@@ -456,51 +456,51 @@ public class PlanAndExecuteEngine {
      * 恢复暂停的计划（澄清回复 / 确认词）
      */
     public void resumePlan(AgentChatRequest request, AgentRuntimeContext context, SseEmitter emitter) {
-        AgentPlanDraft draft = draftService.getActiveTaskListDraft(context.getConversationId());
+        AgentPlanDraft draft = draftService.getActiveExecutionPlanDraft(context.getConversationId());
         if (draft == null) {
-            log.warn("[PlanAndExecute] 未找到活跃的 TaskList 草稿: convId={}", context.getConversationId());
+            log.warn("[PlanAndExecute] 未找到活跃的 ExecutionPlan 草稿: convId={}", context.getConversationId());
             return;
         }
 
-        TaskList taskList = JSON.parseObject(draft.getTaskListJson(), TaskList.class);
+        ExecutionPlan plan = JSON.parseObject(draft.getExecutionPlanJson(), ExecutionPlan.class);
 
-        if ("PAUSED_CLARIFICATION".equals(taskList.getStatus())) {
+        if ("PAUSED_CLARIFICATION".equals(plan.getStatus())) {
             // 用户提供了澄清回复
-            int pausedIndex = taskList.getCurrentTaskIndex();
-            TaskItem pausedTask = taskList.getTasks().get(pausedIndex);
+            int pausedIndex = plan.getCurrentStepIndex();
+            ExecutionStep pausedTask = plan.getSteps().get(pausedIndex);
 
             // 将用户回复注入任务输出
             String userResponse = request.getMessage();
-            taskList.getTaskOutputs().put(pausedTask.getTaskId(), "用户澄清: " + userResponse);
+            plan.getStepOutputs().put(pausedTask.getStepId(), "用户澄清: " + userResponse);
             pausedTask.setStatus("COMPLETED");
             pausedTask.setResultSummary("用户回复: " + truncate(userResponse, 200));
             pausedTask.setGate("NORMAL"); // 清除门
 
-            taskList.setCurrentTaskIndex(pausedIndex + 1);
-            taskList.setStatus("EXECUTING");
+            plan.setCurrentStepIndex(pausedIndex + 1);
+            plan.setStatus("EXECUTING");
 
             dispatcher.emit(emitter, context, AgentEventType.PLAN_RESUMED, Map.of(
                     "reason", "CLARIFICATION",
-                    "taskId", pausedTask.getTaskId(),
-                    "resumeFromIndex", taskList.getCurrentTaskIndex()
+                    "taskId", pausedTask.getStepId(),
+                    "resumeFromIndex", plan.getCurrentStepIndex()
             ));
 
-            draftService.updateTaskList(draft.getDraftId(), taskList);
-            executeTaskListWithContext(draft.getDraftId(), context.getUserId(),
+            draftService.updateExecutionPlan(draft.getDraftId(), plan);
+            executeExecutionPlanWithContext(draft.getDraftId(), context.getUserId(),
                     context, emitter);
 
-        } else if ("PAUSED_CONFIRMATION".equals(taskList.getStatus())) {
+        } else if ("PAUSED_CONFIRMATION".equals(plan.getStatus())) {
             // 用户通过聊天确认词确认（前端按钮确认走 /agent/plan/confirm）
-            int pausedIndex = taskList.getCurrentTaskIndex();
-            TaskItem pausedTask = taskList.getTasks().get(pausedIndex);
-            resumeConfirmationGateIfNeeded(draft.getDraftId(), taskList, pausedTask);
+            int pausedIndex = plan.getCurrentStepIndex();
+            ExecutionStep pausedTask = plan.getSteps().get(pausedIndex);
+            resumeConfirmationGateIfNeeded(draft.getDraftId(), plan, pausedTask);
 
             dispatcher.emit(emitter, context, AgentEventType.PLAN_RESUMED, Map.of(
                     "reason", "CONFIRMATION",
-                    "taskId", pausedTask.getTaskId()
+                    "taskId", pausedTask.getStepId()
             ));
 
-            executeTaskListWithContext(draft.getDraftId(), context.getUserId(),
+            executeExecutionPlanWithContext(draft.getDraftId(), context.getUserId(),
                     context, emitter);
         }
     }
@@ -551,28 +551,28 @@ public class PlanAndExecuteEngine {
                 """.formatted(request.getMessage(), profileJson, planHint, attachmentSection);
     }
 
-    private void handleClarificationGate(TaskList taskList, int taskIndex,
+    private void handleClarificationGate(ExecutionPlan plan, int stepIndex,
                                           AgentRuntimeContext context, SseEmitter emitter,
                                           AgentChatRequest request) {
-        TaskItem task = taskList.getTasks().get(taskIndex);
+        ExecutionStep task = plan.getSteps().get(stepIndex);
         String question = task.getDescription();
 
-        taskList.setStatus("PAUSED_CLARIFICATION");
-        taskList.setClarificationQuestion(question);
-        taskList.setCurrentTaskIndex(taskIndex);
+        plan.setStatus("PAUSED_CLARIFICATION");
+        plan.setClarificationQuestion(question);
+        plan.setCurrentStepIndex(stepIndex);
 
         // 保存草稿
-        String draftId = draftService.saveTaskListDraft(
+        String draftId = draftService.saveExecutionPlanDraft(
                 context.getConversationId(), context.getTraceId(),
-                request != null ? request.getUserId() : context.getUserId(), taskList);
-        taskList.setConfirmationDraftId(draftId);
-        draftService.updateTaskList(draftId, taskList);
+                request != null ? request.getUserId() : context.getUserId(), plan);
+        plan.setConfirmationDraftId(draftId);
+        draftService.updateExecutionPlan(draftId, plan);
 
-        // 先发射 PLAN_CREATED，确保前端初始化 currentTaskList，
+        // 先发射 PLAN_CREATED，确保前端初始化 currentExecutionPlan，
         // 再发射 PLAN_PAUSED 更新状态为暂停
         dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
                 "draftId", draftId,
-                "taskList", taskList,
+                "plan", plan,
                 "needsConfirmation", false,
                 "clarificationQuestion", question
         ));
@@ -580,7 +580,7 @@ public class PlanAndExecuteEngine {
         // 发射暂停事件
         dispatcher.emit(emitter, context, AgentEventType.PLAN_PAUSED, Map.of(
                 "reason", "CLARIFICATION",
-                "taskId", task.getTaskId(),
+                "taskId", task.getStepId(),
                 "question", question
         ));
 
@@ -593,44 +593,44 @@ public class PlanAndExecuteEngine {
     /**
      * 执行任务直到遇到确认门（执行 CONFIRMATION 之前的 NORMAL 任务），带验证
      */
-    private void executeTasksUntilGate(String draftId, TaskList taskList, int gateIndex,
+    private void executeTasksUntilGate(String draftId, ExecutionPlan plan, int gateIndex,
                                         AgentRuntimeContext context, SseEmitter emitter,
                                         AgentChatRequest request) {
-        Map<String, String> taskOutputs = new LinkedHashMap<>(taskList.getTaskOutputs());
+        Map<String, String> stepOutputs = new LinkedHashMap<>(plan.getStepOutputs());
         String conversationId = context.getConversationId();
         Long userId = request != null ? request.getUserId() : context.getUserId();
 
         for (int i = 0; i < gateIndex; i++) {
-            TaskItem task = taskList.getTasks().get(i);
+            ExecutionStep task = plan.getSteps().get(i);
 
             if ("COMPLETED".equals(task.getStatus())) continue;
             if (!"NORMAL".equals(task.getGate())) continue;
 
-            executeAndVerifyTask(task, taskOutputs, taskList, draftId, context, emitter,
+            executeAndVerifyTask(task, stepOutputs, plan, draftId, context, emitter,
                     conversationId, userId, false);
 
             // 检查是否因 CLARIFY 而暂停，若是则退出
-            if ("PAUSED_CLARIFICATION".equals(taskList.getStatus())) {
+            if ("PAUSED_CLARIFICATION".equals(plan.getStatus())) {
                 return;
             }
 
-            taskList.setCurrentTaskIndex(i + 1);
-            draftService.updateTaskList(draftId, taskList);
+            plan.setCurrentStepIndex(i + 1);
+            draftService.updateExecutionPlan(draftId, plan);
         }
 
         // 执行到确认门前，暂停
-        taskList.setStatus("PAUSED_CONFIRMATION");
-        taskList.setConfirmationDraftId(draftId);
-        draftService.updateTaskList(draftId, taskList);
+        plan.setStatus("PAUSED_CONFIRMATION");
+        plan.setConfirmationDraftId(draftId);
+        draftService.updateExecutionPlan(draftId, plan);
 
         dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED, Map.of(
                 "draftId", draftId,
-                "taskList", taskList,
+                "plan", plan,
                 "needsConfirmation", true,
                 "clarificationQuestion", ""
         ));
 
-        String summaryText = buildPlanSummaryText(taskList);
+        String summaryText = buildPlanSummaryText(plan);
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", summaryText));
         memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                 summaryText, null, context.getTraceId(), null);
@@ -639,7 +639,7 @@ public class PlanAndExecuteEngine {
     /**
      * 通过 ReAct 引擎执行单个任务
      */
-    private String executeTaskViaReAct(TaskItem task, Map<String, String> previousOutputs,
+    private String executeTaskViaReAct(ExecutionStep task, Map<String, String> previousOutputs,
                                         AgentRuntimeContext context, SseEmitter emitter,
                                         boolean confirmationGranted) {
         // 1. 构建任务专属系统消息
@@ -665,9 +665,9 @@ public class PlanAndExecuteEngine {
                 taskSystemMessage, previousOutputs, confirmationGranted);
     }
 
-    private String buildTaskSystemMessage(TaskItem task, Map<String, String> previousOutputs) {
+    private String buildTaskSystemMessage(ExecutionStep task, Map<String, String> previousOutputs) {
         StringBuilder sb = new StringBuilder();
-        sb.append("你正在执行学习计划中的任务 [").append(task.getTaskId()).append("]。\n");
+        sb.append("你正在执行学习计划中的任务 [").append(task.getStepId()).append("]。\n");
         sb.append("任务描述：").append(task.getDescription()).append("\n");
         sb.append("预期产出：").append(task.getExpectedOutput() != null ? task.getExpectedOutput() : "根据任务完成").append("\n");
 
@@ -689,8 +689,8 @@ public class PlanAndExecuteEngine {
      *
      * @return true 表示任务最终通过验证，false 表示需要外部重规划
      */
-    private boolean executeAndVerifyTask(TaskItem task, Map<String, String> taskOutputs,
-                                          TaskList taskList, String draftId,
+    private boolean executeAndVerifyTask(ExecutionStep task, Map<String, String> stepOutputs,
+                                          ExecutionPlan plan, String draftId,
                                           AgentRuntimeContext context, SseEmitter emitter,
                                           String conversationId, Long userId,
                                           boolean userConfirmed) {
@@ -699,47 +699,47 @@ public class PlanAndExecuteEngine {
 
         for (int attempt = 0; attempt <= MAX_RETRIES_PER_TASK; attempt++) {
             task.setStatus("RUNNING");
-            dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_STARTED, taskToPayload(task));
+            dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_STARTED, stepToPayload(task));
 
             String result;
             try {
                 if (attempt > 0) {
                     // 重试时使用修正后的描述
                     log.info("[PlanAndExecute] 重试任务: taskId={}, attempt={}/{}, revisedDesc={}",
-                            task.getTaskId(), attempt, MAX_RETRIES_PER_TASK, task.getDescription());
+                            task.getStepId(), attempt, MAX_RETRIES_PER_TASK, task.getDescription());
                     dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
                             "type", "task_retry",
-                            "taskId", task.getTaskId(),
+                            "taskId", task.getStepId(),
                             "attempt", attempt,
                             "maxRetries", MAX_RETRIES_PER_TASK
                     ));
                 }
 
-                result = executeTaskViaReAct(task, taskOutputs, context, emitter, confirmationGranted);
+                result = executeTaskViaReAct(task, stepOutputs, context, emitter, confirmationGranted);
             } catch (Exception e) {
-                log.error("[PlanAndExecute] 任务执行异常: taskId={}", task.getTaskId(), e);
+                log.error("[PlanAndExecute] 任务执行异常: taskId={}", task.getStepId(), e);
                 task.setErrorMessage(e.getMessage());
-                dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_FAILED, taskToPayload(task));
+                dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_FAILED, stepToPayload(task));
                 // 执行异常直接算失败，不重试
                 return false;
             }
 
             // 验证结果质量
-            VerificationResult verification = stepVerifier.verify(task, result, taskOutputs);
+            VerificationResult verification = stepVerifier.verify(task, result, stepOutputs);
 
             if (verification.isPassed()) {
                 task.setStatus("COMPLETED");
                 task.setResultSummary(truncate(result, 500));
-                taskOutputs.put(task.getTaskId(), truncate(result, 2000));
-                taskList.setTaskOutputs(taskOutputs);
-                dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_COMPLETED, taskToPayload(task));
-                log.info("[PlanAndExecute] 任务验证通过: taskId={}", task.getTaskId());
+                stepOutputs.put(task.getStepId(), truncate(result, 2000));
+                plan.setStepOutputs(stepOutputs);
+                dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_COMPLETED, stepToPayload(task));
+                log.info("[PlanAndExecute] 任务验证通过: taskId={}", task.getStepId());
                 return true;
             }
 
             // 验证失败，根据建议动作处理
             log.warn("[PlanAndExecute] 任务验证失败: taskId={}, action={}, feedback={}",
-                    task.getTaskId(), verification.getAction(),
+                    task.getStepId(), verification.getAction(),
                     truncate(verification.getFeedback(), 100));
 
             switch (verification.getAction()) {
@@ -755,7 +755,7 @@ public class PlanAndExecuteEngine {
                         task.setRetryCount(task.getRetryCount() + 1);
                         // 继续 for 循环，重试
                     } else {
-                        log.warn("[PlanAndExecute] 任务重试次数耗尽: taskId={}", task.getTaskId());
+                        log.warn("[PlanAndExecute] 任务重试次数耗尽: taskId={}", task.getStepId());
                         return false; // 需要重规划
                     }
                 }
@@ -765,7 +765,7 @@ public class PlanAndExecuteEngine {
                 case SKIP -> {
                     task.setStatus("SKIPPED");
                     task.setErrorMessage("验证未通过，已跳过: " + verification.getFeedback());
-                    dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_FAILED, taskToPayload(task));
+                    dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_FAILED, stepToPayload(task));
                     return true; // 跳过视为完成（不阻塞后续任务）
                 }
                 case CLARIFY -> {
@@ -773,16 +773,16 @@ public class PlanAndExecuteEngine {
                     task.setGate("CLARIFICATION");
                     task.setDescription(verification.getFeedback());
                     task.setStatus("PAUSED");
-                    handleClarificationGate(taskList,
-                            taskList.getTasks().indexOf(task), context, emitter, null);
+                    handleClarificationGate(plan,
+                            plan.getSteps().indexOf(task), context, emitter, null);
                     return false; // 暂停
                 }
                 default -> { // CONTINUE (should not happen when !passed)
                     task.setStatus("COMPLETED");
                     task.setResultSummary(truncate(result, 500));
-                    taskOutputs.put(task.getTaskId(), truncate(result, 2000));
-                    taskList.setTaskOutputs(taskOutputs);
-                    dispatcher.emit(emitter, context, AgentEventType.PLAN_TASK_COMPLETED, taskToPayload(task));
+                    stepOutputs.put(task.getStepId(), truncate(result, 2000));
+                    plan.setStepOutputs(stepOutputs);
+                    dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_COMPLETED, stepToPayload(task));
                     return true;
                 }
             }
@@ -794,16 +794,16 @@ public class PlanAndExecuteEngine {
     /**
      * 调用 PlannerAgent.replan() 动态重规划剩余任务
      *
-     * @return true 表示重规划成功，sortedTasks 已被更新
+     * @return true 表示重规划成功，sortedSteps 已被更新
      */
-    private boolean replanRemainingTasks(TaskList taskList, List<TaskItem> sortedTasks,
-                                          int failedTaskIndex, TaskItem failedTask,
-                                          Map<String, String> taskOutputs,
+    private boolean replanRemainingTasks(ExecutionPlan plan, List<ExecutionStep> sortedSteps,
+                                          int failedTaskIndex, ExecutionStep failedTask,
+                                          Map<String, String> stepOutputs,
                                           AgentRuntimeContext context, SseEmitter emitter,
                                           String draftId) {
         try {
             // 1. 构建重规划 prompt
-            String replanPrompt = buildReplanPrompt(taskList, failedTask, taskOutputs);
+            String replanPrompt = buildReplanPrompt(plan, failedTask, stepOutputs);
 
             // 2. 调用 PlannerAgent.replan()
             PlannerAgent plannerAgent = AiServices.builder(PlannerAgent.class)
@@ -813,9 +813,9 @@ public class PlanAndExecuteEngine {
 
             // 3. 解析重规划结果
             String cleanJson = extractJson(replanResponse);
-            List<TaskItem> newRemainingTasks;
+            List<ExecutionStep> newRemainingTasks;
             try {
-                newRemainingTasks = com.alibaba.fastjson.JSON.parseArray(cleanJson, TaskItem.class);
+                newRemainingTasks = com.alibaba.fastjson.JSON.parseArray(cleanJson, ExecutionStep.class);
             } catch (Exception e) {
                 log.error("[PlanAndExecute] 重规划 JSON 解析失败: {}", e.getMessage());
                 return false;
@@ -827,56 +827,56 @@ public class PlanAndExecuteEngine {
             }
 
             // 4. 保留已完成的任务，替换剩余任务
-            List<TaskItem> completedTasks = new ArrayList<>();
+            List<ExecutionStep> completedTasks = new ArrayList<>();
             for (int i = 0; i < failedTaskIndex; i++) {
-                completedTasks.add(sortedTasks.get(i));
+                completedTasks.add(sortedSteps.get(i));
             }
 
-            List<TaskItem> mergedTasks = new ArrayList<>(completedTasks);
+            List<ExecutionStep> mergedTasks = new ArrayList<>(completedTasks);
             mergedTasks.addAll(newRemainingTasks);
 
             // 5. 校验新的任务列表
-            TaskList newTaskList = new TaskList();
-            newTaskList.setTasks(mergedTasks);
+            ExecutionPlan newExecutionPlan = new ExecutionPlan();
+            newExecutionPlan.setSteps(mergedTasks);
             // 做一次拓扑排序校验（检测循环依赖）
             try {
-                topologicalSort(newTaskList.getTasks());
+                topologicalSort(newExecutionPlan.getSteps());
             } catch (IllegalStateException e) {
                 log.error("[PlanAndExecute] 重规划产生循环依赖: {}", e.getMessage());
                 return false;
             }
 
-            // 6. 替换 taskList 并持久化
-            taskList.setTasks(mergedTasks);
-            draftService.updateTaskList(draftId, taskList);
+            // 6. 替换 plan 并持久化
+            plan.setSteps(mergedTasks);
+            draftService.updateExecutionPlan(draftId, plan);
 
             log.info("[PlanAndExecute] 重规划成功: failedTaskId={}, newRemainingCount={}, totalTasks={}",
-                    failedTask.getTaskId(), newRemainingTasks.size(), mergedTasks.size());
+                    failedTask.getStepId(), newRemainingTasks.size(), mergedTasks.size());
             return true;
 
         } catch (Exception e) {
-            log.error("[PlanAndExecute] 重规划失败: taskId={}", failedTask.getTaskId(), e);
+            log.error("[PlanAndExecute] 重规划失败: taskId={}", failedTask.getStepId(), e);
             return false;
         }
     }
 
-    private String buildReplanPrompt(TaskList taskList, TaskItem failedTask,
-                                     Map<String, String> taskOutputs) {
+    private String buildReplanPrompt(ExecutionPlan plan, ExecutionStep failedTask,
+                                     Map<String, String> stepOutputs) {
         StringBuilder sb = new StringBuilder();
-        sb.append("用户原始目标：").append(taskList.getUserGoal()).append("\n\n");
+        sb.append("用户原始目标：").append(plan.getUserGoal()).append("\n\n");
 
         // 已完成的任务
         sb.append("已完成的任务：\n");
-        for (TaskItem task : taskList.getTasks()) {
+        for (ExecutionStep task : plan.getSteps()) {
             if ("COMPLETED".equals(task.getStatus())) {
-                sb.append("- ").append(task.getTaskId()).append(": ").append(task.getDescription()).append("\n");
+                sb.append("- ").append(task.getStepId()).append(": ").append(task.getDescription()).append("\n");
                 sb.append("  结果: ").append(truncate(task.getResultSummary(), 200)).append("\n");
             }
         }
 
         // 当前失败的任务
         sb.append("\n验证失败的任务：\n");
-        sb.append("- ").append(failedTask.getTaskId()).append(": ").append(failedTask.getDescription()).append("\n");
+        sb.append("- ").append(failedTask.getStepId()).append(": ").append(failedTask.getDescription()).append("\n");
         sb.append("  失败原因: ").append(failedTask.getErrorMessage() != null
                 ? failedTask.getErrorMessage() : "结果未通过质量验证").append("\n");
         sb.append("  预期产出: ").append(failedTask.getExpectedOutput() != null
@@ -884,9 +884,9 @@ public class PlanAndExecuteEngine {
 
         // 原始计划的剩余任务
         sb.append("\n原始计划中尚未执行的任务（供参考，可自由调整）：\n");
-        for (TaskItem task : taskList.getTasks()) {
-            if (!"COMPLETED".equals(task.getStatus()) && !task.getTaskId().equals(failedTask.getTaskId())) {
-                sb.append("- ").append(task.getTaskId()).append(": ").append(task.getDescription()).append("\n");
+        for (ExecutionStep task : plan.getSteps()) {
+            if (!"COMPLETED".equals(task.getStatus()) && !task.getStepId().equals(failedTask.getStepId())) {
+                sb.append("- ").append(task.getStepId()).append(": ").append(task.getDescription()).append("\n");
             }
         }
 
@@ -924,22 +924,22 @@ public class PlanAndExecuteEngine {
 
     // ============ 拓扑排序 ============
 
-    private List<TaskItem> topologicalSort(List<TaskItem> tasks) {
-        Map<String, TaskItem> taskMap = tasks.stream()
-                .collect(Collectors.toMap(TaskItem::getTaskId, t -> t));
+    private List<ExecutionStep> topologicalSort(List<ExecutionStep> tasks) {
+        Map<String, ExecutionStep> taskMap = tasks.stream()
+                .collect(Collectors.toMap(ExecutionStep::getStepId, t -> t));
 
         Map<String, List<String>> adjacency = new HashMap<>();
         Map<String, Integer> inDegree = new HashMap<>();
 
-        for (TaskItem task : tasks) {
-            adjacency.put(task.getTaskId(), new ArrayList<>());
-            inDegree.putIfAbsent(task.getTaskId(), 0);
+        for (ExecutionStep task : tasks) {
+            adjacency.put(task.getStepId(), new ArrayList<>());
+            inDegree.putIfAbsent(task.getStepId(), 0);
         }
 
-        for (TaskItem task : tasks) {
+        for (ExecutionStep task : tasks) {
             for (String dep : task.getDependsOn()) {
-                adjacency.get(dep).add(task.getTaskId());
-                inDegree.merge(task.getTaskId(), 1, Integer::sum);
+                adjacency.get(dep).add(task.getStepId());
+                inDegree.merge(task.getStepId(), 1, Integer::sum);
             }
         }
 
@@ -948,7 +948,7 @@ public class PlanAndExecuteEngine {
             if (entry.getValue() == 0) queue.add(entry.getKey());
         }
 
-        List<TaskItem> result = new ArrayList<>();
+        List<ExecutionStep> result = new ArrayList<>();
         while (!queue.isEmpty()) {
             String taskId = queue.poll();
             result.add(taskMap.get(taskId));
@@ -959,7 +959,7 @@ public class PlanAndExecuteEngine {
         }
 
         if (result.size() != tasks.size()) {
-            throw new IllegalStateException("TaskList 包含循环依赖");
+            throw new IllegalStateException("ExecutionPlan 包含循环依赖");
         }
 
         return result;
@@ -967,25 +967,25 @@ public class PlanAndExecuteEngine {
 
     // ============ 辅助方法 ============
 
-    private boolean allDependenciesCompleted(TaskItem task, Map<String, String> taskOutputs) {
+    private boolean allDependenciesCompleted(ExecutionStep task, Map<String, String> stepOutputs) {
         for (String dep : task.getDependsOn()) {
-            if (!taskOutputs.containsKey(dep)) return false;
+            if (!stepOutputs.containsKey(dep)) return false;
         }
         return true;
     }
 
-    private int findFirstConfirmationIndex(TaskList taskList) {
-        for (int i = 0; i < taskList.getTasks().size(); i++) {
-            if ("CONFIRMATION".equals(taskList.getTasks().get(i).getGate())) {
+    private int findFirstConfirmationIndex(ExecutionPlan plan) {
+        for (int i = 0; i < plan.getSteps().size(); i++) {
+            if ("CONFIRMATION".equals(plan.getSteps().get(i).getGate())) {
                 return i;
             }
         }
         return -1;
     }
 
-    private Map<String, Object> taskToPayload(TaskItem task) {
+    private Map<String, Object> stepToPayload(ExecutionStep task) {
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("taskId", task.getTaskId());
+        payload.put("stepId", task.getStepId());
         payload.put("description", task.getDescription());
         payload.put("status", task.getStatus());
         payload.put("gate", task.getGate());
@@ -996,13 +996,13 @@ public class PlanAndExecuteEngine {
         return payload;
     }
 
-    private String buildPlanSummaryText(TaskList taskList) {
+    private String buildPlanSummaryText(ExecutionPlan plan) {
         StringBuilder sb = new StringBuilder();
-        sb.append("我已为你规划了完成「").append(taskList.getUserGoal()).append("」的任务计划，共 ")
-                .append(taskList.getTasks().size()).append(" 个步骤：\n\n");
+        sb.append("我已为你规划了完成「").append(plan.getUserGoal()).append("」的任务计划，共 ")
+                .append(plan.getSteps().size()).append(" 个步骤：\n\n");
 
-        for (int i = 0; i < taskList.getTasks().size(); i++) {
-            TaskItem task = taskList.getTasks().get(i);
+        for (int i = 0; i < plan.getSteps().size(); i++) {
+            ExecutionStep task = plan.getSteps().get(i);
             sb.append(i + 1).append(". ").append(task.getDescription());
             if ("CLARIFICATION".equals(task.getGate())) {
                 sb.append("（需要你提供信息）");
@@ -1016,29 +1016,29 @@ public class PlanAndExecuteEngine {
         return sb.toString();
     }
 
-    private String buildConfirmationText(TaskItem task, TaskList taskList) {
+    private String buildConfirmationText(ExecutionStep task, ExecutionPlan plan) {
         return "即将执行：" + task.getDescription() + "\n请确认是否继续？";
     }
 
-    private String buildFinalSummary(TaskList taskList) {
-        long completed = taskList.getTasks().stream().filter(t -> "COMPLETED".equals(t.getStatus())).count();
-        long failed = taskList.getTasks().stream().filter(t -> "FAILED".equals(t.getStatus())).count();
+    private String buildFinalSummary(ExecutionPlan plan) {
+        long completed = plan.getSteps().stream().filter(t -> "COMPLETED".equals(t.getStatus())).count();
+        long failed = plan.getSteps().stream().filter(t -> "FAILED".equals(t.getStatus())).count();
 
         StringBuilder sb = new StringBuilder();
-        sb.append("任务计划执行完成！共 ").append(taskList.getTasks().size())
+        sb.append("任务计划执行完成！共 ").append(plan.getSteps().size())
                 .append(" 个任务，成功 ").append(completed).append(" 个");
         if (failed > 0) {
             sb.append("，失败 ").append(failed).append(" 个");
         }
         sb.append("。\n");
 
-        for (TaskItem task : taskList.getTasks()) {
+        for (ExecutionStep task : plan.getSteps()) {
             String icon = switch (task.getStatus()) {
                 case "COMPLETED" -> "✓";
                 case "FAILED" -> "✗";
                 default -> "○";
             };
-            sb.append(icon).append(" ").append(task.getTaskId()).append(": ").append(task.getDescription()).append("\n");
+            sb.append(icon).append(" ").append(task.getStepId()).append(": ").append(task.getDescription()).append("\n");
         }
 
         return sb.toString();

@@ -30,9 +30,9 @@ public enum AgentEventType {
     STATUS("agent.status", "状态提示", true),
 
     // ====== PlanAndExecute 事件 ======
-    PLAN_TASK_STARTED("agent.plan.task.started", "计划任务开始执行", true),
-    PLAN_TASK_COMPLETED("agent.plan.task.completed", "计划任务执行完成", true),
-    PLAN_TASK_FAILED("agent.plan.task.failed", "计划任务执行失败", true),
+    EXECUTION_STEP_STARTED("agent.execution.step.started", "执行步骤开始执行", true),
+    EXECUTION_STEP_COMPLETED("agent.execution.step.completed", "执行步骤执行完成", true),
+    EXECUTION_STEP_FAILED("agent.execution.step.failed", "执行步骤执行失败", true),
     PLAN_PAUSED("agent.plan.paused", "计划暂停（澄清/确认门）", true),
     PLAN_RESUMED("agent.plan.resumed", "计划从暂停点恢复", true),
 

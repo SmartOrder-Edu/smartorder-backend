@@ -16,7 +16,7 @@ public interface AgentPlanDraftMapper extends BaseMapper<AgentPlanDraft> {
     AgentPlanDraft selectPendingDraftByConversationId(@Param("conversationId") String conversationId);
 
     @Select("SELECT * FROM agent_plan_draft WHERE conversation_id = #{conversationId} " +
-            "AND plan_type = 'TASK_LIST' AND status IN ('PENDING','PAUSED_CONFIRMATION','PAUSED_CLARIFICATION') " +
+            "AND plan_type = 'EXECUTION_PLAN' AND status IN ('PENDING','PAUSED_CONFIRMATION','PAUSED_CLARIFICATION') " +
             "ORDER BY create_time DESC LIMIT 1")
-    AgentPlanDraft selectActiveTaskListDraft(@Param("conversationId") String conversationId);
+    AgentPlanDraft selectActiveExecutionPlanDraft(@Param("conversationId") String conversationId);
 }

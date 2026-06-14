@@ -2,7 +2,7 @@ package com.smartorder.edu.agent.plan;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
-import com.smartorder.edu.agent.model.dto.TaskItem;
+import com.smartorder.edu.agent.model.dto.ExecutionStep;
 import com.smartorder.edu.agent.model.dto.VerificationResult;
 import com.smartorder.edu.agent.model.dto.VerificationResult.SuggestedAction;
 import dev.langchain4j.data.message.SystemMessage;
@@ -17,9 +17,9 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 
 /**
- * 基于 LLM 的步骤验证器
+ * 基于 LLM 的步骤验证器。
  * <p>
- * 用轻量 prompt 让模型判断任务执行结果是否满足预期产出要求。
+ * 用轻量 prompt 让模型判断执行步骤的结果是否满足预期产出要求。
  * 验证失败时给出具体反馈，指导重试或重规划。
  */
 @Slf4j
@@ -57,7 +57,7 @@ public class LLMStepVerifier implements StepVerifier {
             """;
 
     @Override
-    public VerificationResult verify(TaskItem step, String result, Map<String, String> previousOutputs) {
+    public VerificationResult verify(ExecutionStep step, String result, Map<String, String> previousOutputs) {
         if (result == null || result.isBlank()) {
             return VerificationResult.builder()
                     .passed(false)
@@ -81,7 +81,7 @@ public class LLMStepVerifier implements StepVerifier {
             return parseVerificationResponse(responseText, step);
         } catch (Exception e) {
             log.warn("[StepVerifier] LLM 验证调用失败，默认通过: taskId={}, error={}",
-                    step.getTaskId(), e.getMessage());
+                    step.getStepId(), e.getMessage());
             // 验证器本身失败不应阻塞执行流程，默认通过
             return VerificationResult.builder()
                     .passed(true)
@@ -91,11 +91,11 @@ public class LLMStepVerifier implements StepVerifier {
         }
     }
 
-    private String buildVerificationRequest(TaskItem step, String result,
+    private String buildVerificationRequest(ExecutionStep step, String result,
                                             Map<String, String> previousOutputs) {
         StringBuilder sb = new StringBuilder();
         sb.append("请验证以下任务执行结果：\n\n");
-        sb.append("任务ID: ").append(step.getTaskId()).append("\n");
+        sb.append("任务ID: ").append(step.getStepId()).append("\n");
         sb.append("任务描述: ").append(step.getDescription()).append("\n");
         sb.append("预期产出: ").append(step.getExpectedOutput() != null ? step.getExpectedOutput() : "根据任务描述完成").append("\n");
         sb.append("所需工具: ").append(step.getRequiredTools() != null ? step.getRequiredTools() : "无").append("\n\n");
@@ -113,7 +113,7 @@ public class LLMStepVerifier implements StepVerifier {
         return sb.toString();
     }
 
-    private VerificationResult parseVerificationResponse(String responseText, TaskItem step) {
+    private VerificationResult parseVerificationResponse(String responseText, ExecutionStep step) {
         String cleanJson = extractJson(responseText);
         try {
             JSONObject json = JSON.parseObject(cleanJson);
@@ -142,12 +142,12 @@ public class LLMStepVerifier implements StepVerifier {
             }
 
             log.info("[StepVerifier] 验证完成: taskId={}, passed={}, action={}, feedback={}",
-                    step.getTaskId(), result.isPassed(), result.getAction(),
+                    step.getStepId(), result.isPassed(), result.getAction(),
                     truncate(result.getFeedback(), 100));
             return result;
         } catch (Exception e) {
             log.warn("[StepVerifier] 验证结果解析失败，默认通过: taskId={}, response={}",
-                    step.getTaskId(), truncate(responseText, 200), e);
+                    step.getStepId(), truncate(responseText, 200), e);
             return VerificationResult.builder()
                     .passed(true)
                     .feedback("验证结果解析异常: " + e.getMessage())
