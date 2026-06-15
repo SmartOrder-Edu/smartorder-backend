@@ -32,4 +32,16 @@ public interface ToolHandler {
 
     /** 重试间隔基数（毫秒），实际使用指数退避: delay * 2^(attempt-1)，上限 10s */
     default long retryDelayMs() { return 1000L; }
+
+    /**
+     * 工具执行失败时面向用户的可读错误描述。
+     * <p>
+     * 此消息会通过 ToolResult.toLlmContext() 发送给 LLM，LLM 会将其改写为自然语言回复给用户。
+     * 因此必须避免包含内部工具名、异常类名、JSON 等实现细节。
+     * <p>
+     * 子类可覆写此方法提供更具体的描述。
+     */
+    default String userFriendlyErrorMessage() {
+        return "暂时无法完成此操作，请尝试其他方法或稍后重试";
+    }
 }

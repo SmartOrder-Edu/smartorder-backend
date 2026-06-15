@@ -68,7 +68,9 @@ public class ToolResult {
     /**
      * 转换为 LLM 可理解的上下文文本
      * <p>
-     * 成功时返回数据 JSON，失败时返回错误提示 + 建议动作
+     * 成功时返回数据 JSON，失败时返回用户可读的错误提示 + 建议动作。
+     * 注意：errorMessage 必须是面向 LLM 的自然语言描述，不含内部工具名、异常类名等实现细节。
+     * 内部调试信息由 debugInfo 字段承载，仅记录日志，不发送给 LLM。
      */
     public String toLlmContext() {
         if (success) {
@@ -77,6 +79,7 @@ public class ToolResult {
             }
             return JSON.toJSONString(data);
         }
-        return "工具执行失败: " + errorMessage + "。请尝试其他方法或跳过此步骤。";
+        // errorMessage 已是面向 LLM 的自然语言，直接使用
+        return errorMessage + " 请尝试其他方法或跳过此步骤。";
     }
 }

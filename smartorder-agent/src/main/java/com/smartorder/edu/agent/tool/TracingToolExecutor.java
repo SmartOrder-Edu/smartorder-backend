@@ -53,7 +53,7 @@ public class TracingToolExecutor {
             permissionChecker.check(handler, arguments, context);
         } catch (Exception e) {
             log.warn("[TracingToolExecutor] 权限校验失败: tool={}", handler.name(), e);
-            return ToolResult.error("权限不足，无法执行工具 [" + handler.name() + "]", e.getMessage());
+            return ToolResult.error("当前暂无权限执行此操作", e.getMessage());
         }
 
         // 2. 推送 TOOL_STARTED
@@ -146,7 +146,7 @@ public class TracingToolExecutor {
                                 "durationMs", duration
                         )
                 );
-                return ToolResult.error("工具 [" + handler.name() + "] 执行被中断");
+                return ToolResult.error("操作被中断，请稍后重试");
 
             } catch (Exception e) {
                 lastException = e;
@@ -160,22 +160,28 @@ public class TracingToolExecutor {
 
         // 所有尝试均失败，返回结构化错误
         long duration = System.currentTimeMillis() - start;
-        String errorMsg = lastException instanceof TimeoutException
+        String rawErrorMsg = lastException instanceof TimeoutException
                 ? "执行超时（" + toolTimeoutMs + "ms）"
                 : (lastException != null ? lastException.getMessage() : "未知错误");
 
+        // 面向用户的可读描述（不含内部工具名、异常类名等）
+        String userFriendlyMsg = lastException instanceof TimeoutException
+                ? "操作超时，请稍后重试"
+                : handler.userFriendlyErrorMessage();
+
+        // TOOL_FAILED SSE 事件：error 字段使用用户可读描述
         dispatcher.emit(
                 context.getEmitter(),
                 context.getRuntimeContext(),
                 AgentEventType.TOOL_FAILED,
                 Map.of(
                         "toolName", handler.name(),
-                        "error", errorMsg,
+                        "error", userFriendlyMsg,
                         "durationMs", duration
                 )
         );
 
-        return ToolResult.error("工具 [" + handler.name() + "] " + errorMsg, errorMsg);
+        return ToolResult.error(userFriendlyMsg, rawErrorMsg);
     }
 
     /**

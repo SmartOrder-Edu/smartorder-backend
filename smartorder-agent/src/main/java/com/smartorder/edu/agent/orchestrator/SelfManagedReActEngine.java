@@ -330,8 +330,9 @@ public class SelfManagedReActEngine {
                         toolCall.put("durationMs", durationMs);
                         seg.put("toolCall", toolCall);
 
-                        messages.add(ToolExecutionResultMessage.from(toolRequest,
-                                "工具执行失败: " + e.getMessage()));
+                        // 使用用户可读的通用描述，避免将原始异常信息泄露到 LLM 上下文
+                        String userFriendlyMsg = getToolFriendlyError(toolRequest.name());
+                        messages.add(ToolExecutionResultMessage.from(toolRequest, userFriendlyMsg));
                     }
 
                     reasoningSegments.add(seg);
@@ -474,5 +475,18 @@ public class SelfManagedReActEngine {
             boolean saveAssistantMessage,
             boolean saveToolMessages
     ) {
+    }
+
+    /**
+     * 根据工具名获取用户可读的失败描述。
+     * 此路径仅在 toolAdapter.execute() 本身抛出未预期异常时触发
+     * （正常失败由 TracingToolExecutor 返回 ToolResult，不走此 catch）。
+     */
+    private String getToolFriendlyError(String toolName) {
+        try {
+            return toolAdapter.getToolRegistry().get(toolName).userFriendlyErrorMessage();
+        } catch (Exception e) {
+            return "暂时无法完成此操作，请尝试其他方法或稍后重试";
+        }
     }
 }

@@ -3,6 +3,7 @@ package com.smartorder.edu.agent.tool.impl;
 import com.smartorder.edu.agent.tool.ToolCategory;
 import com.smartorder.edu.agent.tool.ToolHandler;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
+import com.smartorder.edu.agent.tool.ToolResult;
 import com.smartorder.edu.student.service.IStudentProfileService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +43,11 @@ public class GetStudentProfileTool implements ToolHandler {
     }
 
     @Override
+    public String userFriendlyErrorMessage() {
+        return "暂时无法获取你的学习档案信息，建议直接告诉我你的学习目标和当前水平";
+    }
+
+    @Override
     public Object execute(Object request, ToolInvokeContext context) {
         GetStudentProfileRequest req = (GetStudentProfileRequest) request;
         // 禁止模型传入 userId，统一使用上下文中的 userId
@@ -49,7 +55,21 @@ public class GetStudentProfileTool implements ToolHandler {
 
         log.info("[GetStudentProfile] userId={}", userId);
 
-        return profileService.getByUserId(userId);
+        try {
+            Object profile = profileService.getByUserId(userId);
+            if (profile == null) {
+                // 新用户尚未建立画像，返回友好提示让 LLM 主动询问
+                return ToolResult.success(
+                    "该学生尚未完成画像建档，暂无学习偏好、知识基础等信息。" +
+                    "建议通过对话方式了解学生的学习目标、当前水平、可用时间等关键信息，以辅助后续规划。");
+            }
+            return profile;
+        } catch (Exception e) {
+            log.error("[GetStudentProfile] 查询学生画像异常: userId={}", userId, e);
+            return ToolResult.error(
+                "暂时无法获取学生的学习档案信息，建议通过对话直接了解学生的学习目标和当前水平。",
+                e.getMessage());
+        }
     }
 
     @Data
