@@ -25,7 +25,7 @@ CREATE TABLE `student_global_profile`
     CONSTRAINT `chk_global_profile_version` CHECK ((`profile_version` >= 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='学生全局动态画像表；每个用户保留一条当前画像，聚合跨学科稳定特征和总体学习状态，用于全局学习规划、资源推荐和学习效果评估';
 
-CREATE TABLE `student_learning_space_id_profile`
+CREATE TABLE `student_learning_space_profile`
 (
     `id`                       bigint        NOT NULL AUTO_INCREMENT COMMENT '科目画像主键ID',
     `user_id`                  bigint        NOT NULL COMMENT '学生用户ID ',

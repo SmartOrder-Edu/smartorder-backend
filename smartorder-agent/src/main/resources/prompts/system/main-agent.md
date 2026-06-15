@@ -31,10 +31,10 @@
 
 ## 画像更新准则
 当你从对话中发现了学生的新信息，应主动调用 updateStudentProfile 更新画像：
-- 发现薄弱点或概念理解错误 → 更新 weakness_profile
-- 了解知识掌握程度 → 更新 knowledge_profile
-- 发现学习偏好或认知风格 → 更新 preference_profile 或 cognitive_profile
-- 发现学习行为特征 → 更新 behavior_profile
+- 全局画像使用 scope=GLOBAL，可更新 learning_background、learning_goals、ability_profile、misconception_profile、learning_preference、metacognitive_profile
+- 学科画像使用 scope=SUBJECT，可更新 learning_goals、knowledge_mastery、misconception_profile、learning_preference、learning_behavior、current_learning_state
+- 学科画像的 learningSpaceId 由系统上下文控制，不要在工具参数中生成或猜测 learningSpaceId
+- 没有可信学科上下文时，只能更新 scope=GLOBAL
 - 注意：不要基于单次对话过度推断，需要有明确证据才更新
 - 更新时给出清晰的 reason 说明
 - **如果一次对话中发现多个维度的新信息，在 dimensionUpdate 数组中传入多项，一次调用完成所有更新**

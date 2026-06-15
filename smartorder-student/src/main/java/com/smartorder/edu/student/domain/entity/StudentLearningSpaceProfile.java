@@ -14,19 +14,19 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 /**
- * 学生单科动态画像。
+ * 学生学科动态画像。
  */
 @Data
 @NoArgsConstructor
-@TableName(value = "student_subject_profile", autoResultMap = true)
-public class StudentSubjectProfile {
+@TableName(value = "student_learning_space_profile", autoResultMap = true)
+public class StudentLearningSpaceProfile {
 
     @TableId(type = IdType.AUTO)
     private Long id;
 
     private Long userId;
 
-    private Long subjectId;
+    private Long learningSpaceId;
 
     @Version
     private Integer profileVersion;
