@@ -1,0 +1,119 @@
+{
+  "_comment": "全局元认知画像 — 回答：学生是否会规划、监控、反思和调整自己的学习？",
+  "_dimension_id": "metacognitiveProfile",
+  "_db_column": "metacognitive_profile",
+  "_data_source": "BEHAVIOR_AND_DIALOGUE_ANALYSIS",
+  "_update_frequency": "中频更新，从学习行为和对话交互中持续评估",
+
+  "_rules": [
+    "固定八项元认知能力维度，不允许自由扩展",
+    "每项统一五字段结构：score, level, confidence, trend, lastAssessedAt",
+    "从学习行为、对话交互和自我报告中聚合评估",
+    "primaryMetacognitiveIssue 为当前最突出的元认知问题",
+    "recommendedSupportLevel 决定系统对学生的辅助介入程度"
+  ],
+
+  "_field_spec": {
+    "planningAbility": "MetacognitiveEntry — 学习规划：能否制定合理的学习计划和目标",
+    "selfMonitoringAbility": "MetacognitiveEntry — 自我监控：能否在学习过程中觉察自己的状态",
+    "selfAssessmentAccuracy": "MetacognitiveEntry — 自我评估准确性：对自己掌握程度的判断是否准确",
+    "reflectionAbility": "MetacognitiveEntry — 学习反思：能否从学习经验中总结规律",
+    "helpSeekingAbility": "MetacognitiveEntry — 主动求助：遇到困难时能否适时寻求帮助",
+    "strategyAdjustmentAbility": "MetacognitiveEntry — 策略调整：能否根据反馈调整学习方法",
+    "confidenceCalibration": "MetacognitiveEntry — 信心校准：自信程度与实际能力是否匹配",
+    "learningPersistence": "MetacognitiveEntry — 学习坚持：面对困难时能否持续投入",
+    "primaryMetacognitiveIssue": "string — 当前最突出的元认知问题描述",
+    "recommendedSupportLevel": "enum — 推荐辅助级别（见 _support_level_values）"
+  },
+
+  "_entry_structures": {
+    "MetacognitiveEntry": {
+      "score": "float 0~1 — 能力得分",
+      "level": "enum — 能力等级（见 _level_values）",
+      "confidence": "float 0~1 — 评估置信度",
+      "trend": "enum — 趋势（见 _trend_values）",
+      "lastAssessedAt": "datetime — 最近评估时间"
+    }
+  },
+
+  "_level_values": {
+    "WEAK": "薄弱 — 0.0~0.4",
+    "DEVELOPING": "发展中 — 0.4~0.6",
+    "INTERMEDIATE": "中等 — 0.6~0.8",
+    "PROFICIENT": "熟练 — 0.8~0.9",
+    "EXPERT": "专家 — 0.9~1.0"
+  },
+
+  "_trend_values": {
+    "IMPROVING": "上升",
+    "STABLE": "稳定",
+    "DECLINING": "下降"
+  },
+
+  "_support_level_values": {
+    "LOW": "低介入 — 学生自主性强，仅需轻度引导",
+    "MEDIUM": "中等介入 — 需要适度的结构化支持和提示",
+    "HIGH": "高介入 — 需要频繁引导、分解任务和即时反馈"
+  },
+
+  "_example": {
+    "planningAbility": {
+      "score": 0.56,
+      "level": "DEVELOPING",
+      "confidence": 0.76,
+      "trend": "IMPROVING",
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "selfMonitoringAbility": {
+      "score": 0.52,
+      "level": "DEVELOPING",
+      "confidence": 0.74,
+      "trend": "STABLE",
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "selfAssessmentAccuracy": {
+      "score": 0.48,
+      "level": "DEVELOPING",
+      "confidence": 0.72,
+      "trend": "IMPROVING",
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "reflectionAbility": {
+      "score": 0.50,
+      "level": "DEVELOPING",
+      "confidence": 0.73,
+      "trend": "STABLE",
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "helpSeekingAbility": {
+      "score": 0.62,
+      "level": "INTERMEDIATE",
+      "confidence": 0.78,
+      "trend": "IMPROVING",
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "strategyAdjustmentAbility": {
+      "score": 0.44,
+      "level": "DEVELOPING",
+      "confidence": 0.70,
+      "trend": "STABLE",
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "confidenceCalibration": {
+      "score": 0.42,
+      "level": "WEAK",
+      "confidence": 0.68,
+      "trend": "IMPROVING",
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "learningPersistence": {
+      "score": 0.65,
+      "level": "INTERMEDIATE",
+      "confidence": 0.80,
+      "trend": "IMPROVING",
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "primaryMetacognitiveIssue": "知道自己不会，但不能准确定位问题",
+    "recommendedSupportLevel": "MEDIUM"
+  }
+}

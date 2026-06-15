@@ -1,0 +1,484 @@
+{
+  "_comment": "单科画像完整模板 — 定义学生在某一科目下的9个维度数据结构",
+  "_version": "2.0",
+  "_updatedAt": "2026-06-14",
+
+  "learningBackground": {
+    "_comment": "单科学习背景 — 只记录当前科目的基础，不重复全局的学历/年级/专业",
+
+    "priorExposureLevel": "BASIC",
+    "_priorExposureLevel_options": ["NONE", "BASIC", "INTERMEDIATE", "ADVANCED"],
+
+    "priorLearningSources": ["CLASSROOM", "SELF_STUDY"],
+    "_priorLearningSources_options": ["CLASSROOM", "SELF_STUDY", "ONLINE_COURSE", "WORKSHOP", "PROJECT_BASED", "TUTORING"],
+
+    "prerequisiteKnowledge": [
+      {
+        "knowledgePointId": "java-reference",
+        "knowledgePointName": "Java引用",
+        "requiredLevel": 0.7,
+        "currentLevel": 0.52,
+        "gapScore": 0.18,
+        "confidence": 0.83,
+        "status": "PARTIAL_GAP"
+      }
+    ],
+    "_prerequisiteKnowledge_status_options": ["FULLY_READY", "PARTIAL_GAP", "SIGNIFICANT_GAP", "NOT_ASSESSED"],
+
+    "domainToolFamiliarity": [
+      {
+        "toolName": "IDEA调试器",
+        "familiarityLevel": "BASIC"
+      }
+    ],
+    "_domainToolFamiliarity_options": ["NONE", "BASIC", "INTERMEDIATE", "ADVANCED"],
+
+    "subjectExperienceSummary": "学过数组和基础递归，但缺少系统练习",
+
+    "initialDiagnosticLevel": 0.46,
+    "initialDiagnosedAt": "2026-06-01T10:00:00+08:00"
+  },
+
+  "learningGoals": [
+    {
+      "goalId": "subject_goal_101",
+      "goalType": "EXAM",
+      "_goalType_options": ["EXAM", "SKILL_BUILDING", "PROJECT", "EXAM_AND_PRACTICE", "COMPETITION", "INTERVIEW_PREP"],
+
+      "title": "数据结构期末考试达到85分",
+      "description": "掌握线性表、树、图和排序算法",
+
+      "targetChapterIds": ["chapter_2", "chapter_3"],
+      "targetKnowledgePointIds": ["kp_1021", "kp_1033"],
+
+      "targetLevel": "INDEPENDENT_APPLICATION",
+      "_targetLevel_options": ["BASIC_AWARENESS", "GUIDED_APPLICATION", "INDEPENDENT_APPLICATION", "MASTERY", "TEACHING"],
+
+      "targetScore": 85,
+      "deadline": "2026-07-10T23:59:59+08:00",
+      "priority": "HIGH",
+      "_priority_options": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+
+      "weeklyTimeBudgetMinutes": 300,
+
+      "progressRate": 0.48,
+      "status": "IN_PROGRESS",
+      "_status_options": ["NOT_STARTED", "IN_PROGRESS", "COMPLETED", "PAUSED", "ABANDONED"],
+
+      "successCriteria": [
+        "核心知识点掌握度达到0.8",
+        "能够独立完成常见代码题"
+      ]
+    }
+  ],
+
+  "knowledgeMastery": {
+    "_comment": "知识掌握 — 单科画像最核心的维度。每个知识点独立记录，不再保存 masteredKnowledgeList/weakKnowledgeList（按 masteryScore 查询生成）",
+
+    "items": [
+      {
+        "knowledgePointId": "kp_1021",
+        "knowledgePointCode": "LINKED_LIST_REVERSE",
+        "knowledgePointName": "链表反转",
+        "chapterId": "chapter_2",
+
+        "masteryScore": 0.42,
+        "masteryStatus": "LEARNING",
+        "_masteryStatus_options": ["NOT_STARTED", "INITIAL_EXPOSURE", "LEARNING", "PRACTICING", "CONSOLIDATING", "MASTERED", "REVIEWING"],
+
+        "confidence": 0.86,
+        "independentLevel": 0.31,
+        "retentionRisk": 0.68,
+
+        "assessmentCount": 6,
+        "correctRate": 0.5,
+        "hintUsageRate": 0.67,
+
+        "recentTrend": "IMPROVING",
+        "_recentTrend_options": ["IMPROVING", "STABLE", "DECLINING", "NOT_ENOUGH_DATA"],
+
+        "lastLearnedAt": "2026-06-14T14:30:00+08:00",
+        "lastAssessedAt": "2026-06-14T15:00:00+08:00",
+        "nextReviewAt": "2026-06-16T19:00:00+08:00",
+        "evidenceCount": 10
+      }
+    ],
+
+    "_removed_fields": ["masteredKnowledgeList", "weakKnowledgeList"],
+    "_removed_reason": "根据 masteryScore 查询生成，不再冗余存储"
+  },
+
+  "abilityProfile": {
+    "_comment": "单科能力 — 核心能力结构与全局一致，增加专业扩展",
+
+    "coreAbilities": {
+      "conceptualUnderstanding": { "score": 0.71, "level": "INTERMEDIATE" },
+      "problemDecomposition": { "score": 0.54, "level": "DEVELOPING" },
+      "algorithmDesign": { "score": 0.48, "level": "DEVELOPING" },
+      "codeImplementation": { "score": 0.63, "level": "INTERMEDIATE" },
+      "debuggingAnalysis": { "score": 0.39, "level": "WEAK" },
+      "knowledgeTransfer": { "score": 0.32, "level": "WEAK" },
+      "selfExplanation": { "score": 0.46, "level": "DEVELOPING" }
+    },
+    "_abilityLevel_options": ["WEAK", "DEVELOPING", "INTERMEDIATE", "STRONG", "MASTERY"],
+
+    "domainAbilityExtensions": {
+      "_comment": "专业扩展字段必须提前在科目配置中注册，不能让大模型每次自由创造字段名",
+
+      "algorithmDesign": {
+        "score": 0.45,
+        "level": "DEVELOPING",
+        "evidenceSummary": "能理解经典算法，但难以独立设计新算法"
+      },
+      "codeImplementation": {
+        "score": 0.63,
+        "level": "INTERMEDIATE",
+        "evidenceSummary": "基础代码实现能力较好，复杂数据结构需辅助"
+      },
+      "debuggingAnalysis": {
+        "score": 0.39,
+        "level": "WEAK",
+        "evidenceSummary": "缺乏系统调试思路，经常靠试错"
+      },
+      "systemDesign": {
+        "score": 0.25,
+        "level": "WEAK",
+        "evidenceSummary": "未接触过系统设计类任务"
+      },
+      "toolUsage": {
+        "score": 0.55,
+        "level": "DEVELOPING",
+        "evidenceSummary": "能使用IDE基本功能，调试器使用不熟练"
+      }
+    },
+
+    "overallAbilityScore": 0.55,
+
+    "strengthAbilities": ["conceptualUnderstanding"],
+    "developmentPriorities": ["debuggingAnalysis", "knowledgeTransfer"]
+  },
+
+  "misconceptionProfile": {
+    "_comment": "单科易错模式 — 每项关联知识点，含触发条件和结构化干预建议",
+
+    "items": [
+      {
+        "misconceptionId": "mis_101",
+        "knowledgePointId": "kp_1021",
+        "knowledgePointName": "链表反转",
+
+        "errorType": "PROCEDURAL_ORDER_ERROR",
+        "_errorType_options": [
+          "PROCEDURAL_ORDER_ERROR",
+          "BOUNDARY_CONDITION_ERROR",
+          "CONCEPTUAL_CONFUSION",
+          "PATTERN_MISMATCH",
+          "OVER_GENERALIZATION",
+          "TOOL_MISUSE",
+          "METACOGNITIVE_OVERCONFIDENCE",
+          "INSUFFICIENT_DECOMPOSITION"
+        ],
+
+        "title": "指针更新顺序错误",
+        "description": "修改next前未保存后继节点",
+        "probableCause": "无法稳定跟踪多个指针的变化",
+
+        "triggerConditions": [
+          "需要同时维护三个指针"
+        ],
+
+        "recurrenceCount": 3,
+        "severity": 0.82,
+        "confidence": 0.89,
+
+        "evidenceRefIds": ["answer_1001", "code_run_1088"],
+
+        "trend": "STABLE",
+        "_trend_options": ["DECREASING", "STABLE", "INCREASING", "NOT_ENOUGH_DATA"],
+
+        "firstObservedAt": "2026-06-10T10:00:00+08:00",
+        "lastObservedAt": "2026-06-14T15:00:00+08:00",
+
+        "status": "ACTIVE",
+        "_status_options": ["ACTIVE", "INTERVENING", "RESOLVED", "DORMANT"],
+
+        "recommendedIntervention": {
+          "strategyType": "VISUAL_TRACE",
+          "_strategyType_options": [
+            "VISUAL_TRACE",
+            "CONCEPTUAL_REFRAMING",
+            "WORKED_EXAMPLE",
+            "DELIBERATE_PRACTICE",
+            "PEER_EXPLANATION",
+            "SCAFFOLDED_CODING"
+          ],
+
+          "description": "先观看指针变化动画，再完成状态跟踪表",
+
+          "resourceTypes": ["ANIMATION", "CODE_EXAMPLE"],
+          "practiceTypes": ["CODE_COMPLETION", "INDEPENDENT_CODING"],
+
+          "difficultyLevel": "BASIC",
+          "_difficultyLevel_options": ["BASIC", "INTERMEDIATE", "ADVANCED"],
+
+          "successCriteria": [
+            "连续两次独立完成链表反转"
+          ]
+        }
+      }
+    ]
+  },
+
+  "learningPreference": {
+    "_comment": "单科偏好 — 只保存与全局偏好的差异，不重复存储全局默认值",
+
+    "inheritMode": "OVERRIDE",
+    "_inheritMode_options": ["INHERIT_ALL", "OVERRIDE", "BLEND"],
+
+    "resourceTypePriorityOverride": [
+      "ANIMATION",
+      "CODE_EXAMPLE",
+      "PRACTICE_QUESTION"
+    ],
+    "_resourceType_options": [
+      "ANIMATION", "CODE_EXAMPLE", "DIAGRAM", "TEXT", "VIDEO",
+      "PRACTICE_QUESTION", "INTERACTIVE_EXERCISE", "WORKED_EXAMPLE",
+      "AUDIO", "CHEAT_SHEET"
+    ],
+
+    "explanationSequenceOverride": [
+      "VISUAL_DEMONSTRATION",
+      "CODE_TRACE",
+      "FORMAL_DEFINITION"
+    ],
+    "_explanationSequence_options": [
+      "CONCRETE_EXAMPLE", "VISUAL_DEMONSTRATION", "CODE_TRACE",
+      "FORMAL_DEFINITION", "ANALOGY", "STORY_TELLING",
+      "STEP_BY_STEP_REASONING", "COMPARISON"
+    ],
+
+    "contentDetailLevelOverride": "DETAILED",
+    "_contentDetailLevel_options": ["CONCISE", "STANDARD", "DETAILED", "EXHAUSTIVE"],
+
+    "interactionModeOverride": "GUIDED_DIALOGUE",
+    "_interactionMode_options": ["AUTONOMOUS", "GUIDED_DIALOGUE", "HINT_BASED", "FULL_SCAFFOLD"],
+
+    "practiceModeOverride": "PROGRESSIVE_SCAFFOLDING",
+    "_practiceMode_options": [
+      "IMMEDIATE_PRACTICE", "PROGRESSIVE_SCAFFOLDING",
+      "CHALLENGE_FIRST", "SPACED_RETRIEVAL", "INTERLEAVED"
+    ],
+
+    "feedbackModeOverride": "IMMEDIATE_WITH_EXPLANATION",
+    "_feedbackMode_options": [
+      "IMMEDIATE_SIMPLE", "IMMEDIATE_WITH_EXPLANATION",
+      "DELAYED_SUMMARY", "ON_DEMAND"
+    ],
+
+    "preferredResourceDurationMinutes": {
+      "minimum": 5,
+      "maximum": 12
+    },
+
+    "exampleDomainPreferences": ["SOFTWARE_DEVELOPMENT"],
+
+    "observedEffectivePreference": {
+      "_comment": "系统观察到对该科目实际有效的偏好（可能与声明不同）"
+    },
+
+    "preferenceConfidence": 0.82
+  },
+
+  "metacognitiveProfile": {
+    "_comment": "单科元认知 — 核心结构与全局一致，增加科目特定问题和支持建议",
+
+    "selfAssessmentAccuracy": 0.58,
+    "calibrationBias": "OVERCONFIDENT",
+    "_calibrationBias_options": ["OVERCONFIDENT", "UNDERCONFIDENT", "WELL_CALIBRATED", "INCONSISTENT"],
+
+    "planningAbility": 0.52,
+    "monitoringAbility": 0.61,
+    "evaluationAbility": 0.48,
+
+    "selfRegulationStrategies": [
+      "CHECKPOINT_SELF_TEST",
+      "PROGRESS_REVIEW"
+    ],
+    "_selfRegulationStrategies_options": [
+      "CHECKPOINT_SELF_TEST", "PROGRESS_REVIEW", "TIME_BOXING",
+      "GOAL_SETTING", "SELF_EXPLANATION", "ERROR_LOGGING",
+      "PEER_DISCUSSION", "TEACH_BACK"
+    ],
+
+    "subjectSpecificIssue": "数据结构题中经常过早判断自己已经理解",
+
+    "recommendedSupportLevel": "HIGH",
+    "_recommendedSupportLevel_options": ["LOW", "MEDIUM", "HIGH", "MAXIMUM"],
+
+    "recommendedSupportActions": [
+      "每个知识点学习后要求自我解释",
+      "增加延迟复测",
+      "记录预测分数与真实分数差异"
+    ],
+
+    "confidence": 0.76,
+    "evidenceRefIds": []
+  },
+
+  "learningBehavior": {
+    "_comment": "单科行为 — 固定字段，由系统统计数据自动生成",
+
+    "statisticsWindow": {
+      "startAt": "2026-06-01T00:00:00+08:00",
+      "endAt": "2026-06-14T23:59:59+08:00"
+    },
+
+    "activeDays": 10,
+    "sessionCount": 16,
+    "totalLearningMinutes": 420,
+    "averageSessionMinutes": 26.25,
+
+    "planCompletionRate": 0.72,
+    "resourceCompletionRate": 0.81,
+    "taskCompletionRate": 0.69,
+    "assessmentCompletionRate": 0.75,
+
+    "averageAccuracy": 0.64,
+    "independentCompletionRate": 0.42,
+    "hintDependencyRate": 0.58,
+    "reviewCompletionRate": 0.33,
+    "activeQuestionRate": 0.46,
+
+    "averageResponseSeconds": 95,
+
+    "resourceUsageDistribution": {
+      "_comment": "按资源类型的使用占比",
+      "CODE_EXAMPLE": 0.35,
+      "ANIMATION": 0.25,
+      "PRACTICE_QUESTION": 0.20,
+      "VIDEO": 0.15,
+      "TEXT": 0.05
+    },
+
+    "activityMetrics": {
+      "codeExecutionCount": 32,
+      "successfulExecutionRate": 0.53,
+      "debuggingAttemptCount": 18,
+      "projectTaskCount": 2
+    },
+
+    "behaviorTrend": "IMPROVING",
+    "_behaviorTrend_options": ["IMPROVING", "STABLE", "DECLINING", "NOT_ENOUGH_DATA"]
+  },
+
+  "currentLearningState": {
+    "_comment": "单科当前状态 — 会话级临时数据，有过期时间",
+
+    "activeGoalId": "subject_goal_101",
+    "activePlanId": "plan_101",
+    "currentPlanNodeId": "node_08",
+
+    "currentChapterId": "chapter_2",
+    "currentKnowledgePointId": "kp_1021",
+
+    "currentTaskType": "CODE_PRACTICE",
+    "_currentTaskType_options": [
+      "CONCEPT_LEARNING", "CODE_PRACTICE", "CODE_REVIEW",
+      "DEBUGGING", "ASSESSMENT", "REVIEW", "PROJECT_TASK"
+    ],
+
+    "currentTaskId": "task_1008",
+    "currentResourceId": "resource_881",
+
+    "sessionId": "session_1001",
+    "sessionDurationMinutes": 47,
+
+    "consecutiveErrorCount": 3,
+
+    "currentDifficultyFit": "TOO_DIFFICULT",
+    "_currentDifficultyFit_options": ["TOO_EASY", "APPROPRIATE", "TOO_DIFFICULT"],
+
+    "estimatedCognitiveLoad": 0.78,
+
+    "engagementStatus": "DECLINING",
+    "_engagementStatus_options": ["HIGHLY_ENGAGED", "ENGAGED", "NEUTRAL", "DECLINING", "DISENGAGED"],
+
+    "blockingIssues": [],
+
+    "recommendedNextAction": {
+      "actionType": "REDUCE_DIFFICULTY",
+      "_actionType_options": [
+        "REDUCE_DIFFICULTY", "INCREASE_DIFFICULTY", "SWITCH_TOPIC",
+        "TAKE_BREAK", "REVIEW_PREREQUISITE", "PROVIDE_HINT",
+        "CHANGE_RESOURCE_TYPE", "START_ASSESSMENT"
+      ],
+
+      "targetId": "kp_1021",
+      "description": "切换为链表指针动画和分步代码填空",
+      "urgency": "HIGH",
+      "_urgency_options": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    },
+
+    "stateUpdatedAt": "2026-06-14T15:30:00+08:00",
+    "stateExpiresAt": "2026-06-14T18:00:00+08:00"
+  },
+
+  "dimensionMetadata": {
+    "_comment": "维度元数据 — 记录每个维度的置信度、数据来源和更新状态",
+
+    "learningBackground": {
+      "confidence": 0.91,
+      "primarySource": "USER_DECLARED_AND_ASSESSMENT",
+      "updatedAt": "2026-06-10T09:00:00+08:00",
+      "expiresAt": null
+    },
+    "learningGoals": {
+      "confidence": 0.88,
+      "primarySource": "USER_DECLARED",
+      "updatedAt": "2026-06-01T10:00:00+08:00",
+      "expiresAt": "2026-07-10T23:59:59+08:00"
+    },
+    "knowledgeMastery": {
+      "confidence": 0.84,
+      "primarySource": "ASSESSMENT_AND_BEHAVIOR",
+      "updatedAt": "2026-06-14T14:20:00+08:00",
+      "expiresAt": "2026-06-21T14:20:00+08:00"
+    },
+    "abilityProfile": {
+      "confidence": 0.72,
+      "primarySource": "MULTI_TASK_ASSESSMENT",
+      "updatedAt": "2026-06-14T14:20:00+08:00",
+      "expiresAt": "2026-07-14T14:20:00+08:00"
+    },
+    "misconceptionProfile": {
+      "confidence": 0.88,
+      "primarySource": "REPEATED_ERROR_ANALYSIS",
+      "updatedAt": "2026-06-14T14:20:00+08:00",
+      "expiresAt": "2026-07-14T14:20:00+08:00"
+    },
+    "learningPreference": {
+      "confidence": 0.69,
+      "primarySource": "USER_DECLARED_AND_AB_TEST",
+      "updatedAt": "2026-06-13T20:00:00+08:00",
+      "expiresAt": "2026-07-13T20:00:00+08:00"
+    },
+    "metacognitiveProfile": {
+      "confidence": 0.76,
+      "primarySource": "CURRENT_SESSION",
+      "updatedAt": "2026-06-14T15:20:00+08:00",
+      "expiresAt": "2026-06-14T18:00:00+08:00"
+    },
+    "learningBehavior": {
+      "confidence": 0.95,
+      "primarySource": "SYSTEM_STATISTICS",
+      "updatedAt": "2026-06-14T23:00:00+08:00",
+      "expiresAt": "2026-06-15T23:00:00+08:00"
+    },
+    "currentLearningState": {
+      "confidence": 0.90,
+      "primarySource": "CURRENT_SESSION",
+      "updatedAt": "2026-06-14T15:30:00+08:00",
+      "expiresAt": "2026-06-14T18:00:00+08:00"
+    }
+  }
+}

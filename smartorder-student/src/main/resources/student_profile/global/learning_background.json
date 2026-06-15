@@ -1,0 +1,124 @@
+{
+  "_comment": "全局学习背景 — 回答：学生整体具备什么客观基础？",
+  "_dimension_id": "learningBackground",
+  "_db_column": "learning_background",
+  "_data_source": "USER_DECLARED_AND_ASSESSMENT",
+  "_update_frequency": "低频更新，仅在学历、专业、语言等客观信息变化时更新",
+
+  "_rules": [
+    "保存稳定、通用的信息：学历、年级、专业、编程语言、已修课程",
+    "全局画像中不记录链表、二叉树等具体知识点",
+    "不重复保存单科特有的前置知识",
+    "programmingLanguages 的 verifiedLevel 由系统评估确认，selfReportedLevel 由用户自述",
+    "generalTechnicalFoundation 记录通用技术基础，不涉及具体知识树节点"
+  ],
+
+  "_field_spec": {
+    "educationStage": {
+      "type": "enum",
+      "values": ["HIGH_SCHOOL", "UNDERGRADUATE", "POSTGRADUATE", "DOCTORAL", "VOCATIONAL", "SELF_STUDY"],
+      "description": "学历阶段"
+    },
+    "grade": {
+      "type": "int",
+      "description": "年级，如 1=大一、2=大二"
+    },
+    "majorId": {
+      "type": "long",
+      "description": "专业ID，关联专业表"
+    },
+    "majorName": {
+      "type": "string",
+      "description": "专业名称"
+    },
+    "specializationDirection": {
+      "type": "string",
+      "description": "细分方向，如后端开发、前端开发、数据分析"
+    },
+    "programmingLanguages": {
+      "type": "array",
+      "item": "ProgrammingLanguageEntry",
+      "description": "已掌握的编程语言列表"
+    },
+    "completedCourses": {
+      "type": "array",
+      "item": "CompletedCourseEntry",
+      "description": "已修课程列表"
+    },
+    "generalTechnicalFoundation": {
+      "type": "array",
+      "item": "TechnicalFoundationEntry",
+      "description": "通用技术基础评估，不涉及具体知识树节点"
+    },
+    "learningEnvironment": {
+      "type": "object",
+      "description": "学习环境约束，如设备、网络、安静程度等"
+    },
+    "weeklyAvailableMinutes": {
+      "type": "int",
+      "description": "每周可用学习时间（分钟）"
+    },
+    "preferredStudyPeriods": {
+      "type": "array",
+      "item": "enum",
+      "values": ["MORNING", "AFTERNOON", "EVENING", "WEEKEND"],
+      "description": "偏好学习时段"
+    }
+  },
+
+  "_entry_structures": {
+    "ProgrammingLanguageEntry": {
+      "language": "string — 语言名称，如 Java、Python",
+      "selfReportedLevel": "float 0~1 — 用户自述掌握水平",
+      "verifiedLevel": "float 0~1 — 系统评估确认的掌握水平",
+      "lastUsedAt": "datetime — 最近使用时间"
+    },
+    "CompletedCourseEntry": {
+      "subjectId": "long — 科目ID",
+      "subjectName": "string — 课程名称",
+      "completionStatus": "enum — COMPLETED | IN_PROGRESS | DROPPED",
+      "overallResult": "float 0~1 — 课程综合成绩"
+    },
+    "TechnicalFoundationEntry": {
+      "foundationCode": "string — 基础编码，如 PROGRAMMING_BASIC、MATH_DISCRETE",
+      "foundationName": "string — 基础名称",
+      "level": "float 0~1 — 掌握水平",
+      "confidence": "float 0~1 — 评估置信度"
+    }
+  },
+
+  "_example": {
+    "educationStage": "UNDERGRADUATE",
+    "grade": 2,
+    "majorId": 1001,
+    "majorName": "软件工程",
+    "specializationDirection": "后端开发",
+    "programmingLanguages": [
+      {
+        "language": "Java",
+        "selfReportedLevel": 0.75,
+        "verifiedLevel": 0.66,
+        "lastUsedAt": "2026-06-14T15:30:00+08:00"
+      }
+    ],
+    "completedCourses": [
+      {
+        "subjectId": 101,
+        "subjectName": "程序设计基础",
+        "completionStatus": "COMPLETED",
+        "overallResult": 0.82
+      }
+    ],
+    "generalTechnicalFoundation": [
+      {
+        "foundationCode": "PROGRAMMING_BASIC",
+        "foundationName": "程序设计基础",
+        "level": 0.72,
+        "confidence": 0.85
+      }
+    ],
+    "learningEnvironment": {},
+    "weeklyAvailableMinutes": 600,
+    "preferredStudyPeriods": ["EVENING", "WEEKEND"]
+  }
+}

@@ -1,0 +1,387 @@
+{
+  "_comment": "全局画像完整模板 — 一个用户一份，聚合全部科目的学习特征和状态",
+  "_schema_version": "2.0",
+  "_updated_at": "2026-06-14",
+
+  "learningBackground": {
+    "_comment": "全局学习背景 — 回答：学生整体具备什么客观基础？",
+    "_rules": [
+      "保存稳定、通用的信息：学历、年级、专业、编程语言、已修课程",
+      "全局画像中不记录链表、二叉树等具体知识点",
+      "不重复保存单科特有的前置知识"
+    ],
+    "educationStage": "UNDERGRADUATE",
+    "grade": 2,
+    "majorId": 1001,
+    "majorName": "软件工程",
+    "specializationDirection": "后端开发",
+    "programmingLanguages": [
+      {
+        "language": "Java",
+        "selfReportedLevel": 0.75,
+        "verifiedLevel": 0.66,
+        "lastUsedAt": "2026-06-14T15:30:00+08:00"
+      }
+    ],
+    "completedCourses": [
+      {
+        "subjectId": 101,
+        "subjectName": "程序设计基础",
+        "completionStatus": "COMPLETED",
+        "overallResult": 0.82
+      }
+    ],
+    "generalTechnicalFoundation": [
+      {
+        "foundationCode": "PROGRAMMING_BASIC",
+        "foundationName": "程序设计基础",
+        "level": 0.72,
+        "confidence": 0.85
+      }
+    ],
+    "learningEnvironment": {},
+    "weeklyAvailableMinutes": 600,
+    "preferredStudyPeriods": ["EVENING", "WEEKEND"]
+  },
+
+  "learningGoals": {
+    "_comment": "全局学习目标 — 回答：学生总体准备达到什么结果？",
+    "_rules": [
+      "保存跨科目的总体目标和优先级",
+      "单科目标通过 relatedSubjectIds 关联"
+    ],
+    "_goal_types": [
+      "EXAM", "PROJECT", "SKILL_IMPROVEMENT", "COMPETITION",
+      "CERTIFICATE", "RESEARCH", "CAREER_PREPARATION", "GENERAL_LEARNING"
+    ],
+    "goals": [
+      {
+        "goalId": "goal_001",
+        "goalType": "SKILL_IMPROVEMENT",
+        "title": "提升计算机专业课程综合能力",
+        "description": "掌握数据结构、Java和数据库核心内容",
+        "relatedSubjectIds": [101, 102, 103],
+        "targetLevel": "INDEPENDENT_APPLICATION",
+        "targetScore": null,
+        "deadline": "2026-07-30T23:59:59+08:00",
+        "priority": "HIGH",
+        "weeklyTimeBudgetMinutes": 600,
+        "progressRate": 0.42,
+        "status": "IN_PROGRESS",
+        "createdAt": "2026-06-01T10:00:00+08:00",
+        "updatedAt": "2026-06-14T15:30:00+08:00"
+      }
+    ]
+  },
+
+  "subjectMasteryOverview": {
+    "_comment": "科目掌握总览 — 回答：学生的每门课程整体学得怎么样？",
+    "_rules": [
+      "全局科目摘要是聚合缓存，由系统从各单科画像自动聚合生成",
+      "topWeaknesses 只保存最重要的 3~5 个摘要，不能把全部知识点复制到全局画像",
+      "单科知识点状态是事实源，全局科目总览是聚合结果"
+    ],
+    "subjects": [
+      {
+        "subjectId": 101,
+        "subjectName": "数据结构",
+        "overallMastery": 0.58,
+        "confidence": 0.86,
+        "learningStage": "二叉树",
+        "masteredKnowledgeCount": 12,
+        "learningKnowledgeCount": 6,
+        "weakKnowledgeCount": 4,
+        "highRiskKnowledgeCount": 2,
+        "topWeaknesses": [
+          {
+            "knowledgePointId": "kp_1021",
+            "knowledgePointName": "链表反转",
+            "masteryScore": 0.38,
+            "riskReason": "连续三次出现指针更新顺序错误"
+          }
+        ],
+        "retentionRisk": 0.62,
+        "recentTrend": "IMPROVING",
+        "lastLearningAt": "2026-06-14T15:30:00+08:00",
+        "lastAssessedAt": "2026-06-14T15:10:00+08:00",
+        "subjectProfileVersion": 6
+      }
+    ]
+  },
+
+  "abilityProfile": {
+    "_comment": "全局综合能力 — 回答：学生跨科目能够怎样理解和使用知识？",
+    "_rules": [
+      "固定八项能力维度，每项统一结构",
+      "从多科目学习行为和评估中聚合得出"
+    ],
+    "conceptualUnderstanding": {
+      "score": 0.62,
+      "level": "INTERMEDIATE",
+      "confidence": 0.81,
+      "trend": "IMPROVING",
+      "evidenceCount": 12,
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "knowledgeRecall": {
+      "score": 0.55,
+      "level": "DEVELOPING",
+      "confidence": 0.78,
+      "trend": "STABLE",
+      "evidenceCount": 8,
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "problemAnalysis": {
+      "score": 0.58,
+      "level": "DEVELOPING",
+      "confidence": 0.76,
+      "trend": "IMPROVING",
+      "evidenceCount": 10,
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "problemSolving": {
+      "score": 0.51,
+      "level": "DEVELOPING",
+      "confidence": 0.74,
+      "trend": "STABLE",
+      "evidenceCount": 9,
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "practicalApplication": {
+      "score": 0.48,
+      "level": "DEVELOPING",
+      "confidence": 0.72,
+      "trend": "IMPROVING",
+      "evidenceCount": 7,
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "knowledgeTransfer": {
+      "score": 0.35,
+      "level": "WEAK",
+      "confidence": 0.70,
+      "trend": "DECLINING",
+      "evidenceCount": 5,
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "selfExplanation": {
+      "score": 0.46,
+      "level": "DEVELOPING",
+      "confidence": 0.73,
+      "trend": "IMPROVING",
+      "evidenceCount": 6,
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "errorCorrection": {
+      "score": 0.40,
+      "level": "WEAK",
+      "confidence": 0.71,
+      "trend": "STABLE",
+      "evidenceCount": 5,
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "overallAbilityScore": 0.57,
+    "strengthAbilities": ["conceptualUnderstanding"],
+    "developmentPriorities": ["knowledgeTransfer", "errorCorrection"]
+  },
+
+  "misconceptionProfile": {
+    "_comment": "全局易错模式 — 回答：学生在多个科目中反复出现什么共同问题？",
+    "_rules": [
+      "保存跨科目共同出现的错误模式",
+      "通过 affectedSubjects 标注该模式影响了哪些科目",
+      "全局易错模式由系统从各单科画像中自动识别和聚合"
+    ],
+    "_error_types": [
+      "BOUNDARY_CONDITION_ERROR", "PROCEDURAL_ORDER_ERROR",
+      "CONCEPT_CONFUSION", "ANALOGY_MISAPPLICATION",
+      "INCOMPLETE_MENTAL_MODEL", "SURFACE_PATTERN_MATCHING",
+      "OVER_GENERALIZATION", "PERSISTENT_PROCEDURAL_ERROR"
+    ],
+    "_trend_values": ["IMPROVING", "STABLE", "WORSENING"],
+    "_status_values": ["ACTIVE", "RESOLVED", "MONITORING"],
+    "patterns": [
+      {
+        "globalMisconceptionId": "global_mis_001",
+        "errorType": "BOUNDARY_CONDITION_ERROR",
+        "title": "边界条件处理不稳定",
+        "description": "在递归、数组和分页处理中反复遗漏边界条件",
+        "probableCause": "缺少对输入范围和终止条件的主动检查",
+        "affectedSubjects": [
+          {
+            "subjectId": 101,
+            "subjectName": "数据结构",
+            "occurrenceCount": 4,
+            "exampleSummary": "递归终止条件遗漏"
+          }
+        ],
+        "recurrenceCount": 8,
+        "severity": 0.82,
+        "confidence": 0.88,
+        "trend": "STABLE",
+        "firstObservedAt": "2026-05-20T10:00:00+08:00",
+        "lastObservedAt": "2026-06-14T14:20:00+08:00",
+        "status": "ACTIVE",
+        "recommendedIntervention": {}
+      }
+    ]
+  },
+
+  "learningPreference": {
+    "_comment": "全局学习偏好 — 回答：学生通常喜欢什么，以及什么方式实际效果更好？",
+    "_rules": [
+      "必须区分 declaredPreference（用户自述）和 observedEffectivePreference（系统验证）",
+      "全局保存学生通常适合的默认偏好",
+      "单科画像只保存该科目的特殊差异（subjectOverrides）"
+    ],
+    "declaredPreference": {},
+    "observedEffectivePreference": {},
+    "defaultExplanationSequence": [
+      "CONCRETE_EXAMPLE",
+      "VISUAL_DEMONSTRATION",
+      "CODE_TRACE",
+      "FORMAL_DEFINITION"
+    ],
+    "defaultResourceTypePriority": [
+      "ANIMATION",
+      "CODE_EXAMPLE",
+      "DIAGRAM",
+      "TEXT_DOCUMENT"
+    ],
+    "contentDetailLevel": "DETAILED",
+    "interactionMode": "GUIDED_DIALOGUE",
+    "practiceMode": "PROGRESSIVE_SCAFFOLDING",
+    "feedbackMode": "IMMEDIATE_WITH_EXPLANATION",
+    "preferredSessionMinutes": {
+      "minimum": 20,
+      "maximum": 45
+    },
+    "pacePreference": "ADAPTIVE",
+    "preferenceConfidence": 0.78
+  },
+
+  "metacognitiveProfile": {
+    "_comment": "全局元认知画像 — 回答：学生是否会规划、监控、反思和调整自己的学习？",
+    "_rules": [
+      "固定八项元认知能力维度",
+      "从学习行为、对话交互和自我报告中聚合评估"
+    ],
+    "planningAbility": {
+      "score": 0.56,
+      "level": "DEVELOPING",
+      "confidence": 0.76,
+      "trend": "IMPROVING",
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "selfMonitoringAbility": {
+      "score": 0.52,
+      "level": "DEVELOPING",
+      "confidence": 0.74,
+      "trend": "STABLE",
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "selfAssessmentAccuracy": {
+      "score": 0.48,
+      "level": "DEVELOPING",
+      "confidence": 0.72,
+      "trend": "IMPROVING",
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "reflectionAbility": {
+      "score": 0.50,
+      "level": "DEVELOPING",
+      "confidence": 0.73,
+      "trend": "STABLE",
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "helpSeekingAbility": {
+      "score": 0.62,
+      "level": "INTERMEDIATE",
+      "confidence": 0.78,
+      "trend": "IMPROVING",
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "strategyAdjustmentAbility": {
+      "score": 0.44,
+      "level": "DEVELOPING",
+      "confidence": 0.70,
+      "trend": "STABLE",
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "confidenceCalibration": {
+      "score": 0.42,
+      "level": "WEAK",
+      "confidence": 0.68,
+      "trend": "IMPROVING",
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "learningPersistence": {
+      "score": 0.65,
+      "level": "INTERMEDIATE",
+      "confidence": 0.80,
+      "trend": "IMPROVING",
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "primaryMetacognitiveIssue": "知道自己不会，但不能准确定位问题",
+    "recommendedSupportLevel": "MEDIUM"
+  },
+
+  "learningBehavior": {
+    "_comment": "全局学习行为 — 回答：学生在统计周期内实际上怎么学习？",
+    "_rules": [
+      "必须带 statisticsWindow，否则完成率没有明确含义",
+      "从系统学习记录中自动统计，不需要人工维护"
+    ],
+    "statisticsWindow": {
+      "startAt": "2026-05-15T00:00:00+08:00",
+      "endAt": "2026-06-14T23:59:59+08:00",
+      "windowDays": 30
+    },
+    "activeDays": 18,
+    "sessionsPerWeek": 4.2,
+    "totalLearningMinutes": 860,
+    "averageSessionMinutes": 36.5,
+    "planCompletionRate": 0.68,
+    "resourceCompletionRate": 0.74,
+    "taskCompletionRate": 0.71,
+    "independentCompletionRate": 0.46,
+    "hintDependencyRate": 0.52,
+    "reviewCompletionRate": 0.31,
+    "activeQuestionRate": 0.38,
+    "delayedReviewParticipationRate": 0.26,
+    "learningContinuityScore": 0.67,
+    "resourceUsageDistribution": {},
+    "subjectTimeDistribution": [],
+    "behaviorTrend": "IMPROVING"
+  },
+
+  "currentLearningState": {
+    "_comment": "全局当前状态 — 回答：学生现在最应该优先处理什么？",
+    "_rules": [
+      "记录当前活跃的科目、目标、任务",
+      "subjectPriorityQueue 按优先级排序，指导下一步学习",
+      "blockingIssues 记录阻碍学习的关键问题"
+    ],
+    "_engagement_status_values": ["ACTIVE", "DECLINING", "DISENGAGED", "RECOVERING"],
+    "_workload_level_values": ["LOW", "MODERATE", "HIGH", "OVERLOADED"],
+    "_priority_level_values": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+    "activeSubjectId": 103,
+    "activeSubjectName": "数据库原理",
+    "activeGoalId": "goal_001",
+    "activeSessionId": "session_1001",
+    "activeTaskId": "task_2051",
+    "overallWorkloadLevel": "HIGH",
+    "engagementStatus": "ACTIVE",
+    "subjectPriorityQueue": [
+      {
+        "subjectId": 103,
+        "priorityScore": 92,
+        "priorityLevel": "CRITICAL",
+        "reason": "掌握度最低且考试临近"
+      }
+    ],
+    "blockingIssues": [],
+    "recommendedNextAction": {},
+    "stateUpdatedAt": "2026-06-14T15:30:00+08:00",
+    "stateExpiresAt": "2026-06-15T00:00:00+08:00"
+  }
+}

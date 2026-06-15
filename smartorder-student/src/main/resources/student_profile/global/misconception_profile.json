@@ -1,0 +1,100 @@
+{
+  "_comment": "全局易错模式 — 回答：学生在多个科目中反复出现什么共同问题？",
+  "_dimension_id": "misconceptionProfile",
+  "_db_column": "misconception_profile",
+  "_data_source": "REPEATED_ERROR_ANALYSIS",
+  "_update_frequency": "中频更新，发现新的跨科目错误模式或现有模式状态变化时更新",
+
+  "_rules": [
+    "保存跨科目共同出现的错误模式",
+    "通过 affectedSubjects 标注该模式影响了哪些科目",
+    "全局易错模式由系统从各单科画像中自动识别和聚合",
+    "单科错误是事实源，全局模式是聚合结果",
+    "status 流转：ACTIVE → MONITORING → RESOLVED",
+    "severity 和 recurrenceCount 由系统根据证据自动计算"
+  ],
+
+  "_field_spec": {
+    "patterns": {
+      "type": "array",
+      "item": "GlobalMisconceptionEntry",
+      "description": "跨科目易错模式列表，按 severity 降序排列"
+    }
+  },
+
+  "_entry_structures": {
+    "GlobalMisconceptionEntry": {
+      "globalMisconceptionId": "string — 全局易错模式唯一标识，如 global_mis_001",
+      "errorType": "enum — 错误类型（见 _error_types）",
+      "title": "string — 模式标题，简明扼要",
+      "description": "string — 模式描述，说明具体表现",
+      "probableCause": "string — 可能的根因分析",
+      "affectedSubjects": "AffectedSubjectEntry[] — 受影响的科目列表",
+      "recurrenceCount": "int — 跨科目总出现次数",
+      "severity": "float 0~1 — 严重程度",
+      "confidence": "float 0~1 — 判断置信度",
+      "trend": "enum — 趋势（见 _trend_values）",
+      "firstObservedAt": "datetime — 首次观察时间",
+      "lastObservedAt": "datetime — 最近观察时间",
+      "status": "enum — 状态（见 _status_values）",
+      "recommendedIntervention": "object — 推荐干预策略"
+    },
+    "AffectedSubjectEntry": {
+      "subjectId": "long — 科目ID",
+      "subjectName": "string — 科目名称",
+      "occurrenceCount": "int — 在该科目的出现次数",
+      "exampleSummary": "string — 典型错误示例摘要"
+    }
+  },
+
+  "_error_types": {
+    "BOUNDARY_CONDITION_ERROR": "边界条件错误 — 遗漏边界、终止条件",
+    "PROCEDURAL_ORDER_ERROR": "过程顺序错误 — 操作步骤顺序颠倒或遗漏",
+    "CONCEPT_CONFUSION": "概念混淆 — 相似概念混为一谈",
+    "ANALOGY_MISAPPLICATION": "类比误用 — 不当类比导致错误推理",
+    "INCOMPLETE_MENTAL_MODEL": "不完整心智模型 — 对机制理解有缺失",
+    "SURFACE_PATTERN_MATCHING": "表面模式匹配 — 只看表面特征不看本质",
+    "OVER_GENERALIZATION": "过度泛化 — 将规则不当地推广到新场景",
+    "PERSISTENT_PROCEDURAL_ERROR": "持续性程序错误 — 反复出现相同操作错误"
+  },
+
+  "_trend_values": {
+    "IMPROVING": "改善",
+    "STABLE": "稳定",
+    "WORSENING": "恶化"
+  },
+
+  "_status_values": {
+    "ACTIVE": "活跃 — 仍在持续出现",
+    "MONITORING": "监控中 — 近期未出现但仍需关注",
+    "RESOLVED": "已解决 — 已稳定不再出现"
+  },
+
+  "_example": {
+    "patterns": [
+      {
+        "globalMisconceptionId": "global_mis_001",
+        "errorType": "BOUNDARY_CONDITION_ERROR",
+        "title": "边界条件处理不稳定",
+        "description": "在递归、数组和分页处理中反复遗漏边界条件",
+        "probableCause": "缺少对输入范围和终止条件的主动检查",
+        "affectedSubjects": [
+          {
+            "subjectId": 101,
+            "subjectName": "数据结构",
+            "occurrenceCount": 4,
+            "exampleSummary": "递归终止条件遗漏"
+          }
+        ],
+        "recurrenceCount": 8,
+        "severity": 0.82,
+        "confidence": 0.88,
+        "trend": "STABLE",
+        "firstObservedAt": "2026-05-20T10:00:00+08:00",
+        "lastObservedAt": "2026-06-14T14:20:00+08:00",
+        "status": "ACTIVE",
+        "recommendedIntervention": {}
+      }
+    ]
+  }
+}

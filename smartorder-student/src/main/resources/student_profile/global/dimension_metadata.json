@@ -1,0 +1,145 @@
+{
+  "_comment": "全局画像维度元数据 — 记录每个维度的置信度、数据来源、更新时间和过期时间",
+  "_schema_version": "2.0",
+
+  "_rules": [
+    "每个维度记录 confidence、primarySource、updatedAt、expiresAt",
+    "expiresAt 为 null 表示永不过期（如 learningBackground）",
+    "participatingSubjectVersions 记录参与聚合的单科画像版本号",
+    "全局维度元数据由系统自动维护，不需要人工干预"
+  ],
+
+  "_dimension_ids": [
+    "learningBackground",
+    "learningGoals",
+    "subjectMasteryOverview",
+    "abilityProfile",
+    "misconceptionProfile",
+    "learningPreference",
+    "metacognitiveProfile",
+    "learningBehavior",
+    "currentLearningState"
+  ],
+
+  "_source_types": {
+    "USER_DECLARED": "用户自述 — 来自问卷、对话中的用户声明",
+    "USER_DECLARED_AND_ASSESSMENT": "用户自述+系统评估 — 结合用户声明和系统测试",
+    "USER_DECLARED_AND_AB_TEST": "用户自述+AB测试 — 结合用户声明和行为验证",
+    "AUTO_AGGREGATED": "自动聚合 — 由系统从单科画像自动聚合",
+    "MULTI_TASK_ASSESSMENT": "多任务评估 — 从多种学习任务表现中评估",
+    "BEHAVIOR_AND_DIALOGUE_ANALYSIS": "行为+对话分析 — 从学习行为和对话交互中分析",
+    "REPEATED_ERROR_ANALYSIS": "重复错误分析 — 从反复出现的错误中识别",
+    "SYSTEM_STATISTICS": "系统统计 — 由系统自动统计数据",
+    "REAL_TIME_SESSION": "实时会话 — 来自当前学习会话"
+  },
+
+  "_entry_structure": {
+    "dimensionId": "string — 维度标识符",
+    "dimensionLabel": "string — 维度中文名称",
+    "confidence": "float 0~1 — 维度整体置信度",
+    "primarySource": "enum — 主要数据来源",
+    "updatedAt": "datetime — 最后更新时间",
+    "expiresAt": "datetime|null — 过期时间，null 表示永不过期",
+    "evidenceCount": "int — 评估依据数量",
+    "participatingSubjectVersions": "object — 参与聚合的单科画像版本号，格式 {subjectId: version}"
+  },
+
+  "_example": {
+    "learningBackground": {
+      "dimensionLabel": "学习背景",
+      "confidence": 0.91,
+      "primarySource": "USER_DECLARED_AND_ASSESSMENT",
+      "updatedAt": "2026-06-10T09:00:00+08:00",
+      "expiresAt": null,
+      "evidenceCount": 3,
+      "participatingSubjectVersions": {}
+    },
+    "learningGoals": {
+      "dimensionLabel": "学习目标",
+      "confidence": 0.88,
+      "primarySource": "USER_DECLARED",
+      "updatedAt": "2026-06-14T15:30:00+08:00",
+      "expiresAt": "2026-07-30T23:59:59+08:00",
+      "evidenceCount": 2,
+      "participatingSubjectVersions": {}
+    },
+    "subjectMasteryOverview": {
+      "dimensionLabel": "科目掌握总览",
+      "confidence": 0.84,
+      "primarySource": "AUTO_AGGREGATED",
+      "updatedAt": "2026-06-14T14:20:00+08:00",
+      "expiresAt": "2026-06-21T14:20:00+08:00",
+      "evidenceCount": 0,
+      "participatingSubjectVersions": {
+        "101": 6,
+        "102": 4,
+        "103": 3
+      }
+    },
+    "abilityProfile": {
+      "dimensionLabel": "综合能力",
+      "confidence": 0.72,
+      "primarySource": "MULTI_TASK_ASSESSMENT",
+      "updatedAt": "2026-06-14T14:20:00+08:00",
+      "expiresAt": "2026-07-14T14:20:00+08:00",
+      "evidenceCount": 62,
+      "participatingSubjectVersions": {
+        "101": 6,
+        "102": 4,
+        "103": 3
+      }
+    },
+    "misconceptionProfile": {
+      "dimensionLabel": "易错模式",
+      "confidence": 0.88,
+      "primarySource": "REPEATED_ERROR_ANALYSIS",
+      "updatedAt": "2026-06-14T14:20:00+08:00",
+      "expiresAt": "2026-07-14T14:20:00+08:00",
+      "evidenceCount": 15,
+      "participatingSubjectVersions": {
+        "101": 6,
+        "102": 4
+      }
+    },
+    "learningPreference": {
+      "dimensionLabel": "学习偏好",
+      "confidence": 0.78,
+      "primarySource": "USER_DECLARED_AND_AB_TEST",
+      "updatedAt": "2026-06-13T20:00:00+08:00",
+      "expiresAt": "2026-07-13T20:00:00+08:00",
+      "evidenceCount": 8,
+      "participatingSubjectVersions": {}
+    },
+    "metacognitiveProfile": {
+      "dimensionLabel": "元认知画像",
+      "confidence": 0.74,
+      "primarySource": "BEHAVIOR_AND_DIALOGUE_ANALYSIS",
+      "updatedAt": "2026-06-14T15:30:00+08:00",
+      "expiresAt": "2026-07-14T15:30:00+08:00",
+      "evidenceCount": 20,
+      "participatingSubjectVersions": {
+        "101": 6,
+        "102": 4,
+        "103": 3
+      }
+    },
+    "learningBehavior": {
+      "dimensionLabel": "学习行为",
+      "confidence": 0.95,
+      "primarySource": "SYSTEM_STATISTICS",
+      "updatedAt": "2026-06-14T23:00:00+08:00",
+      "expiresAt": "2026-06-15T23:00:00+08:00",
+      "evidenceCount": 0,
+      "participatingSubjectVersions": {}
+    },
+    "currentLearningState": {
+      "dimensionLabel": "当前学习状态",
+      "confidence": 0.90,
+      "primarySource": "REAL_TIME_SESSION",
+      "updatedAt": "2026-06-14T15:30:00+08:00",
+      "expiresAt": "2026-06-15T00:00:00+08:00",
+      "evidenceCount": 0,
+      "participatingSubjectVersions": {}
+    }
+  }
+}
