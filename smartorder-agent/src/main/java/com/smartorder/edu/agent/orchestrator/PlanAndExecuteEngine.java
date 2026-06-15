@@ -485,13 +485,22 @@ public class PlanAndExecuteEngine {
 
             // 将用户回复注入任务输出
             String userResponse = request.getMessage();
-            plan.getStepOutputs().put(pausedTask.getStepId(), "用户澄清: " + userResponse);
+            Map<String, String> stepOutputs = plan.getStepOutputs();
+            stepOutputs.put(pausedTask.getStepId(), "用户澄清: " + userResponse);
+            stepOutputs.put("__userClarification", "用户补充信息: " + userResponse);
+            plan.setStepOutputs(stepOutputs);
             pausedTask.setStatus("COMPLETED");
             pausedTask.setResultSummary("用户回复: " + truncate(userResponse, 200));
             pausedTask.setGate("NORMAL"); // 清除门
 
             plan.setCurrentStepIndex(pausedIndex + 1);
             plan.setStatus("EXECUTING");
+            applyClarificationToRemainingSteps(plan, pausedIndex, userResponse);
+
+            draftService.updateExecutionPlan(draft.getDraftId(), plan);
+
+            dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
+                    planCreatedPayload(draft.getDraftId(), plan, false, ""));
 
             dispatcher.emit(emitter, context, AgentEventType.PLAN_RESUMED, Map.of(
                     "reason", "CLARIFICATION",
@@ -499,7 +508,6 @@ public class PlanAndExecuteEngine {
                     "resumeFromIndex", plan.getCurrentStepIndex()
             ));
 
-            draftService.updateExecutionPlan(draft.getDraftId(), plan);
             executeExecutionPlanWithContext(draft.getDraftId(), context.getUserId(),
                     context, emitter);
 
@@ -532,6 +540,39 @@ public class PlanAndExecuteEngine {
 
         return PromptLoader.format(promptLoader.getPlannerInputTemplate(),
                 request.getMessage(), planHint, attachmentSection);
+    }
+
+    private void applyClarificationToRemainingSteps(ExecutionPlan plan, int pausedIndex, String userResponse) {
+        String clarificationSummary = truncate(userResponse, 300);
+        for (int i = pausedIndex + 1; i < plan.getSteps().size(); i++) {
+            ExecutionStep step = plan.getSteps().get(i);
+            if ("COMPLETED".equals(step.getStatus())) {
+                continue;
+            }
+
+            String description = step.getDescription();
+            if (description != null && description.contains("学生画像")) {
+                description = description.replace("学生画像", "用户补充信息");
+            }
+            if (description != null && description.contains("学习档案")) {
+                description = description.replace("学习档案", "用户补充信息");
+            }
+
+            if (description != null && !description.contains("用户补充信息")) {
+                description = description + "。请结合用户补充信息：" + clarificationSummary;
+            } else if (description != null && !description.contains(clarificationSummary)) {
+                description = description + "（用户补充信息：" + clarificationSummary + "）";
+            }
+
+            step.setDescription(description);
+
+            List<String> tools = step.getRequiredTools();
+            if (tools != null && tools.contains("getStudentProfile")) {
+                step.setRequiredTools(tools.stream()
+                        .filter(tool -> !"getStudentProfile".equals(tool))
+                        .toList());
+            }
+        }
     }
 
     private void handleClarificationGate(ExecutionPlan plan, int stepIndex,
