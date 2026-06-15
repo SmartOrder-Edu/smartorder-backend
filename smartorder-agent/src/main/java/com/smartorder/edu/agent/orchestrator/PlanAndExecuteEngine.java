@@ -79,6 +79,14 @@ public class PlanAndExecuteEngine {
         // 2. 构建 PlannerAgent prompt（工具需求由 PlannerAgent 在执行计划中动态决定）
         String prompt = buildPlannerPrompt(request, routeResult, context);
 
+        // 预算检查 + 记录 LLM 调用
+        if (context.getBudget() != null && context.getBudget().isExceeded()) {
+            throw new BudgetExceededException("Plan 规划超出预算: traceId=" + context.getTraceId());
+        }
+        if (context.getBudget() != null) {
+            context.getBudget().recordLlmCall();
+        }
+
         // 3. 调用 PlannerAgent 生成 ExecutionPlan
         String planRaw;
         try {
@@ -98,6 +106,7 @@ public class PlanAndExecuteEngine {
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", errorMsg));
             memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                     errorMsg, null, context.getTraceId(), null);
+            context.setAssistantMessageSaved(true);
             return;
         }
 
@@ -113,6 +122,7 @@ public class PlanAndExecuteEngine {
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", errorMsg));
             memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                     errorMsg, null, context.getTraceId(), null);
+            context.setAssistantMessageSaved(true);
             return;
         }
 
@@ -170,6 +180,7 @@ public class PlanAndExecuteEngine {
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", summaryText));
             memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                     summaryText, null, context.getTraceId(), null);
+            context.setAssistantMessageSaved(true);
             return;
         }
 
@@ -190,6 +201,7 @@ public class PlanAndExecuteEngine {
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", summaryText));
         memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                 summaryText, null, context.getTraceId(), null);
+        context.setAssistantMessageSaved(true);
     }
 
     /**
@@ -289,6 +301,17 @@ public class PlanAndExecuteEngine {
         int stepIndex = plan.getCurrentStepIndex();
 
         while (stepIndex < sortedSteps.size()) {
+            // 预算检查：超出则抛出 BudgetExceededException，由 AgentRunSupervisor 捕获
+            if (context.getBudget() != null && context.getBudget().isExceeded()) {
+                throw new BudgetExceededException("Plan 执行超出预算: traceId=" + context.getTraceId());
+            }
+
+            // 客户端断连检查
+            if (context.isClientDisconnected()) {
+                log.warn("[PlanAndExecute] 客户端已断开，提前退出: traceId={}", context.getTraceId());
+                break;
+            }
+
             ExecutionStep task = sortedSteps.get(stepIndex);
 
             // 跳过已完成的任务
@@ -331,6 +354,7 @@ public class PlanAndExecuteEngine {
                 dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", confirmText));
                 memoryService.saveAssistantMessage(conversationId, userId, confirmText, null,
                         context.getTraceId(), null);
+                context.setAssistantMessageSaved(true);
                 return;
             }
 
@@ -369,8 +393,11 @@ public class PlanAndExecuteEngine {
                     replanStatus.put("taskList", toTaskList(draftId, plan));
                     dispatcher.emit(emitter, context, AgentEventType.STATUS, replanStatus);
                 } else {
-                    // 无法重规划，跳过当前任务
-                    log.warn("[PlanAndExecute] 重规划失败，跳过任务: taskId={}", task.getStepId());
+                    // 无法重规划，标记当前任务为 FAILED（而非静默跳过）
+                    log.warn("[PlanAndExecute] 重规划失败，标记任务为 FAILED: taskId={}", task.getStepId());
+                    task.setStatus("FAILED");
+                    task.setErrorMessage("重规划失败，无法继续执行此任务");
+                    dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_FAILED, stepToPayload(task));
                     stepIndex++;
                 }
             } else {
@@ -400,8 +427,9 @@ public class PlanAndExecuteEngine {
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", finalSummary));
         memoryService.saveAssistantMessage(conversationId, userId,
                 finalSummary, null, context.getTraceId(), null);
+        context.setAssistantMessageSaved(true);
 
-        dispatcher.complete(emitter, context);
+        // SSE 关闭由 AgentRunSupervisor 统一负责，此处不再调用 dispatcher.complete()
     }
 
     private boolean resumeConfirmationGateIfNeeded(String draftId, ExecutionPlan plan, ExecutionStep explicitTask) {
@@ -539,6 +567,7 @@ public class PlanAndExecuteEngine {
         memoryService.saveAssistantMessage(context.getConversationId(),
                 request != null ? request.getUserId() : context.getUserId(),
                 question, null, context.getTraceId(), null);
+        context.setAssistantMessageSaved(true);
     }
 
     /**
@@ -584,6 +613,7 @@ public class PlanAndExecuteEngine {
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", summaryText));
         memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                 summaryText, null, context.getTraceId(), null);
+        context.setAssistantMessageSaved(true);
     }
 
     /**
@@ -756,6 +786,9 @@ public class PlanAndExecuteEngine {
             String replanPrompt = buildReplanPrompt(plan, failedTask, stepOutputs);
 
             // 2. 调用 PlannerAgent.replan()
+            if (context.getBudget() != null) {
+                context.getBudget().recordLlmCall();
+            }
             PlannerAgent plannerAgent = AiServices.builder(PlannerAgent.class)
                     .chatModel(planningChatModel)
                     .systemMessageProvider(memoryId -> promptLoader.getPlannerReplanPrompt())

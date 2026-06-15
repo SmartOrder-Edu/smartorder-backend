@@ -26,4 +26,10 @@ public interface ToolHandler {
 
     /** 执行工具，返回结果 */
     Object execute(Object request, ToolInvokeContext context);
+
+    /** 最大重试次数（0=不重试，适用于调用外部服务的工具如 WebSearchTool） */
+    default int maxRetries() { return 0; }
+
+    /** 重试间隔基数（毫秒），实际使用指数退避: delay * 2^(attempt-1)，上限 10s */
+    default long retryDelayMs() { return 1000L; }
 }

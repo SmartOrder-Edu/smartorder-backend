@@ -69,6 +69,11 @@ public class LangChain4jToolAdapter {
         // 通过安全层执行
         Object result = tracingToolExecutor.execute(handler, arguments, context);
 
+        // 处理结构化返回
+        if (result instanceof ToolResult toolResult) {
+            return toolResult.toLlmContext();
+        }
+
         // 返回结果 JSON 字符串
         return result instanceof String ? (String) result : JSON.toJSONString(result);
     }

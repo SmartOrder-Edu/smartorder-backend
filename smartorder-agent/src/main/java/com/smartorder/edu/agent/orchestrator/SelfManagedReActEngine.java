@@ -228,6 +228,22 @@ public class SelfManagedReActEngine {
             log.info("[ReAct] 第{}轮开始, traceId={}, tools={}",
                     round, runtimeContext.getTraceId(), routeResult.getRequiredTools());
 
+            // 预算检查：超出则抛出 BudgetExceededException，由 AgentRunSupervisor 捕获
+            if (runtimeContext.getBudget() != null && runtimeContext.getBudget().isExceeded()) {
+                throw new BudgetExceededException("ReAct 执行超出预算: traceId=" + runtimeContext.getTraceId());
+            }
+
+            // 客户端断连检查：如果 SSE 连接已断开，提前退出
+            if (runtimeContext.isClientDisconnected()) {
+                log.warn("[ReAct] 客户端已断开，提前退出: traceId={}", runtimeContext.getTraceId());
+                return null;
+            }
+
+            // 记录 LLM 调用
+            if (runtimeContext.getBudget() != null) {
+                runtimeContext.getBudget().recordLlmCall();
+            }
+
             ChatResponse response;
             try {
                 ChatRequest chatRequest = ChatRequest.builder()
@@ -350,6 +366,7 @@ public class SelfManagedReActEngine {
             memoryService.saveAssistantMessage(
                     runtimeContext.getConversationId(), request.getUserId(), finalAnswer, reasoningContent,
                     runtimeContext.getTraceId(), segmentsJson);
+            runtimeContext.setAssistantMessageSaved(true);
 
             compressService.checkAndCompress(runtimeContext.getConversationId(), request.getUserId());
         }
