@@ -41,7 +41,7 @@
     "updatedAt": "datetime — 最后更新时间",
     "expiresAt": "datetime|null — 过期时间，null 表示永不过期",
     "evidenceCount": "int — 评估依据数量",
-    "participatingSubjectVersions": "object — 参与聚合的单科画像版本号，格式 {subjectId: version}"
+    "participatingSubjectVersions": "object — 参与聚合的单科画像版本号，格式 {learningSpaceId: version}"
   },
 
   "_example": {

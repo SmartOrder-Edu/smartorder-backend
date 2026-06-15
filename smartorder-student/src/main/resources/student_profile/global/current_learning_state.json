@@ -70,7 +70,7 @@
 
   "_entry_structures": {
     "SubjectPriorityEntry": {
-      "subjectId": "long — 科目ID",
+      "learningSpaceId": "long — 学习空间ID",
       "priorityScore": "int 0~100 — 优先级分数",
       "priorityLevel": "enum — 优先级级别（见 _priority_level_values）",
       "reason": "string — 优先级原因"
@@ -114,7 +114,7 @@
     "engagementStatus": "ACTIVE",
     "subjectPriorityQueue": [
       {
-        "subjectId": 103,
+        "learningSpaceId": 103,
         "priorityScore": 92,
         "priorityLevel": "CRITICAL",
         "reason": "掌握度最低且考试临近"

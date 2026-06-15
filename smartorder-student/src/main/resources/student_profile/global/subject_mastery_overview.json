@@ -23,7 +23,7 @@
 
   "_entry_structures": {
     "SubjectMasteryEntry": {
-      "subjectId": "long — 科目ID",
+      "learningSpaceId": "long — 学习空间ID",
       "subjectName": "string — 科目名称",
       "overallMastery": "float 0~1 — 整体掌握度",
       "confidence": "float 0~1 — 评估置信度",
@@ -56,7 +56,7 @@
   "_example": {
     "subjects": [
       {
-        "subjectId": 101,
+        "learningSpaceId": 101,
         "subjectName": "数据结构",
         "overallMastery": 0.58,
         "confidence": 0.86,

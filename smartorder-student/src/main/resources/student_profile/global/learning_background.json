@@ -74,7 +74,7 @@
       "lastUsedAt": "datetime — 最近使用时间"
     },
     "CompletedCourseEntry": {
-      "subjectId": "long — 科目ID",
+      "learningSpaceId": "long — 学习空间ID",
       "subjectName": "string — 课程名称",
       "completionStatus": "enum — COMPLETED | IN_PROGRESS | DROPPED",
       "overallResult": "float 0~1 — 课程综合成绩"
@@ -103,7 +103,7 @@
     ],
     "completedCourses": [
       {
-        "subjectId": 101,
+        "learningSpaceId": 101,
         "subjectName": "程序设计基础",
         "completionStatus": "COMPLETED",
         "overallResult": 0.82

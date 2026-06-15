@@ -40,7 +40,7 @@
       "recommendedIntervention": "object — 推荐干预策略"
     },
     "AffectedSubjectEntry": {
-      "subjectId": "long — 科目ID",
+      "learningSpaceId": "long — 学习空间ID",
       "subjectName": "string — 科目名称",
       "occurrenceCount": "int — 在该科目的出现次数",
       "exampleSummary": "string — 典型错误示例摘要"
@@ -80,7 +80,7 @@
         "probableCause": "缺少对输入范围和终止条件的主动检查",
         "affectedSubjects": [
           {
-            "subjectId": 101,
+            "learningSpaceId": 101,
             "subjectName": "数据结构",
             "occurrenceCount": 4,
             "exampleSummary": "递归终止条件遗漏"

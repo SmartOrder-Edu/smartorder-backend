@@ -25,7 +25,7 @@
     ],
     "completedCourses": [
       {
-        "subjectId": 101,
+        "learningSpaceId": 101,
         "subjectName": "程序设计基础",
         "completionStatus": "COMPLETED",
         "overallResult": 0.82
@@ -83,7 +83,7 @@
     ],
     "subjects": [
       {
-        "subjectId": 101,
+        "learningSpaceId": 101,
         "subjectName": "数据结构",
         "overallMastery": 0.58,
         "confidence": 0.86,
@@ -208,7 +208,7 @@
         "probableCause": "缺少对输入范围和终止条件的主动检查",
         "affectedSubjects": [
           {
-            "subjectId": 101,
+            "learningSpaceId": 101,
             "subjectName": "数据结构",
             "occurrenceCount": 4,
             "exampleSummary": "递归终止条件遗漏"
@@ -373,7 +373,7 @@
     "engagementStatus": "ACTIVE",
     "subjectPriorityQueue": [
       {
-        "subjectId": 103,
+        "learningSpaceId": 103,
         "priorityScore": 92,
         "priorityLevel": "CRITICAL",
         "reason": "掌握度最低且考试临近"
