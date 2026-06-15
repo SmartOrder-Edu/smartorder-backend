@@ -5,12 +5,13 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+import com.smartorder.edu.student.domain.dto.student.*;
+import com.smartorder.edu.student.domain.dto.student.dto.DimensionMetadataDTO;
+import com.smartorder.edu.student.domain.dto.student.dto.SubjectProfilesDTO;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.Map;
 
 /**
  * 学生动态学习画像实体
@@ -35,35 +36,39 @@ public class StudentProfile {
 
     /** 学习背景：学历、年级、专业、已修课程、基础能力及学习环境 */
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> learningBackground;
+    private LearningBackgroundDTO learningBackground;
 
     /** 全局学习目标：长期目标、阶段目标、优先级、截止时间及时间预算 */
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> learningGoals;
+    private LearningGoalsDTO learningGoals;
 
     /** 综合能力：概念理解、问题分析、算法设计、代码实现、调试及知识迁移能力 */
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> abilityProfile;
+    private AbilityProfileDTO abilityProfile;
 
     /** 跨科目共性易错模式：重复出现的错误习惯、可能原因、影响范围及干预建议 */
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> commonMisconceptions;
+    private CommonMisconceptionsDTO commonMisconceptions;
 
     /** 稳定学习偏好：资源形式、讲解方式、内容粒度、练习和反馈方式 */
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> learningPreference;
+    private LearningPreferenceDTO learningPreference;
 
     /** 元认知画像：学习规划、自我评估、反思、主动求助及信心校准能力 */
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> metacognitiveProfile;
+    private MetacognitiveProfileDTO metacognitiveProfile;
 
     /** 各科目画像集合：包含科目目标、知识掌握、易错点、科目偏好、学习行为和当前状态 */
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> subjectProfiles;
+    private SubjectProfilesDTO subjectProfiles;
 
     /** 各全局画像维度的数据来源、证据数量、置信度、更新时间及有效期限 */
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> dimensionMetadata;
+    private DimensionMetadataDTO dimensionMetadata;
+
+    /** 当前学习状态 */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private CurrentLearningStateDTO currentLearningState;
 
     /** 根据结构化画像生成的自然语言摘要，仅作为大模型上下文缓存 */
     private String profileSummary;
