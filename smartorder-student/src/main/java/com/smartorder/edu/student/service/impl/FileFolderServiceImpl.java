@@ -388,7 +388,7 @@ public class FileFolderServiceImpl implements IFileFolderService {
                 }
             }
         }
-        return String.format("%s.sql(%d)%s.sql", nameMain, maxNum + 1, extension);
+        return String.format("%s(%d)%s", nameMain, maxNum + 1, extension);
     }
 
     @Override
