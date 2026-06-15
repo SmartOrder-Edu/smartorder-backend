@@ -79,7 +79,7 @@ public class RagTool implements ToolHandler {
                 .build();
 
         // 执行 RAG 检索
-        RagQueryResponse ragResponse = ragOrchestrator.retrieve(ragRequest);
+      RagQueryResponse ragResponse = ragOrchestrator.retrieve(ragRequest);
 
         // 构建返回结果
         Map<String, Object> result = new LinkedHashMap<>();
