@@ -1,0 +1,63 @@
+{
+  "_comment": "单科元认知 — 核心结构与全局一致，增加科目特定问题和支持建议",
+  "_version": "2.0",
+  "_dbColumn": "metacognitive_profile",
+  "_updatedAt": "2026-06-14",
+
+  "_vs_old_diff": [
+    "原 cognitive_profile.json 重命名为 metacognitive_profile.json",
+    "保留核心元认知字段：selfAssessmentAccuracy, calibrationBias, planning/monitoring/evaluation",
+    "新增 subjectSpecificIssue — 该科目特有的元认知问题",
+    "新增 recommendedSupportLevel — 建议的支持强度",
+    "新增 recommendedSupportActions — 具体支持行动列表"
+  ],
+
+  "_global_subject_split": "NO_SPLIT — 元认知按科目独立评估",
+
+  "selfAssessmentAccuracy": 0.58,
+  "_selfAssessmentAccuracy_desc": "自我评估准确度 (0-1) — 预测分数与实际分数的一致性",
+
+  "calibrationBias": "OVERCONFIDENT",
+  "_calibrationBias_enum": ["OVERCONFIDENT", "UNDERCONFIDENT", "WELL_CALIBRATED", "INCONSISTENT"],
+  "_calibrationBias_desc": "校准偏差类型 — 学生倾向于高估还是低估自己",
+
+  "planningAbility": 0.52,
+  "_planningAbility_desc": "学习规划能力 (0-1)",
+
+  "monitoringAbility": 0.61,
+  "_monitoringAbility_desc": "学习过程监控能力 (0-1)",
+
+  "evaluationAbility": 0.48,
+  "_evaluationAbility_desc": "学习结果评估能力 (0-1)",
+
+  "selfRegulationStrategies": [
+    "CHECKPOINT_SELF_TEST",
+    "PROGRESS_REVIEW"
+  ],
+  "_selfRegulationStrategies_enum": [
+    "CHECKPOINT_SELF_TEST", "PROGRESS_REVIEW", "TIME_BOXING",
+    "GOAL_SETTING", "SELF_EXPLANATION", "ERROR_LOGGING",
+    "PEER_DISCUSSION", "TEACH_BACK"
+  ],
+  "_selfRegulationStrategies_desc": "学生已掌握的自我调节策略",
+
+  "subjectSpecificIssue": "数据结构题中经常过早判断自己已经理解",
+  "_subjectSpecificIssue_desc": "该科目特有的元认知问题（单科新增）",
+
+  "recommendedSupportLevel": "HIGH",
+  "_recommendedSupportLevel_enum": ["LOW", "MEDIUM", "HIGH", "MAXIMUM"],
+  "_recommendedSupportLevel_desc": "建议的元认知支持强度（单科新增）",
+
+  "recommendedSupportActions": [
+    "每个知识点学习后要求自我解释",
+    "增加延迟复测",
+    "记录预测分数与真实分数差异"
+  ],
+  "_recommendedSupportActions_desc": "具体的支持行动建议（单科新增）",
+
+  "confidence": 0.76,
+  "_confidence_desc": "元认知评估的置信度 (0-1)",
+
+  "evidenceRefIds": [],
+  "_evidenceRefIds_desc": "证据引用ID列表（对话记录、测评记录等）"
+}

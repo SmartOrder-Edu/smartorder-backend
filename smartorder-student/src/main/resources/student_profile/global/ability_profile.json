@@ -1,0 +1,124 @@
+{
+  "_comment": "全局综合能力 — 回答：学生跨科目能够怎样理解和使用知识？",
+  "_dimension_id": "abilityProfile",
+  "_db_column": "ability_profile",
+  "_data_source": "MULTI_TASK_ASSESSMENT",
+  "_update_frequency": "中频更新，每次能力评估后更新",
+
+  "_rules": [
+    "固定八项能力维度，不允许自由扩展",
+    "每项统一六字段结构：score, level, confidence, trend, evidenceCount, lastAssessedAt",
+    "从多科目学习行为和评估中聚合得出",
+    "strengthAbilities 和 developmentPriorities 由系统自动计算",
+    "overallAbilityScore 为八项能力的加权平均"
+  ],
+
+  "_field_spec": {
+    "conceptualUnderstanding": "AbilityEntry — 概念理解：能否准确理解概念的含义和边界",
+    "knowledgeRecall": "AbilityEntry — 知识回忆：能否在需要时准确回忆已学知识",
+    "problemAnalysis": "AbilityEntry — 问题分析：能否正确拆解和分析问题",
+    "problemSolving": "AbilityEntry — 问题解决：能否选择合适策略解决问题",
+    "practicalApplication": "AbilityEntry — 实践应用：能否将知识应用到实际场景",
+    "knowledgeTransfer": "AbilityEntry — 知识迁移：能否将已学知识应用到新领域",
+    "selfExplanation": "AbilityEntry — 自我解释：能否清晰表达自己的理解",
+    "errorCorrection": "AbilityEntry — 错误修正：能否识别并修正自己的错误",
+    "overallAbilityScore": "float 0~1 — 八项能力的加权平均分",
+    "strengthAbilities": "string[] — 优势能力维度名称列表",
+    "developmentPriorities": "string[] — 优先发展能力维度名称列表"
+  },
+
+  "_entry_structures": {
+    "AbilityEntry": {
+      "score": "float 0~1 — 能力得分",
+      "level": "enum — 能力等级（见 _level_values）",
+      "confidence": "float 0~1 — 评估置信度",
+      "trend": "enum — 趋势（见 _trend_values）",
+      "evidenceCount": "int — 评估依据数量",
+      "lastAssessedAt": "datetime — 最近评估时间"
+    }
+  },
+
+  "_level_values": {
+    "WEAK": "薄弱 — 0.0~0.4",
+    "DEVELOPING": "发展中 — 0.4~0.6",
+    "INTERMEDIATE": "中等 — 0.6~0.8",
+    "PROFICIENT": "熟练 — 0.8~0.9",
+    "EXPERT": "专家 — 0.9~1.0"
+  },
+
+  "_trend_values": {
+    "IMPROVING": "上升",
+    "STABLE": "稳定",
+    "DECLINING": "下降"
+  },
+
+  "_example": {
+    "conceptualUnderstanding": {
+      "score": 0.62,
+      "level": "INTERMEDIATE",
+      "confidence": 0.81,
+      "trend": "IMPROVING",
+      "evidenceCount": 12,
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "knowledgeRecall": {
+      "score": 0.55,
+      "level": "DEVELOPING",
+      "confidence": 0.78,
+      "trend": "STABLE",
+      "evidenceCount": 8,
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "problemAnalysis": {
+      "score": 0.58,
+      "level": "DEVELOPING",
+      "confidence": 0.76,
+      "trend": "IMPROVING",
+      "evidenceCount": 10,
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "problemSolving": {
+      "score": 0.51,
+      "level": "DEVELOPING",
+      "confidence": 0.74,
+      "trend": "STABLE",
+      "evidenceCount": 9,
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "practicalApplication": {
+      "score": 0.48,
+      "level": "DEVELOPING",
+      "confidence": 0.72,
+      "trend": "IMPROVING",
+      "evidenceCount": 7,
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "knowledgeTransfer": {
+      "score": 0.35,
+      "level": "WEAK",
+      "confidence": 0.70,
+      "trend": "DECLINING",
+      "evidenceCount": 5,
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "selfExplanation": {
+      "score": 0.46,
+      "level": "DEVELOPING",
+      "confidence": 0.73,
+      "trend": "IMPROVING",
+      "evidenceCount": 6,
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "errorCorrection": {
+      "score": 0.40,
+      "level": "WEAK",
+      "confidence": 0.71,
+      "trend": "STABLE",
+      "evidenceCount": 5,
+      "lastAssessedAt": "2026-06-14T15:30:00+08:00"
+    },
+    "overallAbilityScore": 0.57,
+    "strengthAbilities": ["conceptualUnderstanding"],
+    "developmentPriorities": ["knowledgeTransfer", "errorCorrection"]
+  }
+}

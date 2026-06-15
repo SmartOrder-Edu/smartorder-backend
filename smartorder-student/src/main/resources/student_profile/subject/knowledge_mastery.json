@@ -1,0 +1,105 @@
+{
+  "_comment": "知识掌握 — 单科画像最核心的维度。每个知识点独立记录",
+  "_version": "2.0",
+  "_dbColumn": "knowledge_mastery",
+  "_updatedAt": "2026-06-14",
+
+  "_structure": "对象，items 数组存放各知识点详情",
+
+  "_data_source_rule": "单科知识点状态是事实源；全局科目总览是聚合缓存。全局科目摘要由系统从各单科画像自动聚合生成，不要手动维护。",
+
+  "items": [
+    {
+      "knowledgePointId": "kp_1021",
+      "knowledgePointCode": "LINKED_LIST_REVERSE",
+      "knowledgePointName": "链表反转",
+      "chapterId": "chapter_2",
+
+      "masteryScore": 0.42,
+      "masteryStatus": "LEARNING",
+      "confidence": 0.86,
+      "independentLevel": 0.31,
+      "retentionRisk": 0.68,
+
+      "assessmentCount": 6,
+      "correctRate": 0.5,
+      "hintUsageRate": 0.67,
+
+      "recentTrend": "IMPROVING",
+
+      "lastLearnedAt": "2026-06-14T14:30:00+08:00",
+      "lastAssessedAt": "2026-06-14T15:00:00+08:00",
+      "nextReviewAt": "2026-06-16T19:00:00+08:00",
+      "evidenceCount": 10
+    },
+    {
+      "knowledgePointId": "kp_1022",
+      "knowledgePointCode": "LINKED_LIST_MERGE",
+      "knowledgePointName": "链表合并",
+      "chapterId": "chapter_2",
+
+      "masteryScore": 0.65,
+      "masteryStatus": "PRACTICING",
+      "confidence": 0.78,
+      "independentLevel": 0.55,
+      "retentionRisk": 0.35,
+
+      "assessmentCount": 4,
+      "correctRate": 0.75,
+      "hintUsageRate": 0.25,
+
+      "recentTrend": "STABLE",
+
+      "lastLearnedAt": "2026-06-13T10:00:00+08:00",
+      "lastAssessedAt": "2026-06-13T11:00:00+08:00",
+      "nextReviewAt": "2026-06-17T10:00:00+08:00",
+      "evidenceCount": 7
+    }
+  ],
+
+  "_field_desc": {
+    "knowledgePointId": "知识点唯一ID",
+    "knowledgePointCode": "知识点英文编码（枚举型，用于程序匹配）",
+    "knowledgePointName": "知识点中文名称",
+    "chapterId": "所属章节ID",
+
+    "masteryScore": "掌握度评分 (0-1)，由系统综合计算",
+    "masteryStatus": "掌握状态（枚举）",
+    "confidence": "该评估的置信度 (0-1)",
+    "independentLevel": "独立完成度 (0-1)——不借助提示能完成的比例",
+    "retentionRisk": "遗忘风险 (0-1)——越高表示越需要复习",
+
+    "assessmentCount": "该知识点的测评次数",
+    "correctRate": "正确率 (0-1)",
+    "hintUsageRate": "提示使用率 (0-1)——越低越好",
+
+    "recentTrend": "近期趋势（枚举）",
+
+    "lastLearnedAt": "最近一次学习时间",
+    "lastAssessedAt": "最近一次测评时间",
+    "nextReviewAt": "下次复习时间（间隔重复算法计算）",
+    "evidenceCount": "累计证据数"
+  },
+
+  "_masteryStatus_enum": [
+    "NOT_STARTED", "INITIAL_EXPOSURE", "LEARNING",
+    "PRACTICING", "CONSOLIDATING", "MASTERED", "REVIEWING"
+  ],
+
+  "_recentTrend_enum": [
+    "IMPROVING", "STABLE", "DECLINING", "NOT_ENOUGH_DATA"
+  ],
+
+  "_removed_fields": {
+    "masteredKnowledgeList": "已移除 — 按 masteryScore >= 0.8 查询生成",
+    "weakKnowledgeList": "已移除 — 按 masteryScore < 0.5 查询生成"
+  },
+
+  "_query_suggestions": {
+    "mastered": "items.filter(i => i.masteryScore >= 0.8)",
+    "weak": "items.filter(i => i.masteryScore < 0.5)",
+    "needsReview": "items.filter(i => new Date(i.nextReviewAt) <= now)",
+    "highRetentionRisk": "items.filter(i => i.retentionRisk > 0.6)",
+    "byChapter": "items.filter(i => i.chapterId === targetChapterId)"
+  }
+}

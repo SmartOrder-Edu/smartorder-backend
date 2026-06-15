@@ -1,0 +1,84 @@
+{
+  "_comment": "科目掌握总览 — 回答：学生的每门课程整体学得怎么样？",
+  "_dimension_id": "subjectMasteryOverview",
+  "_db_column": "subject_mastery_overview",
+  "_data_source": "AUTO_AGGREGATED",
+  "_update_frequency": "高频更新，每次单科画像变化后自动重新聚合",
+
+  "_rules": [
+    "全局科目摘要是聚合缓存，由系统从各单科画像自动聚合生成",
+    "不要手动维护，单科知识点状态是事实源",
+    "topWeaknesses 只保存最重要的 3~5 个摘要，不能把全部知识点复制到全局画像",
+    "recentTrend 基于最近 7 天的掌握度变化趋势",
+    "learningStage 反映该科目当前学习到的章节或知识模块"
+  ],
+
+  "_field_spec": {
+    "subjects": {
+      "type": "array",
+      "item": "SubjectMasteryEntry",
+      "description": "各科目掌握摘要列表，按 overallMastery 升序排列"
+    }
+  },
+
+  "_entry_structures": {
+    "SubjectMasteryEntry": {
+      "learningSpaceId": "long — 学习空间ID",
+      "subjectName": "string — 科目名称",
+      "overallMastery": "float 0~1 — 整体掌握度",
+      "confidence": "float 0~1 — 评估置信度",
+      "learningStage": "string — 当前学习阶段，如 二叉树、多线程",
+      "masteredKnowledgeCount": "int — 已掌握知识点数量",
+      "learningKnowledgeCount": "int — 学习中知识点数量",
+      "weakKnowledgeCount": "int — 薄弱知识点数量",
+      "highRiskKnowledgeCount": "int — 高风险知识点数量",
+      "topWeaknesses": "TopWeaknessEntry[] — 最重要的 3~5 个薄弱点摘要",
+      "retentionRisk": "float 0~1 — 遗忘风险",
+      "recentTrend": "enum — 最近趋势（见 _trend_values）",
+      "lastLearningAt": "datetime — 最近学习时间",
+      "lastAssessedAt": "datetime — 最近评估时间",
+      "subjectProfileVersion": "int — 对应的单科画像版本号，用于判断聚合是否过期"
+    },
+    "TopWeaknessEntry": {
+      "knowledgePointId": "string — 知识点ID",
+      "knowledgePointName": "string — 知识点名称",
+      "masteryScore": "float 0~1 — 掌握度",
+      "riskReason": "string — 风险原因简述"
+    }
+  },
+
+  "_trend_values": {
+    "IMPROVING": "上升",
+    "STABLE": "稳定",
+    "DECLINING": "下降"
+  },
+
+  "_example": {
+    "subjects": [
+      {
+        "learningSpaceId": 101,
+        "subjectName": "数据结构",
+        "overallMastery": 0.58,
+        "confidence": 0.86,
+        "learningStage": "二叉树",
+        "masteredKnowledgeCount": 12,
+        "learningKnowledgeCount": 6,
+        "weakKnowledgeCount": 4,
+        "highRiskKnowledgeCount": 2,
+        "topWeaknesses": [
+          {
+            "knowledgePointId": "kp_1021",
+            "knowledgePointName": "链表反转",
+            "masteryScore": 0.38,
+            "riskReason": "连续三次出现指针更新顺序错误"
+          }
+        ],
+        "retentionRisk": 0.62,
+        "recentTrend": "IMPROVING",
+        "lastLearningAt": "2026-06-14T15:30:00+08:00",
+        "lastAssessedAt": "2026-06-14T15:10:00+08:00",
+        "subjectProfileVersion": 6
+      }
+    ]
+  }
+}

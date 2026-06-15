@@ -1,0 +1,128 @@
+{
+  "_comment": "全局当前状态 — 回答：学生现在最应该优先处理什么？",
+  "_dimension_id": "currentLearningState",
+  "_db_column": "current_learning_state",
+  "_data_source": "REAL_TIME_SESSION",
+  "_update_frequency": "实时更新，每次学习会话和状态变化时更新",
+
+  "_rules": [
+    "记录当前活跃的科目、目标、任务",
+    "subjectPriorityQueue 按 priorityScore 降序排序，指导下一步学习",
+    "blockingIssues 记录阻碍学习的关键问题",
+    "stateExpiresAt 到期后状态需要重新评估",
+    "overallWorkloadLevel 综合考虑目标数量、截止时间和学生精力"
+  ],
+
+  "_field_spec": {
+    "activeSubjectId": {
+      "type": "long",
+      "description": "当前活跃科目ID"
+    },
+    "activeSubjectName": {
+      "type": "string",
+      "description": "当前活跃科目名称"
+    },
+    "activeGoalId": {
+      "type": "string",
+      "description": "当前活跃目标ID"
+    },
+    "activeSessionId": {
+      "type": "string",
+      "description": "当前学习会话ID"
+    },
+    "activeTaskId": {
+      "type": "string",
+      "description": "当前任务ID"
+    },
+    "overallWorkloadLevel": {
+      "type": "enum",
+      "values": ["LOW", "MODERATE", "HIGH", "OVERLOADED"],
+      "description": "整体学业负担级别"
+    },
+    "engagementStatus": {
+      "type": "enum",
+      "values": ["ACTIVE", "DECLINING", "DISENGAGED", "RECOVERING"],
+      "description": "参与状态"
+    },
+    "subjectPriorityQueue": {
+      "type": "array",
+      "item": "SubjectPriorityEntry",
+      "description": "科目优先级队列，按 priorityScore 降序"
+    },
+    "blockingIssues": {
+      "type": "array",
+      "item": "BlockingIssueEntry",
+      "description": "阻碍学习的关键问题列表"
+    },
+    "recommendedNextAction": {
+      "type": "object",
+      "description": "系统推荐的下一步行动"
+    },
+    "stateUpdatedAt": {
+      "type": "datetime",
+      "description": "状态最后更新时间"
+    },
+    "stateExpiresAt": {
+      "type": "datetime",
+      "description": "状态过期时间，到期后需重新评估"
+    }
+  },
+
+  "_entry_structures": {
+    "SubjectPriorityEntry": {
+      "learningSpaceId": "long — 学习空间ID",
+      "priorityScore": "int 0~100 — 优先级分数",
+      "priorityLevel": "enum — 优先级级别（见 _priority_level_values）",
+      "reason": "string — 优先级原因"
+    },
+    "BlockingIssueEntry": {
+      "issueType": "enum — 问题类型",
+      "description": "string — 问题描述",
+      "severity": "float 0~1 — 严重程度",
+      "suggestedResolution": "string — 建议解决方案"
+    }
+  },
+
+  "_workload_level_values": {
+    "LOW": "低负担 — 目标少，截止时间充裕",
+    "MODERATE": "中等负担 — 目标适中，时间合理",
+    "HIGH": "高负担 — 目标较多或时间紧张",
+    "OVERLOADED": "超负荷 — 目标过多或时间严重不足"
+  },
+
+  "_engagement_status_values": {
+    "ACTIVE": "活跃 — 正在积极参与学习",
+    "DECLINING": "下降 — 参与度正在降低",
+    "DISENGAGED": "脱离 — 已停止学习活动",
+    "RECOVERING": "恢复中 — 从脱离状态正在回归"
+  },
+
+  "_priority_level_values": {
+    "LOW": "低 — 可以稍后处理",
+    "MEDIUM": "中 — 常规优先级",
+    "HIGH": "高 — 需要优先处理",
+    "CRITICAL": "紧急 — 需要立即处理"
+  },
+
+  "_example": {
+    "activeSubjectId": 103,
+    "activeSubjectName": "数据库原理",
+    "activeGoalId": "goal_001",
+    "activeSessionId": "session_1001",
+    "activeTaskId": "task_2051",
+    "overallWorkloadLevel": "HIGH",
+    "engagementStatus": "ACTIVE",
+    "subjectPriorityQueue": [
+      {
+        "learningSpaceId": 103,
+        "priorityScore": 92,
+        "priorityLevel": "CRITICAL",
+        "reason": "掌握度最低且考试临近"
+      }
+    ],
+    "blockingIssues": [],
+    "recommendedNextAction": {},
+    "stateUpdatedAt": "2026-06-14T15:30:00+08:00",
+    "stateExpiresAt": "2026-06-15T00:00:00+08:00"
+  }
+}

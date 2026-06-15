@@ -1,0 +1,138 @@
+{
+  "_comment": "单科易错模式 — 每项关联知识点，含触发条件和结构化干预建议",
+  "_version": "2.0",
+  "_dbColumn": "misconception_profile",
+  "_updatedAt": "2026-06-14",
+
+  "_global_profile_rules": [
+    "全局画像保存跨科目共同出现的错误模式（如边界条件遗漏、过程顺序错误等）",
+    "通过 affectedSubjects 标注该模式影响了哪些科目",
+    "全局易错模式由系统从各单科画像中自动识别和聚合"
+  ],
+
+  "_subject_profile_rules": [
+    "保存该科目的具体错误，包含知识点关联、证据ID和推荐干预策略",
+    "单科错误是事实源，全局模式是聚合结果"
+  ],
+
+  "_structure": "对象，items 数组存放各易错模式",
+
+  "items": [
+    {
+      "misconceptionId": "mis_101",
+      "knowledgePointId": "kp_1021",
+      "knowledgePointName": "链表反转",
+
+      "errorType": "PROCEDURAL_ORDER_ERROR",
+      "title": "指针更新顺序错误",
+      "description": "修改next前未保存后继节点",
+      "probableCause": "无法稳定跟踪多个指针的变化",
+
+      "triggerConditions": [
+        "需要同时维护三个指针",
+        "涉及双向链表操作"
+      ],
+
+      "recurrenceCount": 3,
+      "severity": 0.82,
+      "confidence": 0.89,
+
+      "evidenceRefIds": ["answer_1001", "code_run_1088"],
+
+      "trend": "STABLE",
+      "firstObservedAt": "2026-06-10T10:00:00+08:00",
+      "lastObservedAt": "2026-06-14T15:00:00+08:00",
+
+      "status": "ACTIVE",
+
+      "recommendedIntervention": {
+        "strategyType": "VISUAL_TRACE",
+        "description": "先观看指针变化动画，再完成状态跟踪表",
+        "resourceTypes": ["ANIMATION", "CODE_EXAMPLE"],
+        "practiceTypes": ["CODE_COMPLETION", "INDEPENDENT_CODING"],
+        "difficultyLevel": "BASIC",
+        "successCriteria": [
+          "连续两次独立完成链表反转"
+        ]
+      }
+    }
+  ],
+
+  "_field_desc": {
+    "misconceptionId": "易错模式唯一ID",
+    "knowledgePointId": "关联知识点ID",
+    "knowledgePointName": "关联知识点名称",
+
+    "errorType": "错误类型（枚举）",
+    "title": "易错模式标题（简短）",
+    "description": "详细描述",
+    "probableCause": "可能的根本原因",
+
+    "triggerConditions": "触发条件列表 — 什么情况下容易犯此错误",
+
+    "recurrenceCount": "累计出现次数",
+    "severity": "严重程度 (0-1)",
+    "confidence": "评估置信度 (0-1)",
+
+    "evidenceRefIds": "证据引用ID列表（答案ID、代码运行ID等）",
+
+    "trend": "趋势（枚举）",
+    "firstObservedAt": "首次观察时间",
+    "lastObservedAt": "最近观察时间",
+
+    "status": "状态（枚举）",
+
+    "recommendedIntervention": "结构化干预建议"
+  },
+
+  "_errorType_enum": [
+    "PROCEDURAL_ORDER_ERROR",
+    "BOUNDARY_CONDITION_ERROR",
+    "CONCEPTUAL_CONFUSION",
+    "PATTERN_MISMATCH",
+    "OVER_GENERALIZATION",
+    "TOOL_MISUSE",
+    "METACOGNITIVE_OVERCONFIDENCE",
+    "INSUFFICIENT_DECOMPOSITION"
+  ],
+
+  "_trend_enum": [
+    "DECREASING", "STABLE", "INCREASING", "NOT_ENOUGH_DATA"
+  ],
+
+  "_status_enum": [
+    "ACTIVE", "INTERVENING", "RESOLVED", "DORMANT"
+  ],
+
+  "_intervention_strategyType_enum": [
+    "VISUAL_TRACE", "CONCEPTUAL_REFRAMING", "WORKED_EXAMPLE",
+    "DELIBERATE_PRACTICE", "PEER_EXPLANATION", "SCAFFOLDED_CODING"
+  ],
+
+  "_intervention_difficultyLevel_enum": [
+    "BASIC", "INTERMEDIATE", "ADVANCED"
+  ],
+
+  "_intervention_resourceType_enum": [
+    "ANIMATION", "CODE_EXAMPLE", "DIAGRAM", "VIDEO",
+    "TEXT", "INTERACTIVE_EXERCISE", "WORKED_EXAMPLE"
+  ],
+
+  "_intervention_practiceType_enum": [
+    "CODE_COMPLETION", "INDEPENDENT_CODING",
+    "CODE_REVIEW", "DEBUGGING_TASK", "EXPLAIN_IN_WORDS"
+  ],
+
+  "_vs_old_diff": [
+    "原 weakness_profile.json 重命名为 misconception_profile.json",
+    "新增 misconceptionId — 每个模式有唯一标识",
+    "新增 title — 简短标题",
+    "新增 probableCause — 根本原因分析",
+    "新增 triggerConditions — 触发条件列表",
+    "新增 recurrenceCount — 出现次数统计",
+    "新增 trend — 趋势枚举",
+    "新增 firstObservedAt / lastObservedAt — 时间追踪",
+    "新增 status — 状态枚举（含 INTERVENING）",
+    "recommendedIntervention 从字符串改为结构化对象"
+  ]
+}

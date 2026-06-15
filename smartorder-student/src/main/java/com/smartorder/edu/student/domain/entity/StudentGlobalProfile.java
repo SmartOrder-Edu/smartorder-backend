@@ -4,75 +4,66 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.Version;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 /**
- * 学生画像实体 — JSON 维度画像表
- *
- * @author 谢光湘
- * @since 2026-05-18
+ * 学生全局动态画像。
  */
 @Data
 @NoArgsConstructor
-@TableName(value = "student_profile", autoResultMap = true)
-public class StudentProfile {
+@TableName(value = "student_global_profile", autoResultMap = true)
+public class StudentGlobalProfile {
 
     @TableId(type = IdType.AUTO)
     private Long id;
 
     private Long userId;
 
-    /** NULL = 全局画像（不绑定具体科目） */
-    private Long subjectId;
-
+    @Version
     private Integer profileVersion;
 
-    // ====== 完整画像快照 ======
-
-    /** 存放所有的画像 JSON 字段 */
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> fullProfileSnapshot;
-
-    // ====== 8 个 JSON 画像维度 ======
+    private Map<String, Object> learningBackground;
 
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> basicProfile;
+    private Map<String, Object> learningGoals;
 
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> knowledgeProfile;
+    private Map<String, Object> subjectMasteryOverview;
 
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<String, Object> abilityProfile;
 
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> preferenceProfile;
+    private Map<String, Object> misconceptionProfile;
 
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> cognitiveProfile;
+    private Map<String, Object> learningPreference;
 
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> weaknessProfile;
+    private Map<String, Object> metacognitiveProfile;
 
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> behaviorProfile;
+    private Map<String, Object> dimensionMetadata;
 
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> emotionProfile;
+    private List<Long> activeSubjectIds;
 
-    /** 画像自然语言摘要 */
     private String profileSummary;
 
-    /** 画像整体置信度 0-100 */
-    private BigDecimal confidenceScore;
+    private BigDecimal profileCompleteness;
 
-    /** 最近一次更新原因 */
-    private String lastUpdateReason;
+    private BigDecimal profileConfidenceScore;
+
+    private LocalDateTime lastAggregatedAt;
 
     private LocalDateTime createdAt;
 
