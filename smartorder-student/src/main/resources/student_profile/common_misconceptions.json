@@ -1,0 +1,92 @@
+{
+  "patterns": {
+    "MIS-BOUNDARY-001": {
+      "misconception_id": "MIS-BOUNDARY-001",
+      "title": "容易忽略边界条件",
+      "category": "BOUNDARY_CONDITION_OMISSION",
+      "scope": "CROSS_SUBJECT",
+      "description": "在算法和代码实现过程中，容易遗漏空集合、首节点、尾节点和单元素情况",
+      "typical_symptoms": [
+        "删除链表头节点时出现空指针异常",
+        "数组遍历边界使用小于等于导致越界",
+        "队列为空时仍执行出队操作"
+      ],
+      "affected_subject_ids": [
+        "DATA_STRUCTURES",
+        "JAVA_PROGRAMMING"
+      ],
+      "affected_knowledge_point_ids": [
+        "DS-LINKED-LIST-DELETE",
+        "DS-ARRAY-TRAVERSAL",
+        "DS-QUEUE-DEQUEUE"
+      ],
+      "root_cause_hypotheses": [
+        {
+          "cause_code": "NO_EDGE_CASE_CHECKLIST",
+          "description": "编码前没有主动列出边界用例",
+          "probability": 0.82
+        },
+        {
+          "cause_code": "WEAK_STATE_SIMULATION",
+          "description": "未在脑中模拟数据结构状态变化",
+          "probability": 0.68
+        }
+      ],
+      "severity": "HIGH",
+      "frequency": "FREQUENT",
+      "persistence": "PERSISTENT",
+      "status": "ACTIVE",
+      "occurrence_statistics": {
+        "count_last_7_days": 4,
+        "count_last_30_days": 9,
+        "first_detected_at": "2026-05-22T10:00:00Z",
+        "last_observed_at": "2026-06-15T17:40:00Z"
+      },
+      "intervention": {
+        "strategy_codes": [
+          "EDGE_CASE_CHECKLIST",
+          "TRACE_WITH_DIAGRAM",
+          "BOUNDARY_TEST_FIRST"
+        ],
+        "recommended_actions": [
+          "每次编码前列出空、单元素、首位置和尾位置四类测试",
+          "使用指针变化图逐步模拟链表操作",
+          "先编写边界测试再实现代码"
+        ],
+        "success_criteria": [
+          {
+            "metric": "BOUNDARY_ERROR_COUNT_LAST_10_TASKS",
+            "target_value": 1,
+            "operator": "LESS_THAN_OR_EQUAL"
+          }
+        ]
+      },
+      "confidence": 0.9,
+      "evidence_ids": [
+        "answer_881",
+        "code_eval_205",
+        "code_eval_208"
+      ],
+      "updated_at": "2026-06-15T18:30:00Z"
+    }
+  },
+  "metadata": {
+    "schema_version": "1.0",
+    "confidence": 0.9,
+    "completeness": 80,
+    "source_types": [
+      "QUIZ_RESULT",
+      "CODE_EVALUATION",
+      "SYSTEM_DERIVED"
+    ],
+    "evidence_ids": [
+      "answer_881",
+      "code_eval_205",
+      "code_eval_208"
+    ],
+    "last_updated_at": "2026-06-15T18:30:00Z",
+    "updated_by": "DIAGNOSIS_AGENT",
+    "update_reason": "连续多次出现链表、数组和队列边界错误",
+    "valid_until": "2026-07-15T18:30:00Z"
+  }
+}

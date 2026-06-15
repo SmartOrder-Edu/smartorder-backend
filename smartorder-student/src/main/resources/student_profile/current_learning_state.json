@@ -1,0 +1,104 @@
+{
+  "state_id": "STATE-DS-20260615-001",
+  "learning_status": "STUCK",
+  "current_goal_id": "GOAL-DS-001",
+  "current_plan_node_id": "PLAN-DS-WEEK-02-DAY-03",
+  "current_chapter_id": "DS-LINEAR-LIST",
+  "current_knowledge_point_id": "DS-LINKED-LIST-DELETE",
+  "current_task": {
+    "task_id": "TASK-DS-10021",
+    "task_type": "CODE_IMPLEMENTATION",
+    "title": "实现单链表按值删除节点",
+    "difficulty": "MEDIUM",
+    "started_at": "2026-06-15T17:20:00Z",
+    "attempt_count": 3,
+    "hint_count": 1
+  },
+  "blocking_issues": {
+    "ISSUE-001": {
+      "issue_id": "ISSUE-001",
+      "issue_type": "PROCEDURE_ORDER_ERROR",
+      "description": "删除节点前没有正确保存引用，导致链表断裂",
+      "severity": "HIGH",
+      "status": "ACTIVE",
+      "confidence": 0.93,
+      "evidence_ids": [
+        "code_eval_205",
+        "dialogue_301"
+      ]
+    }
+  },
+  "session_signals": {
+    "engagement_level": "MEDIUM",
+    "cognitive_load": "HIGH",
+    "confusion_level": "HIGH",
+    "frustration_signal": {
+      "value": "MEDIUM",
+      "source": "USER_EXPLICIT",
+      "confidence": 1.0,
+      "evidence_ids": [
+        "msg_10301"
+      ]
+    }
+  },
+  "recent_performance": {
+    "recent_attempt_count": 3,
+    "recent_accuracy_rate": 0.33,
+    "consecutive_wrong_count": 2,
+    "average_response_seconds": 220,
+    "hint_usage_count": 1
+  },
+  "readiness": {
+    "continue_current_task": false,
+    "need_remediation": true,
+    "recommended_difficulty": "EASY",
+    "recommended_support_level": "GUIDED"
+  },
+  "next_actions": [
+    {
+      "order": 1,
+      "action_type": "VIEW_DIAGRAM",
+      "title": "查看单链表删除指针变化图",
+      "knowledge_point_id": "DS-LINKED-LIST-DELETE",
+      "estimated_minutes": 5,
+      "reason": "先建立删除前后引用关系的可视化理解"
+    },
+    {
+      "order": 2,
+      "action_type": "TRACE_CODE",
+      "title": "逐行跟踪删除头节点和中间节点",
+      "knowledge_point_id": "DS-LINKED-LIST-DELETE",
+      "estimated_minutes": 8,
+      "reason": "强化引用更新顺序"
+    },
+    {
+      "order": 3,
+      "action_type": "PRACTICE",
+      "title": "完成两道低难度链表删除练习",
+      "knowledge_point_id": "DS-LINKED-LIST-DELETE",
+      "estimated_minutes": 12,
+      "reason": "验证是否能够在提示下正确实现"
+    }
+  ],
+  "valid_from": "2026-06-15T17:20:00Z",
+  "valid_until": "2026-06-16T17:20:00Z",
+  "metadata": {
+    "schema_version": "1.0",
+    "confidence": 0.91,
+    "completeness": 90,
+    "source_types": [
+      "CODE_EVALUATION",
+      "USER_EXPLICIT",
+      "DIALOGUE_INFERENCE"
+    ],
+    "evidence_ids": [
+      "code_eval_205",
+      "msg_10301",
+      "dialogue_301"
+    ],
+    "last_updated_at": "2026-06-15T18:30:00Z",
+    "updated_by": "TUTOR_AGENT",
+    "update_reason": "学生连续两次链表删除失败并明确表示不理解指针变化",
+    "valid_until": "2026-06-16T17:20:00Z"
+  }
+}
