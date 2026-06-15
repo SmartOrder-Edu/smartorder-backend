@@ -253,6 +253,10 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         List<String> tools = new ArrayList<>(currentTools);
         tools.add("ragRetrieve");
         routeResult.setRequiredTools(tools);
+
+        // 设置强制调用 ragRetrieve 工具标志
+        context.setForceRagRetrieve(true);
+
         log.info("[AgentOrchestrator] 注入 ragRetrieve 工具，knowledgeBaseIds={}, fileIds={}",
                 context.getKnowledgeBaseIds(), context.getFileIds());
     }

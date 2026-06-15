@@ -40,6 +40,11 @@ public class AgentRuntimeContext {
     private String ragContext;
 
     /**
+     * 是否强制调用 ragRetrieve 工具（当前端传递了 fileIds 或 knowledgeBaseIds 时为 true）
+     */
+    private boolean forceRagRetrieve;
+
+    /**
      * 前端传递的知识库ID列表（用于 RAG 检索）
      */
     private List<Long> knowledgeBaseIds;
