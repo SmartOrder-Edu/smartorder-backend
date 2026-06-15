@@ -1,5 +1,6 @@
 package com.smartorder.edu.student.domain.dto.student;
 
+import com.smartorder.edu.student.domain.dto.student.dto.DimensionMetadataDTO;
 import lombok.Data;
 
 import java.util.List;
