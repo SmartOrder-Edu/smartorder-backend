@@ -11,7 +11,7 @@ import java.util.Map;
  * <p>对应 JSON Schema: learning_goals.json</p>
  * <p>包含主目标、目标集合、可度量标准及进度</p>
  *
- * @author 谢光湘
+ * @author 马强
  * @since 2026-06-15
  */
 @Data

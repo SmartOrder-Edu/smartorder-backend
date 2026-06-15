@@ -11,7 +11,7 @@ import java.util.Map;
  * <p>对应 JSON Schema: learning_background.json</p>
  * <p>包含学历、已修课程、编程经验、前置基础及学习环境约束</p>
  *
- * @author 谢光湘
+ * @author 马强
  * @since 2026-06-15
  */
 @Data

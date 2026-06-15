@@ -10,7 +10,7 @@ import java.util.List;
  * <p>顶层为 Map 结构，key 为科目代码（如 DATA_STRUCTURES、JAVA_PROGRAMMING），
  * value 为该科目的完整画像快照，包含目标、知识掌握度、易错模式、学习偏好覆盖、行为及当前状态</p>
  *
- * @author 谢光湘
+ * @author 马强
  * @since 2026-06-15
  */
 @Data

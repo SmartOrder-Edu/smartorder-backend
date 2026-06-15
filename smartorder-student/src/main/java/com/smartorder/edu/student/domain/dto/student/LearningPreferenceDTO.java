@@ -11,7 +11,7 @@ import java.util.Map;
  * <p>对应 JSON Schema: learning_preference.json</p>
  * <p>包含资源偏好、讲解偏好、练习偏好、反馈偏好、交互偏好及科目覆盖</p>
  *
- * @author 谢光湘
+ * @author 马强
  * @since 2026-06-15
  */
 @Data

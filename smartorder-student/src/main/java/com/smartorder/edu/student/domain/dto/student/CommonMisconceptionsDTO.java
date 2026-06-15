@@ -11,7 +11,7 @@ import java.util.Map;
  * <p>对应 JSON Schema: common_misconceptions.json</p>
  * <p>包含跨科目共性易错模式、根因假设、干预策略</p>
  *
- * @author 谢光湘
+ * @author 马强
  * @since 2026-06-15
  */
 @Data

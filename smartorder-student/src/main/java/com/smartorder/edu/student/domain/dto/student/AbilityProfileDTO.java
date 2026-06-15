@@ -11,7 +11,7 @@ import java.util.Map;
  * <p>对应 JSON Schema: ability_profile.json</p>
  * <p>包含概念理解、抽象建模、问题拆解、算法设计、复杂度分析、代码实现、调试、知识迁移、技术表达等能力</p>
  *
- * @author 谢光湘
+ * @author 马强
  * @since 2026-06-15
  */
 @Data

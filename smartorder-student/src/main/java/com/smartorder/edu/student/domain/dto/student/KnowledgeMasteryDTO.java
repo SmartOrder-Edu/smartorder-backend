@@ -11,7 +11,7 @@ import java.util.Map;
  * <p>对应 JSON Schema: knowledge_mastery.json</p>
  * <p>包含章节摘要、知识点详情、认知掌握度、保持力、子级易错模式</p>
  *
- * @author 谢光湘
+ * @author 马强
  * @since 2026-06-15
  */
 @Data

@@ -11,7 +11,7 @@ import java.util.Map;
  * <p>对应 JSON Schema: metacognitive_profile.json</p>
  * <p>包含学习规划、过程监控、自我评估、反思、主动求助、信心校准、策略调整、时间管理等元认知维度</p>
  *
- * @author 谢光湘
+ * @author 马强
  * @since 2026-06-15
  */
 @Data

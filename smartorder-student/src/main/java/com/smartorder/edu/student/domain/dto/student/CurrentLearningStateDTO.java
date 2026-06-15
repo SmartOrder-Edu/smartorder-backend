@@ -11,7 +11,7 @@ import java.util.Map;
  * <p>对应 JSON Schema: current_learning_state.json</p>
  * <p>包含学习状态、当前任务、阻塞问题、会话信号、最近表现、就绪度及下一步行动</p>
  *
- * @author 谢光湘
+ * @author 马强
  * @since 2026-06-15
  */
 @Data

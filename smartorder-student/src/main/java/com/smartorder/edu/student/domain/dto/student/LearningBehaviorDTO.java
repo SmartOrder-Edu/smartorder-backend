@@ -11,7 +11,7 @@ import java.util.Map;
  * <p>对应 JSON Schema: learning_behavior.json</p>
  * <p>包含时间窗口统计、行为模式、资源有效性、趋势及参与度</p>
  *
- * @author 谢光湘
+ * @author 马强
  * @since 2026-06-15
  */
 @Data

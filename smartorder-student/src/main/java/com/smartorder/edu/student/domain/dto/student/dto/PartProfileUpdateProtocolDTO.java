@@ -10,7 +10,7 @@ import java.util.List;
  * <p>事件驱动的增量更新协议，采用类 JSON Patch 操作对画像的指定维度/路径进行局部更新，
  * 避免全量覆盖导致并发冲突和数据丢失</p>
  *
- * @author 谢光湘
+ * @author 马强
  * @since 2026-06-15
  */
 @Data
