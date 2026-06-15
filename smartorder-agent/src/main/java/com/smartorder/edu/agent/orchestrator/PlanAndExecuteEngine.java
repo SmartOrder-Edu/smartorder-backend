@@ -333,7 +333,7 @@ public class PlanAndExecuteEngine {
             if ("CLARIFICATION".equals(task.getGate())) {
                 task.setStatus("RUNNING");
                 dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_STARTED, stepToPayload(task));
-                handleClarificationGate(plan, stepIndex, context, emitter, null);
+                handleClarificationGate(plan, stepIndex, context, emitter, null, draftId);
                 plan.setCurrentStepIndex(stepIndex);
                 draftService.updateExecutionPlan(draftId, plan);
                 return;
@@ -537,17 +537,26 @@ public class PlanAndExecuteEngine {
     private void handleClarificationGate(ExecutionPlan plan, int stepIndex,
                                           AgentRuntimeContext context, SseEmitter emitter,
                                           AgentChatRequest request) {
+        handleClarificationGate(plan, stepIndex, context, emitter, request, null);
+    }
+
+    private void handleClarificationGate(ExecutionPlan plan, int stepIndex,
+                                          AgentRuntimeContext context, SseEmitter emitter,
+                                          AgentChatRequest request, String existingDraftId) {
         ExecutionStep task = plan.getSteps().get(stepIndex);
         String question = task.getDescription();
 
+        task.setStatus("PAUSED");
         plan.setStatus("PAUSED_CLARIFICATION");
         plan.setClarificationQuestion(question);
         plan.setCurrentStepIndex(stepIndex);
 
-        // 保存草稿
-        String draftId = draftService.saveExecutionPlanDraft(
-                context.getConversationId(), context.getTraceId(),
-                request != null ? request.getUserId() : context.getUserId(), plan);
+        String draftId = existingDraftId;
+        if (draftId == null || draftId.isBlank()) {
+            draftId = draftService.saveExecutionPlanDraft(
+                    context.getConversationId(), context.getTraceId(),
+                    request != null ? request.getUserId() : context.getUserId(), plan);
+        }
         plan.setConfirmationDraftId(draftId);
         draftService.updateExecutionPlan(draftId, plan);
 
@@ -704,6 +713,12 @@ public class PlanAndExecuteEngine {
                 return false;
             }
 
+            if (shouldPauseForProfileClarification(task, result)) {
+                log.info("[PlanAndExecute] 学生画像不可用，转入澄清门: taskId={}", task.getStepId());
+                pauseForProfileClarification(plan, task, context, emitter, draftId);
+                return false;
+            }
+
             // 验证结果质量
             VerificationResult verification = stepVerifier.verify(task, result, stepOutputs);
 
@@ -754,7 +769,7 @@ public class PlanAndExecuteEngine {
                     task.setDescription(verification.getFeedback());
                     task.setStatus("PAUSED");
                     handleClarificationGate(plan,
-                            plan.getSteps().indexOf(task), context, emitter, null);
+                            plan.getSteps().indexOf(task), context, emitter, null, draftId);
                     return false; // 暂停
                 }
                 default -> { // CONTINUE (should not happen when !passed)
@@ -769,6 +784,49 @@ public class PlanAndExecuteEngine {
         }
 
         return false; // 重试耗尽
+    }
+
+    private boolean shouldPauseForProfileClarification(ExecutionStep task, String result) {
+        if (task.getRequiredTools() == null || !task.getRequiredTools().contains("getStudentProfile")) {
+            return false;
+        }
+        if (result == null || result.isBlank()) {
+            return false;
+        }
+
+        String normalized = result.toLowerCase(Locale.ROOT);
+        return normalized.contains("尚未完成画像建档")
+                || normalized.contains("暂无学习偏好")
+                || normalized.contains("暂无学习档案")
+                || normalized.contains("无法获取学生的学习档案")
+                || normalized.contains("暂时无法获取")
+                || normalized.contains("通过对话")
+                || normalized.contains("直接了解学生的学习目标和当前水平")
+                || normalized.contains("直接告诉我你的学习目标和当前水平")
+                || (normalized.contains("补充")
+                        && (normalized.contains("当前基础") || normalized.contains("当前水平"))
+                        && (normalized.contains("截止时间") || normalized.contains("可投入时间")))
+                || normalized.contains("profile unavailable")
+                || normalized.contains("no profile");
+    }
+
+    private void pauseForProfileClarification(ExecutionPlan plan, ExecutionStep task,
+                                              AgentRuntimeContext context, SseEmitter emitter,
+                                              String draftId) {
+        String question = buildProfileClarificationQuestion(plan);
+        task.setGate("CLARIFICATION");
+        task.setDescription(question);
+        task.setStatus("PAUSED");
+        task.setErrorMessage("学生画像不可用，等待用户补充关键信息");
+        handleClarificationGate(plan, plan.getSteps().indexOf(task), context, emitter, null, draftId);
+    }
+
+    private String buildProfileClarificationQuestion(ExecutionPlan plan) {
+        String goal = plan.getUserGoal();
+        String prefix = goal != null && !goal.isBlank()
+                ? "我暂时拿不到你的学习档案。为了给「" + goal + "」制定更贴合的计划，"
+                : "我暂时拿不到你的学习档案。为了制定更贴合的计划，";
+        return prefix + "请补充这几项信息：当前基础或水平、目标/考试范围、截止时间、每周可投入时间，以及偏好的学习方式。";
     }
 
     /**
