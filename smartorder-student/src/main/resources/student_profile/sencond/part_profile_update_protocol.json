@@ -1,0 +1,42 @@
+{
+  "expected_profile_version": 12,
+  "event_id": "evt_dialogue_10301",
+  "event_type": "DIALOGUE",
+  "changes": [
+    {
+      "operation": "UPSERT",
+      "dimension": "learning_preference",
+      "path": "/subject_overrides/DATA_STRUCTURES/preferred_resource_types",
+      "value": [
+        "DIAGRAM",
+        "CODE_TRACE",
+        "CODE_EXAMPLE"
+      ],
+      "value_source": "USER_EXPLICIT",
+      "confidence": 1.0,
+      "evidence_ids": [
+        "msg_10301"
+      ],
+      "reason": "用户明确表示学习链表时更喜欢图解和代码执行过程"
+    },
+    {
+      "operation": "UPSERT",
+      "dimension": "subject_profiles",
+      "path": "/DATA_STRUCTURES/current_learning_state/blocking_issues/ISSUE-001",
+      "value": {
+        "issue_id": "ISSUE-001",
+        "issue_type": "PROCEDURE_ORDER_ERROR",
+        "description": "删除节点前没有正确保存引用",
+        "severity": "HIGH",
+        "status": "ACTIVE"
+      },
+      "value_source": "MODEL_INFERRED",
+      "confidence": 0.93,
+      "evidence_ids": [
+        "msg_10301",
+        "code_eval_205"
+      ],
+      "reason": "用户描述与代码评测结果一致"
+    }
+  ]
+}

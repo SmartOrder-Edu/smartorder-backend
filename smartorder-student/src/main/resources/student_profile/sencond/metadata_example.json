@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "confidence": 0.88,
+  "completeness": 82.5,
+  "source_types": [
+    "USER_EXPLICIT",
+    "QUIZ_RESULT"
+  ],
+  "evidence_ids": [
+    "msg_10021",
+    "answer_8891"
+  ],
+  "last_updated_at": "2026-06-15T18:30:00Z",
+  "updated_by": "PROFILE_AGENT",
+  "update_reason": "用户明确说明学习时间，并结合最近练习结果更新",
+  "valid_until": null
+}

@@ -38,13 +38,13 @@ public class LlmProfileUpdateCandidateExtractor implements ProfileUpdateCandidat
                 你是学生画像候选信息提取器，只分析下面这一条当前用户消息。
 
                 仅当用户明确自述以下信息时才提取：
-                - basic_profile：年级、专业、备考目标、学习目标
-                - knowledge_profile：明确掌握或不掌握的知识
-                - ability_profile：明确自述的能力强弱
-                - preference_profile / cognitive_profile：稳定学习偏好或理解方式
-                - weakness_profile：明确没有学会、不理解、基础薄弱或反复做错的知识
-                - behavior_profile：稳定学习习惯和高效时段
-                - emotion_profile：明确的学习焦虑、紧张或压力
+                - learning_background：学历、年级、专业、已修课程、编程经验、学习环境
+                - learning_goals：长期目标、阶段目标、优先级、截止时间、时间预算
+                - ability_profile：明确自述的能力强弱（概念理解、问题分析、代码实现等）
+                - common_misconceptions：明确没有学会、不理解、基础薄弱或反复做错的知识
+                - learning_preference：稳定学习偏好（资源形式、讲解方式、练习方式等）
+                - metacognitive_profile：学习规划、自我评估、反思、主动求助能力
+                - subject_profiles：特定科目的知识掌握、易错点、学习行为
 
                 普通提问、请求讲解、一次性输出格式要求不是画像证据。
                 evidence 必须逐字摘自当前用户消息，confidence 必须在 0.8 到 1.0。
@@ -54,8 +54,17 @@ public class LlmProfileUpdateCandidateExtractor implements ProfileUpdateCandidat
                 输出结构：
                 {
                   "dimensionUpdate": [{
-                    "dimensionKey": "weakness_profile",
-                    "delta": {"weak_points": [{"topic": "数据结构", "weakness_type": "foundation_gap"}]},
+                    "dimensionKey": "common_misconceptions",
+                    "delta": {
+                      "patterns": {
+                        "DATA_STRUCTURE_FOUNDATION": {
+                          "misconception_id": "DATA_STRUCTURE_FOUNDATION",
+                          "title": "数据结构基础薄弱",
+                          "description": "用户明确表示之前没有学会数据结构",
+                          "status": "ACTIVE"
+                        }
+                      }
+                    },
                     "evidence": "大二的时候没有怎么学会数据结构",
                     "confidence": 0.92,
                     "reason": "用户明确说明数据结构基础学习不足"

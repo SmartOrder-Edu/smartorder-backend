@@ -1,0 +1,95 @@
+{
+  "statistics_windows": {
+    "LAST_7_DAYS": {
+      "window_start": "2026-06-09T00:00:00Z",
+      "window_end": "2026-06-15T23:59:59Z",
+      "active_days": 5,
+      "study_minutes": 248,
+      "session_count": 8,
+      "average_session_minutes": 31,
+      "resource_view_count": 18,
+      "resource_completion_rate": 0.74,
+      "exercise_attempt_count": 42,
+      "exercise_accuracy_rate": 0.69,
+      "independent_accuracy_rate": 0.52,
+      "hint_usage_rate": 0.31,
+      "review_count": 4,
+      "active_question_count": 7,
+      "task_abandonment_rate": 0.12
+    },
+    "LAST_30_DAYS": {
+      "window_start": "2026-05-17T00:00:00Z",
+      "window_end": "2026-06-15T23:59:59Z",
+      "active_days": 18,
+      "study_minutes": 920,
+      "session_count": 31,
+      "average_session_minutes": 30,
+      "resource_view_count": 71,
+      "resource_completion_rate": 0.68,
+      "exercise_attempt_count": 156,
+      "exercise_accuracy_rate": 0.64,
+      "independent_accuracy_rate": 0.47,
+      "hint_usage_rate": 0.38,
+      "review_count": 13,
+      "active_question_count": 24,
+      "task_abandonment_rate": 0.16
+    }
+  },
+  "behavior_patterns": {
+    "preferred_study_period": "EVENING",
+    "average_session_minutes": 30,
+    "study_regularness_score": 78,
+    "persistence_score": 72,
+    "review_regularness_score": 56,
+    "procrastination_risk": "LOW",
+    "hint_dependency": "MEDIUM",
+    "rapid_guessing_risk": "LOW"
+  },
+  "resource_effectiveness": {
+    "DIAGRAM": {
+      "view_count": 12,
+      "completion_rate": 0.88,
+      "average_engagement_score": 86,
+      "post_learning_accuracy_rate": 0.82
+    },
+    "CODE_EXAMPLE": {
+      "view_count": 16,
+      "completion_rate": 0.81,
+      "average_engagement_score": 83,
+      "post_learning_accuracy_rate": 0.8
+    },
+    "VIDEO": {
+      "view_count": 9,
+      "completion_rate": 0.53,
+      "average_engagement_score": 61,
+      "post_learning_accuracy_rate": 0.65
+    }
+  },
+  "trends": {
+    "study_duration_trend": "IMPROVING",
+    "accuracy_trend": "IMPROVING",
+    "independent_completion_trend": "IMPROVING",
+    "hint_usage_trend": "DECREASING"
+  },
+  "engagement": {
+    "engagement_score": 76,
+    "engagement_level": "HIGH",
+    "risk_flags": []
+  },
+  "metadata": {
+    "schema_version": "1.0",
+    "confidence": 0.96,
+    "completeness": 92,
+    "source_types": [
+      "LEARNING_BEHAVIOR",
+      "SYSTEM_DERIVED"
+    ],
+    "evidence_ids": [
+      "behavior_batch_20260615"
+    ],
+    "last_updated_at": "2026-06-15T23:59:59Z",
+    "updated_by": "BEHAVIOR_ANALYSIS_AGENT",
+    "update_reason": "完成每日学习行为聚合",
+    "valid_until": "2026-06-16T23:59:59Z"
+  }
+}

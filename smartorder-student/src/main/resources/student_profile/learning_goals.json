@@ -1,0 +1,74 @@
+{
+  "primary_goal_id": "GOAL-DS-001",
+  "goals": {
+    "GOAL-DS-001": {
+      "goal_id": "GOAL-DS-001",
+      "scope": "SUBJECT",
+      "subject_id": "DATA_STRUCTURES",
+      "title": "八周内系统掌握数据结构",
+      "description": "掌握线性表、栈、队列、树、图、查找和排序，并能够独立完成基础算法实现",
+      "goal_type": "COURSE_MASTERY",
+      "target_level": "PROFICIENT",
+      "target_knowledge_point_ids": [
+        "DS-ARRAY",
+        "DS-LINKED-LIST",
+        "DS-STACK",
+        "DS-QUEUE",
+        "DS-TREE",
+        "DS-GRAPH",
+        "DS-SEARCH",
+        "DS-SORT"
+      ],
+      "measurable_criteria": [
+        {
+          "metric": "OVERALL_MASTERY_SCORE",
+          "operator": "GREATER_THAN_OR_EQUAL",
+          "target_value": 80
+        },
+        {
+          "metric": "EXERCISE_ACCURACY_RATE",
+          "operator": "GREATER_THAN_OR_EQUAL",
+          "target_value": 0.8
+        },
+        {
+          "metric": "INDEPENDENT_IMPLEMENTATION_COUNT",
+          "operator": "GREATER_THAN_OR_EQUAL",
+          "target_value": 6
+        }
+      ],
+      "priority": "HIGH",
+      "status": "IN_PROGRESS",
+      "start_at": "2026-06-15T00:00:00Z",
+      "deadline": "2026-08-10T23:59:59Z",
+      "weekly_time_budget_minutes": 600,
+      "progress": {
+        "progress_percent": 28.5,
+        "completed_criteria_count": 0,
+        "total_criteria_count": 3,
+        "calculation_method": "SYSTEM_DERIVED"
+      },
+      "confidence": 1.0,
+      "evidence_ids": [
+        "msg_10020"
+      ],
+      "created_at": "2026-06-15T18:00:00Z",
+      "updated_at": "2026-06-15T18:30:00Z"
+    }
+  },
+  "metadata": {
+    "schema_version": "1.0",
+    "confidence": 1.0,
+    "completeness": 95,
+    "source_types": [
+      "USER_EXPLICIT",
+      "SYSTEM_DERIVED"
+    ],
+    "evidence_ids": [
+      "msg_10020"
+    ],
+    "last_updated_at": "2026-06-15T18:30:00Z",
+    "updated_by": "PROFILE_AGENT",
+    "update_reason": "用户明确提出八周数据结构学习目标",
+    "valid_until": "2026-08-10T23:59:59Z"
+  }
+}

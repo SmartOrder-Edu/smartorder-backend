@@ -1,10 +1,11 @@
 package com.smartorder.edu.student.service;
 
-import com.smartorder.edu.student.domain.entity.StudentProfile;
 import com.smartorder.edu.student.domain.dto.ProfileInitDTO;
+import com.smartorder.edu.student.domain.dto.StudentProfileDimensionUpdateDTO;
+import com.smartorder.edu.student.domain.dto.StudentProfileUpdateDTO;
+import com.smartorder.edu.student.domain.entity.StudentProfile;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 学生画像服务接口
@@ -15,14 +16,9 @@ import java.util.Map;
 public interface IStudentProfileService {
 
     /**
-     * 根据用户ID获取全局画像（subject_id IS NULL）
+     * 根据用户ID获取画像
      */
     StudentProfile getByUserId(Long userId);
-
-    /**
-     * 根据用户ID和科目ID获取画像
-     */
-    StudentProfile getByUserIdAndSubject(Long userId, Long subjectId);
 
     /**
      * 创建或更新画像
@@ -30,19 +26,29 @@ public interface IStudentProfileService {
     void saveOrUpdate(StudentProfile profile);
 
     /**
-     * 引导页初始化画像 — 更新已有的空画像记录
+     * 全量更新画像（深度合并前端提交的各维度数据）
+     *
+     * @param userId  用户ID
+     * @param profile 前端提交的画像维度
+     * @return 更新后的完整画像
      */
-    void initProfile(Long userId, ProfileInitDTO dto);
+    StudentProfile updateProfile(Long userId, StudentProfileUpdateDTO profile);
+
+    /**
+     * 引导页初始化画像 — 将引导页 DTO 映射到 learningBackground 和 learningGoals 维度
+     *
+     * @return 更新后的完整画像
+     */
+    StudentProfile initProfile(Long userId, ProfileInitDTO dto);
 
     /**
      * 增量更新画像的指定维度（深度合并）
      *
      * @param userId       用户ID
-     * @param dimensionKey 维度名称，如 "knowledge_profile", "weakness_profile"
-     * @param delta        增量数据，将与现有数据深度合并
-     * @param reason       更新原因
+     * @param update 维度更新数据
+     * @return 更新后的完整画像
      */
-    void updateProfileDimension(Long userId, String dimensionKey, Map<String, Object> delta, String reason);
+    StudentProfile updateProfileDimension(Long userId, StudentProfileDimensionUpdateDTO update);
 
     /**
      * 批量增量更新画像的多个维度（一次 DB 读写，版本号只递增一次）
@@ -50,10 +56,12 @@ public interface IStudentProfileService {
      * @param userId            用户ID
      * @param dimensionUpdates  维度更新列表，每项包含 dimensionKey、delta、reason
      */
-    void updateProfileDimensions(Long userId, List<DimensionUpdateDTO> dimensionUpdates);
+    void updateProfileDimensions(Long userId, List<StudentProfileDimensionUpdateDTO> dimensionUpdates);
 
     /**
-     * 维度更新数据项
+     * 删除指定用户的画像
+     *
+     * @param userId 用户ID
      */
-    record DimensionUpdateDTO(String dimensionKey, Map<String, Object> delta, String reason) {}
+    void deleteByUserId(Long userId);
 }
