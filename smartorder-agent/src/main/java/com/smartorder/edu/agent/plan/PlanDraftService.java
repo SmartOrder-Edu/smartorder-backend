@@ -3,6 +3,7 @@ package com.smartorder.edu.agent.plan;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.smartorder.edu.agent.model.dto.ExecutionPlan;
+import com.smartorder.edu.agent.model.dto.PlanContext;
 import com.smartorder.edu.agent.model.entity.AgentPlanDraft;
 import com.smartorder.edu.agent.mapper.AgentPlanDraftMapper;
 import lombok.RequiredArgsConstructor;
@@ -151,6 +152,30 @@ public class PlanDraftService {
         }
         draft.setStatus("CANCELLED");
         draftMapper.updateById(draft);
+    }
+
+    /**
+     * 保存/更新 ExecutionPlan 的 PlanContext（结构化澄清上下文）
+     */
+    public void savePlanContext(String draftId, PlanContext planContext) {
+        AgentPlanDraft draft = draftMapper.selectByDraftId(draftId);
+        if (draft == null) return;
+        draft.setPlanContextJson(planContext != null ? JSON.toJSONString(planContext) : null);
+        draftMapper.updateById(draft);
+    }
+
+    /**
+     * 读取 ExecutionPlan 的 PlanContext
+     */
+    public PlanContext getPlanContext(String draftId) {
+        AgentPlanDraft draft = draftMapper.selectByDraftId(draftId);
+        if (draft == null || draft.getPlanContextJson() == null) return null;
+        try {
+            return JSON.parseObject(draft.getPlanContextJson(), PlanContext.class);
+        } catch (Exception e) {
+            log.warn("[PlanDraft] PlanContext 反序列化失败: draftId={}", draftId);
+            return null;
+        }
     }
 
     /**

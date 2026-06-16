@@ -131,6 +131,17 @@ public class ConversationMemoryService {
         log.info("[MemoryService] 硬删除追踪事件: conversationId={}, count={}", traceCount);
     }
 
+    /**
+     * 获取会话摘要（供 Planner 等需要上下文的地方使用）
+     */
+    public String getSummaryText(String conversationId) {
+        ConversationSummary summary = summaryMapper.selectByConversationId(conversationId);
+        if (summary != null && summary.getSummaryText() != null && !summary.getSummaryText().isBlank()) {
+            return summary.getSummaryText();
+        }
+        return null;
+    }
+
     // ============ Private ============
 
     private void save(String conversationId, Long userId, String role, String content,

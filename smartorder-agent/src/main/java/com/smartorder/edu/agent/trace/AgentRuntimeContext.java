@@ -78,6 +78,21 @@ public class AgentRuntimeContext {
     private boolean assistantMessageSaved = false;
 
     /**
+     * 当前计划的运行状态（用于 done 事件携带，前端可据此判断是否暂停态）
+     */
+    private String planRunStatus;
+
+    /**
+     * 当前计划草稿 ID（用于 done 事件携带）
+     */
+    private String planDraftId;
+
+    /**
+     * 当前活跃的澄清 ID（暂停时设置）
+     */
+    private String activeClarificationId;
+
+    /**
      * 获取下一个事件序号
      */
     public int nextSeq() {
