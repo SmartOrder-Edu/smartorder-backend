@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -91,6 +92,12 @@ public class AgentRuntimeContext {
      * 当前活跃的澄清 ID（暂停时设置）
      */
     private String activeClarificationId;
+
+    /**
+     * askUser 工具调用时写入的澄清参数（ReAct 引擎 → PlanAndExecuteEngine 传递）
+     * 包含: question, answerType, options(List<{label,value}>), slotKey
+     */
+    private Map<String, Object> clarificationPayload;
 
     /**
      * 获取下一个事件序号

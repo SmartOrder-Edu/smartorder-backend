@@ -1078,7 +1078,7 @@ public class PlanAndExecuteEngine {
                 .intentType("task_execution")
                 .intentEnum(IntentType.TASK_MANAGEMENT)
                 .runMode(AgentRunMode.REACT)
-                .requiredTools(task.getRequiredTools())
+                .requiredTools(mergeWithAskUser(task.getRequiredTools()))
                 .confidence(1.0)
                 .build();
 
@@ -1201,9 +1201,11 @@ public class PlanAndExecuteEngine {
                 return false;
             }
 
-            if (shouldPauseForProfileClarification(task, result)) {
-                log.info("[PlanAndExecute] 学生画像不可用，转入澄清门: taskId={}", task.getStepId());
-                pauseForProfileClarification(plan, task, context, emitter, draftId);
+            // askUser 工具被调用：LLM 需要向用户澄清信息
+            if (context.getClarificationPayload() != null) {
+                log.info("[PlanAndExecute] askUser 工具触发澄清门: taskId={}, slotKey={}",
+                        task.getStepId(), context.getClarificationPayload().get("slotKey"));
+                handleAskUserClarification(task, plan, context, emitter, draftId);
                 return false;
             }
 
@@ -1284,105 +1286,57 @@ public class PlanAndExecuteEngine {
         return false; // 重试耗尽
     }
 
-    private boolean shouldPauseForProfileClarification(ExecutionStep task, String result) {
-        if (task.getRequiredTools() == null || !task.getRequiredTools().contains("getStudentProfile")) {
-            return false;
-        }
-        if (result == null || result.isBlank()) {
-            return false;
-        }
+    /**
+     * 处理 askUser 工具触发的澄清门：将 AgentRuntimeContext.clarificationPayload
+     * 转换为 ExecutionStep.ClarificationSlot，直接修改传入的 plan 对象并暂停执行。
+     */
+    private void handleAskUserClarification(ExecutionStep task, ExecutionPlan plan,
+                                            AgentRuntimeContext context,
+                                            SseEmitter emitter, String draftId) {
+        Map<String, Object> cp = context.getClarificationPayload();
 
-        String normalized = result.toLowerCase(Locale.ROOT);
-        return normalized.contains("尚未完成画像建档")
-                || normalized.contains("暂无学习偏好")
-                || normalized.contains("暂无学习档案")
-                || normalized.contains("无法获取学生的学习档案")
-                || normalized.contains("暂时无法获取")
-                || normalized.contains("通过对话")
-                || normalized.contains("直接了解学生的学习目标和当前水平")
-                || normalized.contains("直接告诉我你的学习目标和当前水平")
-                || (normalized.contains("补充")
-                        && (normalized.contains("当前基础") || normalized.contains("当前水平"))
-                        && (normalized.contains("截止时间") || normalized.contains("可投入时间")))
-                || normalized.contains("profile unavailable")
-                || normalized.contains("no profile");
-    }
+        // 解析 options
+        List<ClarificationPayload.SelectOption> selectOptions = parseAskUserOptions(
+                cp.get("options"));
 
-    private void pauseForProfileClarification(ExecutionPlan plan, ExecutionStep task,
-                                              AgentRuntimeContext context, SseEmitter emitter,
-                                              String draftId) {
-        // 构建结构化澄清槽位（一次只问一个，按优先级排序）
-        String goal = plan.getUserGoal();
-        String goalPrefix = goal != null && !goal.isBlank()
-                ? "为了给「" + goal + "」制定更贴合的计划，" : "为了制定更贴合的计划，";
-
-        List<ExecutionStep.ClarificationSlot> slots = List.of(
+        task.setClarificationSlots(List.of(
                 ExecutionStep.ClarificationSlot.builder()
-                        .slotKey("target_scope")
-                        .question(goalPrefix + "你的学习目标具体是什么？")
-                        .answerType("SINGLE_SELECT")
-                        .options(List.of(
-                                ClarificationPayload.SelectOption.builder().label("高考备考").value("高考").build(),
-                                ClarificationPayload.SelectOption.builder().label("中考备考").value("中考").build(),
-                                ClarificationPayload.SelectOption.builder().label("日常提升").value("日常提升").build(),
-                                ClarificationPayload.SelectOption.builder().label("竞赛冲刺").value("竞赛").build(),
-                                ClarificationPayload.SelectOption.builder().label("课程学习").value("课程").build()
-                        ))
+                        .slotKey((String) cp.getOrDefault("slotKey", "general"))
+                        .question((String) cp.getOrDefault("question", "请提供更多信息"))
+                        .answerType((String) cp.getOrDefault("answerType", "TEXT"))
+                        .options(selectOptions)
                         .slotPriority(1)
-                        .build(),
-                ExecutionStep.ClarificationSlot.builder()
-                        .slotKey("current_level")
-                        .question(goalPrefix + "你现在在这个目标上的基础大概是什么水平？")
-                        .answerType("SINGLE_SELECT")
-                        .options(List.of(
-                                ClarificationPayload.SelectOption.builder().label("零基础").value("零基础").build(),
-                                ClarificationPayload.SelectOption.builder().label("学过但不熟").value("学过但不熟").build(),
-                                ClarificationPayload.SelectOption.builder().label("能做基础题").value("能做基础题").build(),
-                                ClarificationPayload.SelectOption.builder().label("有项目/竞赛经验").value("有项目/竞赛经验").build()
-                        ))
-                        .slotPriority(2)
-                        .build(),
-                ExecutionStep.ClarificationSlot.builder()
-                        .slotKey("deadline_or_duration")
-                        .question(goalPrefix + "你希望多久完成，或有没有截止时间？")
-                        .answerType("TEXT")
-                        .slotPriority(3)
-                        .build(),
-                ExecutionStep.ClarificationSlot.builder()
-                        .slotKey("weekly_time_budget")
-                        .question("每周大概能投入多少时间学习？")
-                        .answerType("TEXT")
-                        .slotPriority(4)
-                        .build(),
-                ExecutionStep.ClarificationSlot.builder()
-                        .slotKey("preference")
-                        .question("你偏好哪种学习方式？（可选）")
-                        .answerType("SINGLE_SELECT")
-                        .options(List.of(
-                                ClarificationPayload.SelectOption.builder().label("视频为主").value("视频").build(),
-                                ClarificationPayload.SelectOption.builder().label("书籍为主").value("书籍").build(),
-                                ClarificationPayload.SelectOption.builder().label("题目训练为主").value("题目训练").build(),
-                                ClarificationPayload.SelectOption.builder().label("项目实践为主").value("项目实践").build()
-                        ))
-                        .slotPriority(5)
                         .build()
-        );
-
+        ));
+        task.setClarificationSlotsJson(JSON.toJSONString(task.getClarificationSlots()));
         task.setGate("CLARIFICATION");
-        task.setClarificationSlots(slots);
-        task.setClarificationSlotsJson(JSON.toJSONString(slots));
-        task.setDescription(slots.get(0).getQuestion()); // 第一个 slot 的问题作为步骤描述
+        task.setDescription((String) cp.getOrDefault("question", "请提供更多信息"));
         task.setStatus("PAUSED");
-        task.setErrorMessage("学生画像不可用，等待用户补充关键信息");
-        handleClarificationGate(plan, plan.getSteps().indexOf(task), context, emitter, null, draftId);
+
+        // 清除 payload 防止重复处理
+        context.setClarificationPayload(null);
+
+        // 直接使用当前 plan 对象调用 handleClarificationGate，确保状态同步
+        int stepIndex = plan.getSteps().indexOf(task);
+        handleClarificationGate(plan, stepIndex, context, emitter, null, draftId);
     }
 
-    private String buildProfileClarificationQuestion(ExecutionPlan plan) {
-        String goal = plan.getUserGoal();
-        String prefix = goal != null && !goal.isBlank()
-                ? "我暂时拿不到你的学习档案。为了给「" + goal + "」制定更贴合的计划，"
-                : "我暂时拿不到你的学习档案。为了制定更贴合的计划，";
-        return prefix + "请补充这几项信息：当前基础或水平、目标/考试范围、截止时间、每周可投入时间，以及偏好的学习方式。";
+    /**
+     * 解析 askUser 工具传入的 options 参数。
+     * LLM 可能传入 List&lt;Map&gt; 或 List&lt;SelectOption&gt; 格式。
+     */
+    @SuppressWarnings("unchecked")
+    private List<ClarificationPayload.SelectOption> parseAskUserOptions(Object options) {
+        if (options == null) return List.of();
+        if (options instanceof List<?> list && !list.isEmpty()) {
+            try {
+                // 尝试直接解析为 SelectOption 列表
+                return JSON.parseArray(JSON.toJSONString(list), ClarificationPayload.SelectOption.class);
+            } catch (Exception e) {
+                log.debug("[PlanAndExecute] options 解析失败，返回空列表: {}", e.getMessage());
+            }
+        }
+        return List.of();
     }
 
     /**
@@ -1679,6 +1633,22 @@ public class PlanAndExecuteEngine {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * 确保 askUser 工具在所有 Plan-and-Execute 任务中可用。
+     * LLM 可在任何需要向用户澄清信息时调用此工具。
+     */
+    private List<String> mergeWithAskUser(List<String> taskTools) {
+        if (taskTools == null || taskTools.isEmpty()) {
+            return List.of("askUser");
+        }
+        if (taskTools.contains("askUser")) {
+            return taskTools;
+        }
+        List<String> merged = new java.util.ArrayList<>(taskTools);
+        merged.add("askUser");
+        return merged;
     }
 
     private String truncate(String text, int maxLen) {
