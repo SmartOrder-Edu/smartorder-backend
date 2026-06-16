@@ -9,17 +9,18 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Uses a lightweight, current-message-only LLM call to propose profile updates.
+ * 基于LLM的学生画像候选信息提取器，仅分析当前消息轻量调用
  */
 @Component
 @RequiredArgsConstructor
 public class LlmProfileUpdateCandidateExtractor implements ProfileUpdateCandidateExtractor {
 
-    private final ChatModel chatLanguageModel;
+    private final ChatModel chatModel;
 
+    /** 通过LLM分析当前用户消息，提取学生画像候选更新 **/
     @Override
     public UpdateStudentProfileRequest extract(String currentUserMessage) {
-        String response = chatLanguageModel.chat(buildPrompt(currentUserMessage));
+        String response = chatModel.chat(buildPrompt(currentUserMessage));
         UpdateStudentProfileRequest request = JSON.parseObject(
                 extractJson(response),
                 UpdateStudentProfileRequest.class
@@ -33,6 +34,7 @@ public class LlmProfileUpdateCandidateExtractor implements ProfileUpdateCandidat
         return request;
     }
 
+    /** 构建LLM提示词，要求从用户消息中提取画像信息并返回JSON **/
     private String buildPrompt(String currentUserMessage) {
         return """
                 你是学生画像候选信息提取器，只分析下面这一条当前用户消息。
@@ -76,6 +78,7 @@ public class LlmProfileUpdateCandidateExtractor implements ProfileUpdateCandidat
                 """.formatted(currentUserMessage);
     }
 
+    /** 从LLM响应中提取JSON部分，去除可能的Markdown包裹 **/
     private String extractJson(String response) {
         if (response == null || response.isBlank()) {
             return "{\"dimensionUpdate\":[]}";

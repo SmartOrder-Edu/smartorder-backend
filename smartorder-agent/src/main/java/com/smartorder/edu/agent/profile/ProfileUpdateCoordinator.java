@@ -12,7 +12,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 
 /**
- * Submits cross-mode profile extraction as a non-blocking side task.
+ * 学生画像更新协调器，以非阻塞异步方式提交画像提取任务
  */
 @Slf4j
 @Component
@@ -33,6 +33,7 @@ public class ProfileUpdateCoordinator {
     private final ProfileUpdateCandidateExtractor candidateExtractor;
     private final UpdateStudentProfileTool updateStudentProfileTool;
 
+    /** 构造方法，注入异步执行器、候选提取器和画像更新工具 **/
     public ProfileUpdateCoordinator(
             @Qualifier("profileUpdateExecutor") Executor profileUpdateExecutor,
             ProfileUpdateCandidateExtractor candidateExtractor,
@@ -43,14 +44,14 @@ public class ProfileUpdateCoordinator {
         this.updateStudentProfileTool = updateStudentProfileTool;
     }
 
+    /** 提交异步画像分析任务，快速校验后交给后台线程执行 **/
     public void submit(
             Long userId,
             String conversationId,
             String traceId,
             String currentUserMessage
     ) {
-        if (userId == null || userId <= 0
-                || currentUserMessage == null || currentUserMessage.isBlank()
+        if (userId == null || userId <= 0 || currentUserMessage == null || currentUserMessage.isBlank()
                 || !mayContainProfileEvidence(currentUserMessage)) {
             return;
         }
@@ -64,6 +65,7 @@ public class ProfileUpdateCoordinator {
         }
     }
 
+    /** 在后台线程中调用LLM提取候选信息并执行画像更新 **/
     private void extractAndUpdate(
             Long userId,
             String conversationId,
@@ -72,9 +74,7 @@ public class ProfileUpdateCoordinator {
     ) {
         try {
             UpdateStudentProfileRequest request = candidateExtractor.extract(currentUserMessage);
-            if (request == null
-                    || request.getDimensionUpdate() == null
-                    || request.getDimensionUpdate().isEmpty()) {
+            if (request == null || request.getDimensionUpdate() == null  || request.getDimensionUpdate().isEmpty()) {
                 return;
             }
 
@@ -92,6 +92,7 @@ public class ProfileUpdateCoordinator {
         }
     }
 
+    /** 快速判断消息是否可能包含画像证据关键词 **/
     boolean mayContainProfileEvidence(String message) {
         return PROFILE_EVIDENCE_SIGNALS.stream().anyMatch(message::contains);
     }

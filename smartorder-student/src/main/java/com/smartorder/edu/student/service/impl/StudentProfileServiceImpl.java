@@ -525,17 +525,18 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
             return;
         }
 
-        patch.fields().forEachRemaining(entry -> {
-            JsonNode patchValue = entry.getValue();
+        ObjectNode patchObj = (ObjectNode) patch;
+        patchObj.fieldNames().forEachRemaining(key -> {
+            JsonNode patchValue = patchObj.get(key);
             if (patchValue == null || patchValue.isNull()) {
                 return;
             }
 
-            JsonNode currentValue = target.get(entry.getKey());
+            JsonNode currentValue = target.get(key);
             if (patchValue.isObject() && currentValue != null && currentValue.isObject()) {
                 mergeJson((ObjectNode) currentValue, patchValue);
             } else {
-                target.set(entry.getKey(), patchValue.deepCopy());
+                target.set(key, patchValue.deepCopy());
             }
         });
     }
@@ -594,9 +595,9 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
             return false;
         }
         if (node.isObject()) {
-            var fields = node.fields();
-            while (fields.hasNext()) {
-                if (hasMeaningfulValue(fields.next().getValue())) {
+            var fieldNames = node.fieldNames();
+            while (fieldNames.hasNext()) {
+                if (hasMeaningfulValue(node.get(fieldNames.next()))) {
                     return true;
                 }
             }
