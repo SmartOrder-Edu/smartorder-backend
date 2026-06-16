@@ -116,11 +116,12 @@ public class ClarificationService {
         AgentClarification record = clarificationMapper.selectByClarificationId(clarificationId);
         if (record == null) {
             log.warn("[Clarification] 提交答案失败: clarificationId={} 不存在", clarificationId);
-            return null;
+            throw new IllegalArgumentException("澄清记录不存在: " + clarificationId);
         }
         if (!"PENDING".equals(record.getStatus())) {
             log.warn("[Clarification] 提交答案失败: clarificationId={} 状态非 PENDING, 当前={}", clarificationId, record.getStatus());
-            return null;
+            throw new IllegalStateException("澄清记录已被处理: clarificationId=" + clarificationId
+                    + ", 当前状态=" + record.getStatus());
         }
 
         // 所有权校验

@@ -196,7 +196,7 @@ public class AgentPlanController {
 
         executor.execute(() -> {
             planAndExecuteEngine.resumeAfterClarification(
-                    draftId, clarificationId, request.getAnswer(),
+                    draftId, clarificationId, request.getAnswer(), request.getDisplayAnswer(),
                     userId, request.getConversationId(), emitter, traceId);
         });
 

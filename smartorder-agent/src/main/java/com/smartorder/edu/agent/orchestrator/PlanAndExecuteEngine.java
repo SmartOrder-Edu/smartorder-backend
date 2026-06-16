@@ -682,6 +682,7 @@ public class PlanAndExecuteEngine {
      * 不走 /agent/chat/stream，直接绑定 draftId + clarificationId，后端无需推断意图。
      */
     public void resumeAfterClarification(String draftId, String clarificationId, String answer,
+                                          String displayAnswer,
                                           Long userId, String conversationId,
                                           SseEmitter emitter, String traceId) {
         AgentPlanDraft draft = draftService.getByDraftId(draftId);
@@ -725,8 +726,11 @@ public class PlanAndExecuteEngine {
         ExecutionStep pausedTask = plan.getSteps().get(pausedIndex);
         Map<String, String> stepOutputs = new LinkedHashMap<>(plan.getStepOutputs());
 
-        // 保存用户回答消息到对话记录
-        memoryService.saveUserMessage(conversationId, userId, "【澄清回答】" + answer, null);
+        // 保存用户回答消息到对话记录（用 displayAnswer 确保刷新后仍可读）
+        String savedText = displayAnswer != null && !displayAnswer.isBlank()
+                ? "【澄清回答】" + displayAnswer
+                : "【澄清回答】" + answer;
+        memoryService.saveUserMessage(conversationId, userId, savedText, null);
 
         // 提交结构化回答（带所有权校验）
         ClarificationPayload nextClarification;
