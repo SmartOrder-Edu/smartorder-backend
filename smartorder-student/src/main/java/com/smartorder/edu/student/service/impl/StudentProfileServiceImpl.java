@@ -61,6 +61,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
     private final ObjectMapper objectMapper;
     private final ObjectMapper snakeCaseObjectMapper;
 
+    /** 构造函数，注入Mapper和ObjectMapper，初始化snake_case版本的ObjectMapper */
     public StudentProfileServiceImpl(StudentProfileMapper studentProfileMapper, ObjectMapper objectMapper) {
         this.studentProfileMapper = studentProfileMapper;
         this.objectMapper = objectMapper;
@@ -68,6 +69,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
                 .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
     }
 
+    /** 根据用户ID查询画像，不存在则返回 null */
     @Override
     public StudentProfile getByUserId(Long userId) {
         validateUserId(userId);
@@ -76,6 +78,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         return studentProfileMapper.selectOne(query);
     }
 
+    /** 保存或更新画像，已存在则跳过重复创建 */
     @Override
     @Transactional
     public void saveOrUpdate(StudentProfile profile) {
@@ -88,11 +91,11 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
             log.debug("学生画像已存在，跳过重复创建: userId={}", profile.getUserId());
             return;
         }
-
         prepareForPersistence(profile);
         persist(profile);
     }
 
+    /** 用户主动更新画像，支持部分维度更新，至少提交一个维度 */
     @Override
     @Transactional
     public StudentProfile updateProfile(Long userId, StudentProfileUpdateDTO patch) {
@@ -167,6 +170,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         return completeUpdate(profile, "用户主动更新画像", null);
     }
 
+    /** 引导页初始化画像，根据用户填写的基础信息创建画像 */
     @Override
     @Transactional
     public StudentProfile initProfile(Long userId, ProfileInitDTO dto) {
@@ -181,7 +185,12 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
             throw new BusinessException("画像初始化内容不能全部为空");
         }
 
-        StudentProfile profile = getOrCreateProfile(userId);
+        StudentProfile profile = new StudentProfile();
+        profile.setUserId(userId);
+        profile.setProfileVersion(0);
+        profile.setProfileCompleteness(new BigDecimal("0.00"));
+        profile.setProfileConfidenceScore(new BigDecimal("0.00"));
+
         if (background != null) {
             profile.setLearningBackground(mergeTyped(
                     profile.getLearningBackground(),
@@ -200,6 +209,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         return completeUpdate(profile, "引导页初始化画像", INITIAL_CONFIDENCE);
     }
 
+    /** 更新单个画像维度，通过增量数据合并 */
     @Override
     @Transactional
     public StudentProfile updateProfileDimension(Long userId, StudentProfileDimensionUpdateDTO update) {
@@ -209,6 +219,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         return applyDimensionUpdates(userId, List.of(update));
     }
 
+    /** 批量更新多个画像维度 */
     @Override
     @Transactional
     public void updateProfileDimensions(
@@ -218,6 +229,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         applyDimensionUpdates(userId, dimensionUpdates);
     }
 
+    /** 根据用户ID删除画像 */
     @Override
     @Transactional
     public void deleteByUserId(Long userId) {
@@ -230,6 +242,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         log.info("删除学生画像: userId={}, id={}", userId, profile.getId());
     }
 
+    /** 应用维度更新列表，合并增量数据并保存 */
     private StudentProfile applyDimensionUpdates(
             Long userId,
             List<StudentProfileDimensionUpdateDTO> dimensionUpdates
@@ -254,6 +267,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         return result;
     }
 
+    /** 根据维度key将增量数据合并到对应字段 */
     private void mergeDimension(StudentProfile profile, StudentProfileDimensionUpdateDTO update) {
         Map<String, Object> delta = update.getDelta();
         switch (update.getDimensionKey()) {
@@ -295,6 +309,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         }
     }
 
+    /** 校验维度更新列表，确保维度名称有效且增量数据不为空 */
     private List<StudentProfileDimensionUpdateDTO> validateDimensionUpdates(
             List<StudentProfileDimensionUpdateDTO> dimensionUpdates
     ) {
@@ -327,6 +342,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         return validated;
     }
 
+    /** 递增版本号，设置更新原因,摘要，重新计算完整度后持久化 */
     private StudentProfile completeUpdate(
             StudentProfile profile,
             String reason,
@@ -336,8 +352,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         profile.setLastUpdateReason(limitReason(reason));
         profile.setProfileSummary(null);
 
-        if (minimumConfidence != null
-                && (profile.getProfileConfidenceScore() == null
+        if (minimumConfidence != null && (profile.getProfileConfidenceScore() == null
                 || profile.getProfileConfidenceScore().compareTo(minimumConfidence) < 0)) {
             profile.setProfileConfidenceScore(minimumConfidence);
         }
@@ -347,6 +362,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         return profile;
     }
 
+    /** 获取用户画像，不存在则创建空画像对象（未持久化） */
     private StudentProfile getOrCreateProfile(Long userId) {
         StudentProfile profile = getByUserId(userId);
         if (profile != null) {
@@ -361,6 +377,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         return created;
     }
 
+    /** 从引导页DTO构建学习背景，无有效数据则返回 null */
     private LearningBackgroundDTO buildInitialBackground(ProfileInitDTO dto) {
         boolean hasBackground = hasText(dto.getIdentity())
                 || hasText(dto.getGrade())
@@ -412,6 +429,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         return background;
     }
 
+    /** 从引导页DTO构建学习目标，无有效数据则返回 null */
     private LearningGoalsDTO buildInitialGoals(ProfileInitDTO dto) {
         boolean hasGoal = hasText(dto.getGoal())
                 || hasText(dto.getGoalDetail())
@@ -440,6 +458,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         return result;
     }
 
+    /** 将Map格式的增量数据转换为强类型后合并 */
     private <T> T mergeDelta(T current, Map<String, Object> delta, Class<T> targetType) {
         try {
             T typedPatch = snakeCaseObjectMapper.convertValue(delta, targetType);
@@ -449,6 +468,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         }
     }
 
+    /** 深度合并两个同类型对象，patch中的非空字段覆盖current */
     private <T> T mergeTyped(T current, T patch, Class<T> targetType) {
         try {
             ObjectNode targetNode = toObjectNode(current);
@@ -460,6 +480,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         }
     }
 
+    /** 将Map格式的科目画像增量数据转换后合并 */
     private SubjectProfilesDTO mergeSubjectProfilesDelta(
             SubjectProfilesDTO current,
             Map<String, Object> delta
@@ -472,6 +493,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         }
     }
 
+    /** 深度合并两个科目画像对象 */
     private SubjectProfilesDTO mergeSubjectProfilesDTO(
             SubjectProfilesDTO current,
             SubjectProfilesDTO patch
@@ -485,6 +507,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         }
     }
 
+    /** 将对象转换为Jackson ObjectNode，null则创建空节点 */
     private ObjectNode toObjectNode(Object value) {
         if (value == null) {
             return objectMapper.createObjectNode();
@@ -496,6 +519,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         return (ObjectNode) node;
     }
 
+    /** 递归合并JSON对象，patch中的非空字段覆盖target */
     private void mergeJson(ObjectNode target, JsonNode patch) {
         if (patch == null || !patch.isObject()) {
             return;
@@ -516,10 +540,8 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         });
     }
 
+    /** 持久化前的预处理：初始化默认值，精度处理，重算完整度 */
     private void prepareForPersistence(StudentProfile profile) {
-        if (profile.getProfileVersion() == null) {
-            profile.setProfileVersion(0);
-        }
         if (profile.getProfileConfidenceScore() == null) {
             profile.setProfileConfidenceScore(new BigDecimal("0.00"));
         } else {
@@ -530,6 +552,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         recalculateCompleteness(profile);
     }
 
+    /** 重新计算画像完整度，7个维度中已填写的数量占比 */
     private void recalculateCompleteness(StudentProfile profile) {
         int completed = 0;
         completed += isMeaningful(profile.getLearningBackground()) ? 1 : 0;
@@ -546,6 +569,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         profile.setProfileCompleteness(completeness);
     }
 
+    /** 判断对象是否包含有意义的数据（非null且非空） */
     private boolean isMeaningful(Object value) {
         if (value == null) {
             return false;
@@ -553,6 +577,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         return hasMeaningfulValue(objectMapper.valueToTree(value));
     }
 
+    /** 递归判断JSON节点是否包含有意义的值 */
     private boolean hasMeaningfulValue(JsonNode node) {
         if (node == null || node.isNull()) {
             return false;
@@ -579,31 +604,26 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         return false;
     }
 
+    /** 执行数据库持久化，新增或更新 */
     private void persist(StudentProfile profile) {
-        int affectedRows;
-        if (profile.getId() == null) {
-            affectedRows = studentProfileMapper.insert(profile);
-            log.info("创建学生画像: userId={}, id={}", profile.getUserId(), profile.getId());
-        } else {
-            affectedRows = studentProfileMapper.updateById(profile);
-            log.info(
-                    "保存学生画像: userId={}, id={}, version={}",
-                    profile.getUserId(),
-                    profile.getId(),
-                    profile.getProfileVersion()
-            );
-        }
+        int affectedRows = profile.getId() == null
+                ? studentProfileMapper.insert(profile)
+                : studentProfileMapper.updateById(profile);
         if (affectedRows != 1) {
             throw new BusinessException("学生画像保存失败，请稍后重试");
         }
+        log.info("保存学生画像: userId={}, id={}, version={}",
+                profile.getUserId(), profile.getId(), profile.getProfileVersion());
     }
 
+    /** 校验用户ID有效性 */
     private void validateUserId(Long userId) {
         if (userId == null || userId <= 0) {
             throw new BusinessException("用户ID无效");
         }
     }
 
+    /** 标准化维度名称：trim并转小写 */
     private String normalizeDimensionKey(String dimensionKey) {
         if (dimensionKey == null || dimensionKey.isBlank()) {
             throw new BusinessException("画像维度名称不能为空");
@@ -611,23 +631,28 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         return dimensionKey.trim().toLowerCase(Locale.ROOT);
     }
 
+    /** 有画像版本,则返回画像版本, 没有画像版本，则返回 0 */
     private int currentVersion(StudentProfile profile) {
         return profile.getProfileVersion() == null ? 0 : profile.getProfileVersion();
     }
 
+    /** 更新原因长度限制在 500 字以内，超过部分会被截断。理由不能为空或全空白，否则会使用默认理由。 */
     private String limitReason(String reason) {
         String value = reason == null || reason.isBlank() ? DEFAULT_UPDATE_REASON : reason.trim();
         return value.length() <= MAX_REASON_LENGTH ? value : value.substring(0, MAX_REASON_LENGTH);
     }
 
+    /** 判断字符串是否有有效内容 */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
 
+    /** trim后返回，空白字符串返回null */
     private String trimToNull(String value) {
         return hasText(value) ? value.trim() : null;
     }
 
+    /** 解析学习目标标题，优先使用详细描述，其次使用目标类型 */
     private String resolveGoalTitle(ProfileInitDTO dto) {
         if (hasText(dto.getGoalDetail())) {
             return dto.getGoalDetail().trim();
@@ -638,6 +663,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         return "待完善的学习目标";
     }
 
+    /** 转换为枚举格式：trim、空格和连字符转下划线、大写 */
     private String toEnumValue(String value) {
         if (!hasText(value)) {
             return null;
@@ -648,6 +674,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
                 .toUpperCase(Locale.ROOT);
     }
 
+    /** 将用户自评水平转换为基础知识满足状态 */
     private String toFoundationStatus(String level) {
         return switch (level.trim().toLowerCase(Locale.ROOT)) {
             case "advanced", "course" -> "SATISFIED";
@@ -656,6 +683,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         };
     }
 
+    /** 将用户自评水平转换为基础知识分数 */
     private Integer toFoundationScore(String level) {
         return switch (level.trim().toLowerCase(Locale.ROOT)) {
             case "advanced" -> 85;
@@ -665,6 +693,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         };
     }
 
+    /** 将每日学习时间选项转换为每周可用分钟数 */
     private Integer toWeeklyMinutes(String dailyStudyTime) {
         if (!hasText(dailyStudyTime)) {
             return null;
