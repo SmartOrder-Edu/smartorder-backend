@@ -1,5 +1,6 @@
 package com.smartorder.edu.student.domain.dto.student;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.smartorder.edu.student.domain.dto.student.dto.DimensionMetadataDTO;
 import lombok.Data;
 
@@ -15,7 +16,14 @@ import java.util.Map;
  * @since 2026-06-15
  */
 @Data
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class LearningBackgroundDTO {
+
+    /** 用户对当前基础的补充描述 */
+    private String currentLevelDetail;
+
+    /** 用户自我描述 */
+    private String selfDescription;
 
     /** 学历信息 */
     private EducationDTO education;

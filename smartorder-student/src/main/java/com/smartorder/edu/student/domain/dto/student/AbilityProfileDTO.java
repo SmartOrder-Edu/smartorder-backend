@@ -1,5 +1,6 @@
 package com.smartorder.edu.student.domain.dto.student;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.smartorder.edu.student.domain.dto.student.dto.DimensionMetadataDTO;
 import lombok.Data;
 
@@ -15,6 +16,7 @@ import java.util.Map;
  * @since 2026-06-15
  */
 @Data
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class AbilityProfileDTO {
 
     /** 综合能力总分 */

@@ -1,5 +1,6 @@
 package com.smartorder.edu.student.domain.dto.student.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
 
 import java.util.List;
@@ -14,6 +15,7 @@ import java.util.List;
  * @since 2026-06-15
  */
 @Data
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class PartProfileUpdateProtocolDTO {
 
     /** 期望的画像版本号，用于乐观锁校验 */
