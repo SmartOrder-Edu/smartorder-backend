@@ -1,20 +1,23 @@
 package com.smartorder.edu.student.service.impl;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.student.domain.dto.ProfileInitDTO;
+import com.smartorder.edu.student.domain.dto.StudentProfileDimensionUpdateDTO;
+import com.smartorder.edu.student.domain.dto.StudentProfileUpdateDTO;
+import com.smartorder.edu.student.domain.dto.student.AbilityProfileDTO;
+import com.smartorder.edu.student.domain.dto.student.LearningBackgroundDTO;
+import com.smartorder.edu.student.domain.dto.student.LearningGoalsDTO;
 import com.smartorder.edu.student.domain.entity.StudentProfile;
 import com.smartorder.edu.student.mapper.StudentProfileMapper;
-import com.smartorder.edu.student.service.IStudentProfileService.DimensionUpdateDTO;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -24,84 +27,100 @@ import static org.mockito.Mockito.when;
 class StudentProfileServiceImplTest {
 
     @Test
-    void updatesCurrentUserProfileWithoutTrustingTransportIdentityFields() {
+    void updatesProfileFromDtoAndPreservesExistingNestedValues() {
         StudentProfileMapper mapper = mock(StudentProfileMapper.class);
         StudentProfile existing = emptyProfile(7L);
         existing.setId(10L);
         existing.setProfileVersion(3);
-        existing.setLearningBackground(new HashMap<>(Map.of(
-                "education", new HashMap<>(Map.of("grade", "SOPHOMORE"))
-        )));
-        when(mapper.selectByUserIdForUpdate(7L)).thenReturn(existing);
+
+        LearningBackgroundDTO currentBackground = new LearningBackgroundDTO();
+        LearningBackgroundDTO.EducationDTO currentEducation = new LearningBackgroundDTO.EducationDTO();
+        currentEducation.setGrade("SOPHOMORE");
+        currentBackground.setEducation(currentEducation);
+        existing.setLearningBackground(currentBackground);
+
+        LearningBackgroundDTO patchBackground = new LearningBackgroundDTO();
+        LearningBackgroundDTO.EducationDTO patchEducation = new LearningBackgroundDTO.EducationDTO();
+        patchEducation.setMajorName("软件工程");
+        patchBackground.setEducation(patchEducation);
+        StudentProfileUpdateDTO patch = new StudentProfileUpdateDTO();
+        patch.setLearningBackground(patchBackground);
+
+        when(mapper.selectOne(any())).thenReturn(existing);
         when(mapper.updateById(any(StudentProfile.class))).thenReturn(1);
 
-        StudentProfile patch = new StudentProfile();
-        patch.setId(999L);
-        patch.setUserId(999L);
-        patch.setProfileVersion(99);
-        patch.setLearningBackground(Map.of(
-                "education", Map.of("major_name", "软件工程")
-        ));
-
-        StudentProfileServiceImpl service = new StudentProfileServiceImpl(mapper);
-        StudentProfile result = service.updateProfile(7L, patch);
+        StudentProfile result = service(mapper).updateProfile(7L, patch);
 
         assertEquals(10L, result.getId());
         assertEquals(7L, result.getUserId());
         assertEquals(4, result.getProfileVersion());
-        assertEquals("SOPHOMORE", nestedValue(result.getLearningBackground(), "education", "grade"));
-        assertEquals("软件工程", nestedValue(result.getLearningBackground(), "education", "major_name"));
+        assertEquals("SOPHOMORE", result.getLearningBackground().getEducation().getGrade());
+        assertEquals("软件工程", result.getLearningBackground().getEducation().getMajorName());
         assertEquals(new BigDecimal("14.29"), result.getProfileCompleteness());
         verify(mapper).updateById(result);
     }
 
     @Test
-    void initializesNullDimensionBeforeIncrementalMerge() {
+    void convertsSnakeCaseDimensionDeltaIntoStrongDto() {
         StudentProfileMapper mapper = mock(StudentProfileMapper.class);
         StudentProfile existing = emptyProfile(8L);
         existing.setId(11L);
         existing.setProfileVersion(1);
-        existing.setAbilityProfile(null);
-        when(mapper.selectByUserIdForUpdate(8L)).thenReturn(existing);
+        when(mapper.selectOne(any())).thenReturn(existing);
         when(mapper.updateById(any(StudentProfile.class))).thenReturn(1);
 
-        StudentProfileServiceImpl service = new StudentProfileServiceImpl(mapper);
-        StudentProfile result = service.updateProfileDimension(
-                8L,
+        StudentProfileDimensionUpdateDTO update = new StudentProfileDimensionUpdateDTO(
                 "ability_profile",
-                Map.of("overall_score", 72),
+                Map.of("overall_score", 72.0, "overall_level", "DEVELOPING"),
                 "完成能力测评"
         );
 
-        assertEquals(72, result.getAbilityProfile().get("overall_score"));
+        StudentProfile result = service(mapper).updateProfileDimension(8L, update);
+
+        assertEquals(72.0, result.getAbilityProfile().getOverallScore());
+        assertEquals("DEVELOPING", result.getAbilityProfile().getOverallLevel());
         assertEquals(2, result.getProfileVersion());
-        assertTrue(result.getDimensionMetadata().containsKey("ability_profile"));
     }
 
     @Test
-    void rejectsWholeBatchBeforeWritingWhenDimensionIsUnsupported() {
+    void rejectsWholeBatchBeforeReadingWhenDimensionIsUnsupported() {
         StudentProfileMapper mapper = mock(StudentProfileMapper.class);
-        StudentProfileServiceImpl service = new StudentProfileServiceImpl(mapper);
-
-        List<DimensionUpdateDTO> updates = List.of(
-                new DimensionUpdateDTO("learning_goals", Map.of("goal", "通过考试"), "用户明确目标"),
-                new DimensionUpdateDTO("unknown_dimension", Map.of("value", 1), "非法维度")
+        List<StudentProfileDimensionUpdateDTO> updates = List.of(
+                new StudentProfileDimensionUpdateDTO(
+                        "ability_profile",
+                        Map.of("overall_score", 80),
+                        "能力测评"
+                ),
+                new StudentProfileDimensionUpdateDTO(
+                        "unknown_dimension",
+                        Map.of("value", 1),
+                        "非法维度"
+                )
         );
 
-        assertThrows(BusinessException.class, () -> service.updateProfileDimensions(9L, updates));
-        verify(mapper, never()).selectByUserIdForUpdate(any());
+        assertThrows(BusinessException.class, () -> service(mapper).updateProfileDimensions(9L, updates));
+        verify(mapper, never()).selectOne(any());
         verify(mapper, never()).updateById(any(StudentProfile.class));
         verify(mapper, never()).insert(any(StudentProfile.class));
     }
 
     @Test
-    void initializationMergesOnboardingDataWithExistingProfile() {
+    void initializesStrongProfileDtosAndPreservesExistingBackground() {
         StudentProfileMapper mapper = mock(StudentProfileMapper.class);
         StudentProfile existing = emptyProfile(10L);
         existing.setId(12L);
         existing.setProfileVersion(2);
-        existing.setLearningBackground(new HashMap<>(Map.of("verified_level", "BASIC")));
-        when(mapper.selectByUserIdForUpdate(10L)).thenReturn(existing);
+
+        LearningBackgroundDTO currentBackground = new LearningBackgroundDTO();
+        LearningBackgroundDTO.PriorExperienceDTO priorExperience = new LearningBackgroundDTO.PriorExperienceDTO();
+        LearningBackgroundDTO.ProgrammingLanguageDTO javaExperience =
+                new LearningBackgroundDTO.ProgrammingLanguageDTO();
+        javaExperience.setVerifiedLevel("BASIC");
+        priorExperience.setProgrammingLanguages(Map.of("JAVA", javaExperience));
+        currentBackground.setPriorExperience(priorExperience);
+        existing.setLearningBackground(currentBackground);
+
+        when(mapper.selectOne(any())).thenReturn(existing);
         when(mapper.updateById(any(StudentProfile.class))).thenReturn(1);
 
         ProfileInitDTO dto = new ProfileInitDTO();
@@ -109,37 +128,44 @@ class StudentProfileServiceImplTest {
         dto.setGrade("sophomore");
         dto.setDirection("cs");
         dto.setGoal("competition");
+        dto.setGoalDetail("参加程序设计竞赛");
+        dto.setDailyStudyTime("1to2");
 
-        StudentProfileServiceImpl service = new StudentProfileServiceImpl(mapper);
-        StudentProfile result = service.initProfile(10L, dto);
+        StudentProfile result = service(mapper).initProfile(10L, dto);
 
-        assertEquals("BASIC", result.getLearningBackground().get("verified_level"));
-        assertEquals("undergraduate", result.getLearningBackground().get("identity_type"));
-        assertEquals("competition", result.getLearningGoals().get("primary_goal"));
+        assertEquals(
+                "BASIC",
+                result.getLearningBackground()
+                        .getPriorExperience()
+                        .getProgrammingLanguages()
+                        .get("JAVA")
+                        .getVerifiedLevel()
+        );
+        assertEquals("UNDERGRADUATE", result.getLearningBackground().getEducation().getEducationLevel());
+        assertEquals("SOPHOMORE", result.getLearningBackground().getEducation().getGrade());
+        assertEquals("CS", result.getLearningBackground().getEducation().getMajorCode());
+        assertEquals(630, result.getLearningBackground().getLearningConstraints().getWeeklyAvailableMinutes());
+
+        LearningGoalsDTO.GoalDTO goal = result.getLearningGoals()
+                .getGoals()
+                .get(result.getLearningGoals().getPrimaryGoalId());
+        assertEquals("COMPETITION", goal.getGoalType());
+        assertEquals("参加程序设计竞赛", goal.getTitle());
         assertEquals(3, result.getProfileVersion());
         assertEquals(new BigDecimal("28.57"), result.getProfileCompleteness());
         assertEquals(new BigDecimal("30.00"), result.getProfileConfidenceScore());
+    }
+
+    private StudentProfileServiceImpl service(StudentProfileMapper mapper) {
+        return new StudentProfileServiceImpl(mapper, new ObjectMapper());
     }
 
     private StudentProfile emptyProfile(Long userId) {
         StudentProfile profile = new StudentProfile();
         profile.setUserId(userId);
         profile.setProfileVersion(0);
-        profile.setLearningBackground(new HashMap<>());
-        profile.setLearningGoals(new HashMap<>());
-        profile.setAbilityProfile(new HashMap<>());
-        profile.setCommonMisconceptions(new HashMap<>());
-        profile.setLearningPreference(new HashMap<>());
-        profile.setMetacognitiveProfile(new HashMap<>());
-        profile.setSubjectProfiles(new HashMap<>());
-        profile.setDimensionMetadata(new HashMap<>());
-        profile.setProfileCompleteness(BigDecimal.ZERO);
-        profile.setProfileConfidenceScore(BigDecimal.ZERO);
+        profile.setProfileCompleteness(new BigDecimal("0.00"));
+        profile.setProfileConfidenceScore(new BigDecimal("0.00"));
         return profile;
-    }
-
-    @SuppressWarnings("unchecked")
-    private Object nestedValue(Map<String, Object> source, String parentKey, String childKey) {
-        return ((Map<String, Object>) source.get(parentKey)).get(childKey);
     }
 }

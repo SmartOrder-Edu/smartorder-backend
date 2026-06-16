@@ -6,10 +6,8 @@ import com.smartorder.edu.student.domain.dto.student.LearningBackgroundDTO;
 import com.smartorder.edu.student.domain.dto.student.LearningGoalsDTO;
 import com.smartorder.edu.student.domain.dto.student.LearningPreferenceDTO;
 import com.smartorder.edu.student.domain.dto.student.MetacognitiveProfileDTO;
-import com.smartorder.edu.student.domain.dto.student.dto.SubjectProfilesDTO.SubjectProfileDTO;
+import com.smartorder.edu.student.domain.dto.student.dto.SubjectProfilesDTO;
 import lombok.Data;
-
-import java.util.Map;
 
 /**
  * 学生画像更新请求。
@@ -31,5 +29,5 @@ public class StudentProfileUpdateDTO {
 
     private MetacognitiveProfileDTO metacognitiveProfile;
 
-    private Map<String, SubjectProfileDTO> subjectProfiles;
+    private SubjectProfilesDTO subjectProfiles;
 }

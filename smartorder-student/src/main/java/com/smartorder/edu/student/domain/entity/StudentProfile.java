@@ -3,6 +3,7 @@ package com.smartorder.edu.student.domain.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import com.smartorder.edu.student.domain.dto.student.*;
@@ -90,4 +91,7 @@ public class StudentProfile {
 
     /** 画像最近更新时间 */
     private LocalDateTime updatedAt;
+
+    @TableLogic(value = "0", delval = "1")
+    private Integer isDeleted;
 }

@@ -11,6 +11,7 @@ CREATE TABLE `student_profile`
     `metacognitive_profile`    json                   DEFAULT NULL COMMENT '元认知画像：学习规划、自我评估、反思、主动求助及信心校准能力',
     `subject_profiles`         json                   DEFAULT NULL COMMENT '各科目画像集合：包含科目目标、知识掌握、易错点、科目偏好、学习行为和当前状态',
     `dimension_metadata`       json                   DEFAULT NULL COMMENT '各全局画像维度的数据来源、证据数量、置信度、更新时间及有效期限',
+    `current_learning_state`   json                   DEFAULT NULL COMMENT '当前学习状态',
     `profile_summary`          text COMMENT '根据结构化画像生成的自然语言摘要，仅作为大模型上下文缓存',
     `profile_completeness`     decimal(5, 2) NOT NULL DEFAULT '0.00' COMMENT '整份学生画像完整度，范围0到100',
     `profile_confidence_score` decimal(5, 2) NOT NULL DEFAULT '0.00' COMMENT '整份学生画像可信度，范围0到100',
@@ -18,6 +19,7 @@ CREATE TABLE `student_profile`
     `last_assessed_at`         datetime               DEFAULT NULL COMMENT '最近一次系统性重新评估画像的时间',
     `created_at`               datetime      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '画像创建时间',
     `updated_at`               datetime      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '画像最近更新时间',
+    `is_deleted`               int                    DEFAULT NULL COMMENT '逻辑删除',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_student_profile_user` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='学生动态学习画像表';
+) ENGINE=InnoDB AUTO_INCREMENT=2066499184551948290 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='学生动态学习画像表';

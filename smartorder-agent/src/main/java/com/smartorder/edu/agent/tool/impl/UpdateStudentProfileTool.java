@@ -3,8 +3,8 @@ package com.smartorder.edu.agent.tool.impl;
 import com.smartorder.edu.agent.tool.ToolCategory;
 import com.smartorder.edu.agent.tool.ToolHandler;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
+import com.smartorder.edu.student.domain.dto.StudentProfileDimensionUpdateDTO;
 import com.smartorder.edu.student.service.IStudentProfileService;
-import com.smartorder.edu.student.service.IStudentProfileService.DimensionUpdateDTO;
 import dev.langchain4j.model.output.structured.Description;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +19,7 @@ import java.util.Set;
 /**
  * 更新学生画像工具 — 增量更新指定维度
  *
- * 当 Agent 从对话中发现学生的新信息（薄弱点、偏好、掌握程度等）时调用。
+ * 当 Agent 从对话中发现学生的新信息（学习背景、目标、能力、偏好等）时调用。
  * 支持深度合并：新数据与现有数据合并，嵌套 Map 递归合并。
  *
  * @author mq
@@ -31,51 +31,53 @@ public class UpdateStudentProfileTool implements ToolHandler {
 
     private final IStudentProfileService profileService;
 
-    /** 支持的维度名白名单 */
+    /**
+     * 支持的维度名白名单（snake_case，与 StudentProfile 实体字段一一对应）
+     */
     private static final Set<String> VALID_DIMENSIONS = Set.of(
-            "basic_profile",
-            "knowledge_profile",
+            "learning_background",
+            "learning_goals",
             "ability_profile",
-            "preference_profile",
-            "cognitive_profile",
-            "weakness_profile",
-            "behavior_profile",
-            "emotion_profile",
-            "full_profile_snapshot"
+            "common_misconceptions",
+            "learning_preference",
+            "metacognitive_profile",
+            "subject_profiles"
     );
 
     private static final double MIN_CONFIDENCE = 0.8;
 
+    /**
+     * 各维度的证据信号词，用于校验用户消息中是否包含与该维度相关的明确自述
+     */
     private static final Map<String, List<String>> DIMENSION_EVIDENCE_SIGNALS = Map.of(
-            "basic_profile", List.of(
+            "learning_background", List.of(
                     "我是", "我的专业", "我的年级", "我目前是", "我现在是", "我在读",
                     "我准备考研", "准备考研", "我计划考研", "我打算考研",
-                    "我的学习目标", "我的目标是"
+                    "我的学历", "我的基础", "编程经验", "学过"
             ),
-            "knowledge_profile", List.of(
+            "learning_goals", List.of(
+                    "我的学习目标", "我的目标是", "我想学", "我计划", "我打算",
+                    "我要考", "我想掌握", "我希望", "截止时间", "每天学"
+            ),
+            "ability_profile", List.of(
+                    "我擅长", "我不擅长", "我的能力", "我能", "我不能",
+                    "理解能力", "分析能力", "编程能力", "调试能力"
+            ),
+            "common_misconceptions", List.of(
                     "我不会", "我不理解", "我不懂", "我总是", "我一直", "搞不懂",
-                    "连续做错", "我已经掌握", "我熟悉", "我了解"
+                    "连续做错", "经常做错", "我的薄弱点", "易错", "反复错"
             ),
-            "ability_profile", List.of("我擅长", "我不擅长", "我的能力", "我能", "我不能"),
-            "preference_profile", List.of(
-                    "我喜欢", "我更喜欢", "我偏好", "对我来说更容易", "我习惯"
+            "learning_preference", List.of(
+                    "我喜欢", "我更喜欢", "我偏好", "对我来说更容易", "我习惯",
+                    "看视频", "看文档", "做练习", "听课", "讲解方式"
             ),
-            "cognitive_profile", List.of(
-                    "我喜欢", "我更喜欢", "对我来说更容易", "我习惯", "我理解得更快"
+            "metacognitive_profile", List.of(
+                    "我觉得", "我反思", "我总结", "我的学习方法", "我怎么学",
+                    "自我评估", "我的规划", "我的信心", "求助"
             ),
-            "weakness_profile", List.of(
-                    "我不会", "我不理解", "我不懂", "我总是", "我一直", "搞不懂",
-                    "我没学会", "我没有学会", "没有怎么学会", "没怎么学", "基础不好", "基础薄弱",
-                    "连续做错", "经常做错", "我的薄弱点"
-            ),
-            "behavior_profile", List.of(
-                    "我通常", "我经常", "我一般", "每天", "学习效率", "我习惯"
-            ),
-            "emotion_profile", List.of(
-                    "我紧张", "我焦虑", "我害怕", "我担心", "压力很大", "一到考试"
-            ),
-            "full_profile_snapshot", List.of(
-                    "完整画像", "全部画像", "所有维度", "综合画像", "整体画像"
+            "subject_profiles", List.of(
+                    "这门课", "这个科目", "这门学科", "高数", "线代", "概率",
+                    "数据结构", "操作系统", "计算机网络"
             )
     );
 
@@ -88,9 +90,10 @@ public class UpdateStudentProfileTool implements ToolHandler {
     public String description() {
         return "仅在当前用户消息中存在明确自述证据时，更新学生画像的指定维度（支持同时更新多个维度）。"
                 + "普通提问和一次性格式要求不属于画像证据。"
-                + "支持的维度：basic_profile, knowledge_profile, ability_profile, "
-                + "preference_profile, cognitive_profile, weakness_profile, behavior_profile, emotion_profile, "
-                + "full_profile_snapshot（完整画像快照，可单独更新或由其他维度变更自动同步）。"
+                + "支持的维度：learning_background（学习背景）, learning_goals（学习目标）, "
+                + "ability_profile（综合能力）, common_misconceptions（共性易错模式）, "
+                + "learning_preference（学习偏好）, metacognitive_profile（元认知画像）, "
+                + "subject_profiles（各科目画像集合）。"
                 + "数据会与现有画像深度合并，不会覆盖其他维度。"
                 + "每项必须提供当前用户原话 evidence、0.8 以上的 confidence 和明确 reason。"
                 + "如果一次对话中发现多个维度的新信息，请在 dimensionUpdate 数组中传入多项，一次调用完成所有更新。";
@@ -107,7 +110,6 @@ public class UpdateStudentProfileTool implements ToolHandler {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public Object execute(Object request, ToolInvokeContext context) {
         UpdateStudentProfileRequest req = (UpdateStudentProfileRequest) request;
         Long userId = context.getUserId();
@@ -122,7 +124,7 @@ public class UpdateStudentProfileTool implements ToolHandler {
         }
 
         // 先校验整批数据，再执行任何画像写入，避免部分成功。
-        List<DimensionUpdateDTO> dtoList = new ArrayList<>();
+        List<StudentProfileDimensionUpdateDTO> dtoList = new ArrayList<>();
         List<String> updatedDimensions = new ArrayList<>();
         for (UpdateStudentProfileRequest.DimensionUpdate item : updates) {
             if (item == null) {
@@ -170,7 +172,7 @@ public class UpdateStudentProfileTool implements ToolHandler {
                 return reject("维度「" + dimensionKey + "」缺少与画像维度匹配的明确自述证据");
             }
 
-            dtoList.add(new DimensionUpdateDTO(dimensionKey, delta, reason));
+            dtoList.add(new StudentProfileDimensionUpdateDTO(dimensionKey, delta, reason));
             updatedDimensions.add(dimensionKey);
         }
 
@@ -178,11 +180,8 @@ public class UpdateStudentProfileTool implements ToolHandler {
 
         try {
             if (dtoList.size() == 1) {
-                // 单维度走原有逻辑
-                DimensionUpdateDTO single = dtoList.get(0);
-                profileService.updateProfileDimension(userId, single.dimensionKey(), single.delta(), single.reason());
+                profileService.updateProfileDimension(userId, dtoList.get(0));
             } else {
-                // 多维度批量更新：一次 DB 读写，版本号只递增一次
                 profileService.updateProfileDimensions(userId, dtoList);
             }
             return Map.of(
@@ -216,13 +215,14 @@ public class UpdateStudentProfileTool implements ToolHandler {
 
         @Data
         public static class DimensionUpdate {
-            @Description("画像维度名称，可选值：basic_profile, knowledge_profile, ability_profile, "
-                    + "preference_profile, cognitive_profile, weakness_profile, behavior_profile, emotion_profile, "
-                    + "full_profile_snapshot（完整画像快照）")
+            @Description("画像维度名称，可选值：learning_background, learning_goals, ability_profile, "
+                    + "common_misconceptions, learning_preference, metacognitive_profile, "
+                    + "subject_profiles")
             private String dimensionKey;
 
             @Description("该维度的增量数据 JSON 对象，将与现有数据深度合并。"
-                    + "例如 {\"weak_points\": [{\"topic\": \"进程与线程\", \"weakness_type\": \"concept_confusion\"}]}")
+                    + "例如 {\"patterns\":{\"PATTERN-001\":{\"title\":\"边界条件遗漏\","
+                    + "\"description\":\"用户反复遗漏循环边界\"}}}")
             private Map<String, Object> delta;
 
             @Description("必须原样摘自当前用户消息的明确自述证据，不能总结、改写或引用助手回复")

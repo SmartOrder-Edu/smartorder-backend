@@ -1,8 +1,15 @@
 package com.smartorder.edu.student.domain.dto.student.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.smartorder.edu.student.domain.dto.student.CommonMisconceptionsDTO;
+import com.smartorder.edu.student.domain.dto.student.CurrentLearningStateDTO;
+import com.smartorder.edu.student.domain.dto.student.KnowledgeMasteryDTO;
+import com.smartorder.edu.student.domain.dto.student.LearningBehaviorDTO;
 import lombok.Data;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 科目画像集合 DTO
@@ -14,11 +21,11 @@ import java.util.List;
  * @since 2026-06-15
  */
 @Data
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class SubjectProfilesDTO {
 
     /** 科目画像详情，key 为科目代码 */
-    // 注意：该 JSON 顶层是动态 key 的对象，在业务层通常以 Map<String, SubjectProfileDTO> 接收
-    // 此处仅定义值对象结构，外层 Map 由调用方处理
+    private Map<String, SubjectProfileDTO> profiles = new LinkedHashMap<>();
 
     // ====== 内部 DTO ======
 
@@ -43,20 +50,20 @@ public class SubjectProfilesDTO {
         /** 科目级目标 */
         private SubjectGoalsDTO subjectGoals;
 
-        /** 科目级知识掌握度（结构参见 KnowledgeMasteryDTO） */
-        private Object knowledgeMastery;
+        /** 科目级知识掌握度 */
+        private KnowledgeMasteryDTO knowledgeMastery;
 
-        /** 科目级易错模式（结构参见 CommonMisconceptionsDTO） */
-        private Object subjectMisconceptions;
+        /** 科目级易错模式 */
+        private CommonMisconceptionsDTO subjectMisconceptions;
 
         /** 科目级学习偏好覆盖 */
         private LearningPreferenceOverrideDTO learningPreferenceOverride;
 
-        /** 科目级学习行为（结构参见 LearningBehaviorDTO） */
-        private Object learningBehavior;
+        /** 科目级学习行为 */
+        private LearningBehaviorDTO learningBehavior;
 
-        /** 科目级当前学习状态（结构参见 CurrentLearningStateDTO） */
-        private Object currentLearningState;
+        /** 科目级当前学习状态 */
+        private CurrentLearningStateDTO currentLearningState;
 
         /** 科目画像元数据 */
         private SubjectMetadataDTO metadata;
