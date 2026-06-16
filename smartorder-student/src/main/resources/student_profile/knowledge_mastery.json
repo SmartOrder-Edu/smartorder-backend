@@ -1,0 +1,105 @@
+{
+  "overall_mastery_score": 63.5,
+  "overall_mastery_level": "DEVELOPING",
+  "coverage_rate": 0.42,
+  "trend": "IMPROVING",
+  "current_chapter_id": "DS-LINEAR-LIST",
+  "chapter_summaries": {
+    "DS-LINEAR-LIST": {
+      "chapter_id": "DS-LINEAR-LIST",
+      "chapter_name": "线性表",
+      "mastery_score": 68,
+      "mastery_level": "DEVELOPING",
+      "completed_knowledge_point_count": 4,
+      "total_knowledge_point_count": 7,
+      "weak_knowledge_point_ids": [
+        "DS-LINKED-LIST-DELETE"
+      ]
+    }
+  },
+  "knowledge_points": {
+    "DS-LINKED-LIST-DELETE": {
+      "knowledge_point_id": "DS-LINKED-LIST-DELETE",
+      "knowledge_point_name_cache": "单链表删除操作",
+      "chapter_id": "DS-LINEAR-LIST",
+      "knowledge_type": "PROCEDURE_AND_IMPLEMENTATION",
+      "importance": "HIGH",
+      "prerequisite_knowledge_point_ids": [
+        "DS-LINKED-LIST-BASIC",
+        "DS-REFERENCE-BASIC"
+      ],
+      "mastery_score": 58.5,
+      "mastery_level": "DEVELOPING",
+      "cognitive_mastery": {
+        "remember": 88,
+        "understand": 74,
+        "apply": 61,
+        "analyze": 52,
+        "implement": 48
+      },
+      "independence_level": "WITH_HINT",
+      "prerequisite_readiness": {
+        "status": "PARTIALLY_READY",
+        "unsatisfied_knowledge_point_ids": [
+          "DS-REFERENCE-BASIC"
+        ]
+      },
+      "assessment_statistics": {
+        "attempt_count": 12,
+        "correct_count": 6,
+        "partial_correct_count": 2,
+        "wrong_count": 4,
+        "accuracy_rate": 0.58,
+        "independent_correct_rate": 0.33,
+        "average_response_seconds": 185,
+        "highest_completed_difficulty": "MEDIUM"
+      },
+      "retention": {
+        "last_learned_at": "2026-06-13T14:00:00Z",
+        "last_practiced_at": "2026-06-15T17:40:00Z",
+        "next_review_at": "2026-06-18T14:00:00Z",
+        "forgetting_risk": "MEDIUM",
+        "retention_score": 66
+      },
+      "misconceptions": {
+        "SUB-MIS-DS-001": {
+          "misconception_id": "SUB-MIS-DS-001",
+          "title": "删除节点前未保存前驱或后继引用",
+          "status": "ACTIVE",
+          "severity": "HIGH",
+          "confidence": 0.92,
+          "evidence_ids": [
+            "code_eval_205",
+            "answer_881"
+          ]
+        }
+      },
+      "confidence": 0.9,
+      "evidence_ids": [
+        "answer_881",
+        "quiz_ds_006",
+        "code_eval_205"
+      ],
+      "first_learned_at": "2026-06-10T10:00:00Z",
+      "last_updated_at": "2026-06-15T18:30:00Z"
+    }
+  },
+  "metadata": {
+    "schema_version": "1.0",
+    "confidence": 0.87,
+    "completeness": 76,
+    "source_types": [
+      "QUIZ_RESULT",
+      "CODE_EVALUATION",
+      "SYSTEM_DERIVED"
+    ],
+    "evidence_ids": [
+      "quiz_ds_006",
+      "code_eval_205"
+    ],
+    "last_updated_at": "2026-06-15T18:30:00Z",
+    "updated_by": "MASTERY_AGENT",
+    "update_reason": "完成单链表删除专项练习后更新掌握度",
+    "valid_until": "2026-06-22T18:30:00Z"
+  }
+}

@@ -6,6 +6,9 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * 学生端题库提示词加载器
+ */
 @Component
 public class StudentPromptFileLoader {
 

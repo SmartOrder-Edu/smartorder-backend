@@ -1,0 +1,50 @@
+{
+  "DATA_STRUCTURES": {
+    "subject_id": "DATA_STRUCTURES",
+    "subject_name_cache": "数据结构",
+    "subject_status": "ACTIVE",
+    "profile_version": 12,
+    "subject_goals": {
+      "goal_ids": [
+        "GOAL-DS-001"
+      ]
+    },
+    "knowledge_mastery": {},
+    "subject_misconceptions": {},
+    "learning_preference_override": {
+      "preferred_resource_types": [
+        "DIAGRAM",
+        "CODE_TRACE",
+        "CODE_EXAMPLE"
+      ]
+    },
+    "learning_behavior": {},
+    "current_learning_state": {},
+    "metadata": {
+      "confidence": 0.88,
+      "completeness": 84,
+      "last_updated_at": "2026-06-15T18:30:00Z",
+      "last_assessed_at": "2026-06-15T18:30:00Z"
+    }
+  },
+  "JAVA_PROGRAMMING": {
+    "subject_id": "JAVA_PROGRAMMING",
+    "subject_name_cache": "Java程序设计",
+    "subject_status": "PAUSED",
+    "profile_version": 4,
+    "subject_goals": {
+      "goal_ids": []
+    },
+    "knowledge_mastery": {},
+    "subject_misconceptions": {},
+    "learning_preference_override": {},
+    "learning_behavior": {},
+    "current_learning_state": {},
+    "metadata": {
+      "confidence": 0.7,
+      "completeness": 46,
+      "last_updated_at": "2026-05-20T10:00:00Z",
+      "last_assessed_at": "2026-05-20T10:00:00Z"
+    }
+  }
+}

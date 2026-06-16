@@ -1,0 +1,112 @@
+{
+  "resource_preferences": {
+    "DIAGRAM": {
+      "resource_type": "DIAGRAM",
+      "declared_preference": "HIGH",
+      "observed_effectiveness_score": 88,
+      "selection_rate": 0.74,
+      "completion_rate": 0.86,
+      "post_learning_accuracy_rate": 0.82,
+      "confidence": 0.91,
+      "evidence_ids": [
+        "msg_10101",
+        "behavior_stat_201"
+      ]
+    },
+    "CODE_EXAMPLE": {
+      "resource_type": "CODE_EXAMPLE",
+      "declared_preference": "HIGH",
+      "observed_effectiveness_score": 84,
+      "selection_rate": 0.81,
+      "completion_rate": 0.78,
+      "post_learning_accuracy_rate": 0.8,
+      "confidence": 0.88,
+      "evidence_ids": [
+        "behavior_stat_202"
+      ]
+    },
+    "VIDEO": {
+      "resource_type": "VIDEO",
+      "declared_preference": "MEDIUM",
+      "observed_effectiveness_score": 62,
+      "selection_rate": 0.45,
+      "completion_rate": 0.52,
+      "post_learning_accuracy_rate": 0.65,
+      "confidence": 0.79,
+      "evidence_ids": [
+        "behavior_stat_203"
+      ]
+    }
+  },
+  "explanation_preferences": {
+    "preferred_sequence": "EXAMPLE_THEN_PRINCIPLE",
+    "content_granularity": "MEDIUM",
+    "preferred_representation": [
+      "STATE_DIAGRAM",
+      "CODE_TRACE",
+      "PSEUDOCODE"
+    ],
+    "preferred_language_style": "CONCISE_WITH_EXAMPLES",
+    "analogy_preference": "MODERATE"
+  },
+  "practice_preferences": {
+    "practice_timing": "LEARN_THEN_IMMEDIATE_PRACTICE",
+    "preferred_question_types": [
+      "CODE_COMPLETION",
+      "TRACE_EXECUTION",
+      "IMPLEMENTATION"
+    ],
+    "preferred_difficulty_progression": "GRADUAL",
+    "preferred_questions_per_session": 5,
+    "allow_hints": true,
+    "preferred_hint_style": "PROGRESSIVE_HINT"
+  },
+  "feedback_preferences": {
+    "feedback_timing": "IMMEDIATE",
+    "feedback_detail_level": "DETAILED",
+    "show_correct_answer_immediately": false,
+    "show_error_cause": true,
+    "show_improvement_suggestion": true
+  },
+  "interaction_preferences": {
+    "preferred_interaction_mode": "GUIDED_DIALOGUE",
+    "allow_agent_proactive_reminder": true,
+    "preferred_reminder_frequency": "MODERATE",
+    "preferred_questioning_style": "SOCRATIC_WITH_HINT"
+  },
+  "subject_overrides": {
+    "DATA_STRUCTURES": {
+      "preferred_resource_types": [
+        "DIAGRAM",
+        "CODE_TRACE",
+        "CODE_EXAMPLE"
+      ],
+      "preferred_explanation_sequence": "VISUALIZE_THEN_CODE",
+      "reason": "链表、树和图结构需要先建立状态变化的可视化理解",
+      "confidence": 0.94,
+      "evidence_ids": [
+        "msg_10101",
+        "behavior_stat_201"
+      ]
+    }
+  },
+  "metadata": {
+    "schema_version": "1.0",
+    "confidence": 0.88,
+    "completeness": 86,
+    "source_types": [
+      "USER_EXPLICIT",
+      "LEARNING_BEHAVIOR",
+      "RESOURCE_FEEDBACK"
+    ],
+    "evidence_ids": [
+      "msg_10101",
+      "behavior_stat_201",
+      "behavior_stat_202"
+    ],
+    "last_updated_at": "2026-06-15T18:30:00Z",
+    "updated_by": "RECOMMENDATION_AGENT",
+    "update_reason": "结合用户声明和不同资源的实际学习效果更新",
+    "valid_until": "2026-09-15T18:30:00Z"
+  }
+}

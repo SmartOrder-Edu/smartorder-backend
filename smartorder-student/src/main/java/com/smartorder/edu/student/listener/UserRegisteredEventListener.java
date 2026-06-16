@@ -9,10 +9,9 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.util.HashMap;
 
 /**
- * 监听用户注册事件，始终创建初始（空）学生画像，待引导页补全
+ * 注册后创建空学生画像，后续由引导对话、测评和学习行为持续补全。
  *
  * @author 谢光湘
  * @since 2026-05-18
@@ -31,18 +30,9 @@ public class UserRegisteredEventListener {
         StudentProfile profile = new StudentProfile();
         profile.setUserId(event.getUserId());
         profile.setProfileVersion(0);
-        profile.setConfidenceScore(BigDecimal.ZERO);
+        profile.setProfileCompleteness(new BigDecimal("0.00"));
+        profile.setProfileConfidenceScore(new BigDecimal("0.00"));
         profile.setLastUpdateReason("注册创建，待引导页初始化");
-
-        // 8 个维度均初始化为空 Map
-        profile.setBasicProfile(new HashMap<>());
-        profile.setKnowledgeProfile(new HashMap<>());
-        profile.setAbilityProfile(new HashMap<>());
-        profile.setPreferenceProfile(new HashMap<>());
-        profile.setCognitiveProfile(new HashMap<>());
-        profile.setWeaknessProfile(new HashMap<>());
-        profile.setBehaviorProfile(new HashMap<>());
-        profile.setEmotionProfile(new HashMap<>());
 
         studentProfileService.saveOrUpdate(profile);
     }

@@ -1,0 +1,621 @@
+{
+  "learning_background": {
+    "education": {
+      "educationLevel": "UNDERGRADUATE",
+      "grade": "SOPHOMORE",
+      "majorCode": "SOFTWARE_ENGINEERING",
+      "majorName": "软件工程",
+      "enrollmentYear": 2024
+    },
+    "priorExperience": {
+      "completedSubjects": {
+        "JAVA_PROGRAMMING": {
+          "subjectId": "JAVA_PROGRAMMING",
+          "subjectName": "Java程序设计",
+          "completionStatus": "COMPLETED",
+          "selfReportedLevel": "INTERMEDIATE",
+          "verifiedLevel": "BASIC",
+          "lastStudiedAt": "2026-01-10T00:00:00Z",
+          "confidence": 0.85,
+          "evidenceIds": ["msg_10001"]
+        }
+      },
+      "programmingLanguages": {
+        "JAVA": {
+          "selfReportedLevel": "INTERMEDIATE",
+          "verifiedLevel": "BASIC",
+          "experienceMonths": 14,
+          "confidence": 0.82,
+          "evidenceIds": ["msg_10001"]
+        },
+        "PYTHON": {
+          "selfReportedLevel": "BEGINNER",
+          "verifiedLevel": null,
+          "experienceMonths": 2,
+          "confidence": 0.7,
+          "evidenceIds": ["msg_10002"]
+        }
+      },
+      "prerequisiteFoundation": {
+        "PROGRAMMING_BASICS": {
+          "status": "SATISFIED",
+          "score": 72,
+          "confidence": 0.86,
+          "evidenceIds": ["quiz_programming_basic_01"]
+        },
+        "DISCRETE_MATHEMATICS": {
+          "status": "PARTIALLY_SATISFIED",
+          "score": 58,
+          "confidence": 0.74,
+          "evidenceIds": ["msg_10003", "quiz_math_001"]
+        }
+      }
+    },
+    "learningConstraints": {
+      "weeklyAvailableMinutes": 600,
+      "preferredStudyPeriods": ["EVENING"],
+      "maxSessionMinutes": 45,
+      "deviceTypes": ["PC", "MOBILE"],
+      "networkCondition": "STABLE",
+      "accessibilityNeeds": []
+    },
+    "currentLevelDetail": "学过一点数据结构，对链表和树有初步了解",
+    "selfDescription": "大二软件工程学生，希望通过期末考试",
+    "metadata": {
+      "schemaVersion": "1.0",
+      "confidence": 0.88,
+      "completeness": 85,
+      "sourceTypes": ["USER_EXPLICIT", "QUIZ_RESULT", "CODE_EVALUATION"],
+      "evidenceIds": ["msg_10001", "msg_10002", "quiz_programming_basic_01"],
+      "lastUpdatedAt": "2026-06-15T18:30:00Z",
+      "updatedBy": "PROFILE_AGENT",
+      "updateReason": "首次画像构建并完成基础能力验证",
+      "validUntil": null
+    }
+  },
+  "learning_goals": {
+    "primaryGoalId": "GOAL-DS-001",
+    "goals": {
+      "GOAL-DS-001": {
+        "goalId": "GOAL-DS-001",
+        "scope": "SUBJECT",
+        "subjectId": "DATA_STRUCTURES",
+        "title": "八周内系统掌握数据结构",
+        "description": "掌握线性表、栈、队列、树、图、查找和排序，并能够独立完成基础算法实现",
+        "goalType": "COURSE_MASTERY",
+        "targetLevel": "PROFICIENT",
+        "targetKnowledgePointIds": ["DS-ARRAY", "DS-LINKED-LIST", "DS-STACK", "DS-QUEUE", "DS-TREE", "DS-GRAPH", "DS-SEARCH", "DS-SORT"],
+        "measurableCriteria": [
+          {
+            "metric": "OVERALL_MASTERY_SCORE",
+            "operator": "GREATER_THAN_OR_EQUAL",
+            "targetValue": 80
+          },
+          {
+            "metric": "EXERCISE_ACCURACY_RATE",
+            "operator": "GREATER_THAN_OR_EQUAL",
+            "targetValue": 0.8
+          }
+        ],
+        "priority": "HIGH",
+        "status": "IN_PROGRESS",
+        "startAt": "2026-06-15T00:00:00Z",
+        "deadline": "2026-08-10T23:59:59Z",
+        "weeklyTimeBudgetMinutes": 600,
+        "progress": {
+          "progressPercent": 28.5,
+          "completedCriteriaCount": 0,
+          "totalCriteriaCount": 3,
+          "calculationMethod": "SYSTEM_DERIVED"
+        },
+        "confidence": 1.0,
+        "evidenceIds": ["msg_10020"],
+        "createdAt": "2026-06-15T18:00:00Z",
+        "updatedAt": "2026-06-15T18:30:00Z"
+      }
+    },
+    "metadata": {
+      "schemaVersion": "1.0",
+      "confidence": 1.0,
+      "completeness": 95,
+      "sourceTypes": ["USER_EXPLICIT", "SYSTEM_DERIVED"],
+      "evidenceIds": ["msg_10020"],
+      "lastUpdatedAt": "2026-06-15T18:30:00Z",
+      "updatedBy": "PROFILE_AGENT",
+      "updateReason": "用户明确提出八周数据结构学习目标",
+      "validUntil": "2026-08-10T23:59:59Z"
+    }
+  },
+  "ability_profile": {
+    "overallScore": 64.8,
+    "overallLevel": "DEVELOPING",
+    "abilities": {
+      "CONCEPT_UNDERSTANDING": {
+        "abilityCode": "CONCEPT_UNDERSTANDING",
+        "abilityName": "概念理解",
+        "score": 76,
+        "level": "PROFICIENT",
+        "trend": "IMPROVING",
+        "strengthSummary": "能够理解栈和队列的基本定义及操作约束",
+        "improvementFocus": "需要进一步理解抽象数据类型与具体实现之间的区别",
+        "confidence": 0.88,
+        "evidenceIds": ["quiz_ds_001", "dialogue_201"],
+        "lastEvaluatedAt": "2026-06-15T18:20:00Z"
+      },
+      "ABSTRACTION_MODELING": {
+        "abilityCode": "ABSTRACTION_MODELING",
+        "abilityName": "抽象建模",
+        "score": 62,
+        "level": "DEVELOPING",
+        "trend": "STABLE",
+        "strengthSummary": "可以将简单业务场景映射为数组、栈或队列",
+        "improvementFocus": "复杂场景下的数据结构选型依据不足",
+        "confidence": 0.76,
+        "evidenceIds": ["case_eval_002"],
+        "lastEvaluatedAt": "2026-06-15T18:20:00Z"
+      },
+      "CODING_IMPLEMENTATION": {
+        "abilityCode": "CODING_IMPLEMENTATION",
+        "abilityName": "代码实现",
+        "score": 70,
+        "level": "DEVELOPING",
+        "trend": "IMPROVING",
+        "strengthSummary": "能够使用Java实现数组和基础链表操作",
+        "improvementFocus": "指针更新顺序和空值处理需要加强",
+        "confidence": 0.9,
+        "evidenceIds": ["code_eval_205", "code_eval_208"],
+        "lastEvaluatedAt": "2026-06-15T18:20:00Z"
+      },
+      "COMPLEXITY_ANALYSIS": {
+        "abilityCode": "COMPLEXITY_ANALYSIS",
+        "abilityName": "复杂度分析",
+        "score": 52,
+        "level": "BEGINNER",
+        "trend": "IMPROVING",
+        "strengthSummary": "能够识别单层循环的时间复杂度",
+        "improvementFocus": "嵌套循环、递归和均摊复杂度判断不稳定",
+        "confidence": 0.86,
+        "evidenceIds": ["quiz_complexity_001"],
+        "lastEvaluatedAt": "2026-06-15T18:20:00Z"
+      }
+    },
+    "strengthAbilityCodes": ["CONCEPT_UNDERSTANDING", "CODING_IMPLEMENTATION"],
+    "developmentPriorityCodes": ["COMPLEXITY_ANALYSIS", "DEBUGGING", "KNOWLEDGE_TRANSFER"],
+    "metadata": {
+      "schemaVersion": "1.0",
+      "confidence": 0.83,
+      "completeness": 88,
+      "sourceTypes": ["QUIZ_RESULT", "CODE_EVALUATION", "DIALOGUE_INFERENCE"],
+      "evidenceIds": ["quiz_ds_001", "code_eval_205", "case_eval_005"],
+      "lastUpdatedAt": "2026-06-15T18:30:00Z",
+      "updatedBy": "ASSESSMENT_AGENT",
+      "updateReason": "根据练习、代码评测和案例任务重新评估综合能力",
+      "validUntil": "2026-07-15T18:30:00Z"
+    }
+  },
+  "common_misconceptions": {
+    "patterns": {
+      "MIS-BOUNDARY-001": {
+        "misconceptionId": "MIS-BOUNDARY-001",
+        "title": "容易忽略边界条件",
+        "category": "BOUNDARY_CONDITION_OMISSION",
+        "scope": "CROSS_SUBJECT",
+        "description": "在算法和代码实现过程中，容易遗漏空集合、首节点、尾节点和单元素情况",
+        "typicalSymptoms": [
+          "删除链表头节点时出现空指针异常",
+          "数组遍历边界使用小于等于导致越界",
+          "队列为空时仍执行出队操作"
+        ],
+        "affectedSubjectIds": ["DATA_STRUCTURES", "JAVA_PROGRAMMING"],
+        "affectedKnowledgePointIds": ["DS-LINKED-LIST-DELETE", "DS-ARRAY-TRAVERSAL", "DS-QUEUE-DEQUEUE"],
+        "rootCauseHypotheses": [
+          {
+            "causeCode": "NO_EDGE_CASE_CHECKLIST",
+            "description": "编码前没有主动列出边界用例",
+            "probability": 0.82
+          }
+        ],
+        "severity": "HIGH",
+        "frequency": "FREQUENT",
+        "persistence": "PERSISTENT",
+        "status": "ACTIVE",
+        "occurrenceStatistics": {
+          "countLast7Days": 4,
+          "countLast30Days": 9,
+          "firstDetectedAt": "2026-05-22T10:00:00Z",
+          "lastObservedAt": "2026-06-15T17:40:00Z"
+        },
+        "intervention": {
+          "strategyCodes": ["EDGE_CASE_CHECKLIST", "TRACE_WITH_DIAGRAM", "BOUNDARY_TEST_FIRST"],
+          "recommendedActions": [
+            "每次编码前列出空、单元素、首位置和尾位置四类测试",
+            "使用指针变化图逐步模拟链表操作"
+          ],
+          "successCriteria": [
+            {
+              "metric": "BOUNDARY_ERROR_COUNT_LAST_10_TASKS",
+              "targetValue": 1,
+              "operator": "LESS_THAN_OR_EQUAL"
+            }
+          ]
+        },
+        "confidence": 0.9,
+        "evidenceIds": ["answer_881", "code_eval_205", "code_eval_208"],
+        "updatedAt": "2026-06-15T18:30:00Z"
+      }
+    },
+    "metadata": {
+      "schemaVersion": "1.0",
+      "confidence": 0.9,
+      "completeness": 80,
+      "sourceTypes": ["QUIZ_RESULT", "CODE_EVALUATION", "SYSTEM_DERIVED"],
+      "evidenceIds": ["answer_881", "code_eval_205", "code_eval_208"],
+      "lastUpdatedAt": "2026-06-15T18:30:00Z",
+      "updatedBy": "DIAGNOSIS_AGENT",
+      "updateReason": "连续多次出现链表、数组和队列边界错误",
+      "validUntil": "2026-07-15T18:30:00Z"
+    }
+  },
+  "learning_preference": {
+    "resourcePreferences": {
+      "DIAGRAM": {
+        "resourceType": "DIAGRAM",
+        "declaredPreference": "HIGH",
+        "observedEffectivenessScore": 88,
+        "selectionRate": 0.74,
+        "completionRate": 0.86,
+        "postLearningAccuracyRate": 0.82,
+        "confidence": 0.91,
+        "evidenceIds": ["msg_10101", "behavior_stat_201"]
+      },
+      "CODE_EXAMPLE": {
+        "resourceType": "CODE_EXAMPLE",
+        "declaredPreference": "HIGH",
+        "observedEffectivenessScore": 84,
+        "selectionRate": 0.81,
+        "completionRate": 0.78,
+        "postLearningAccuracyRate": 0.8,
+        "confidence": 0.88,
+        "evidenceIds": ["behavior_stat_202"]
+      }
+    },
+    "explanationPreferences": {
+      "preferredSequence": "EXAMPLE_THEN_PRINCIPLE",
+      "contentGranularity": "MEDIUM",
+      "preferredRepresentation": ["STATE_DIAGRAM", "CODE_TRACE", "PSEUDOCODE"],
+      "preferredLanguageStyle": "CONCISE_WITH_EXAMPLES",
+      "analogyPreference": "MODERATE"
+    },
+    "practicePreferences": {
+      "practiceTiming": "LEARN_THEN_IMMEDIATE_PRACTICE",
+      "preferredQuestionTypes": ["CODE_COMPLETION", "TRACE_EXECUTION", "IMPLEMENTATION"],
+      "preferredDifficultyProgression": "GRADUAL",
+      "preferredQuestionsPerSession": 5,
+      "allowHints": true,
+      "preferredHintStyle": "PROGRESSIVE_HINT"
+    },
+    "feedbackPreferences": {
+      "feedbackTiming": "IMMEDIATE",
+      "feedbackDetailLevel": "DETAILED",
+      "showCorrectAnswerImmediately": false,
+      "showErrorCause": true,
+      "showImprovementSuggestion": true
+    },
+    "interactionPreferences": {
+      "preferredInteractionMode": "GUIDED_DIALOGUE",
+      "allowAgentProactiveReminder": true,
+      "preferredReminderFrequency": "MODERATE",
+      "preferredQuestioningStyle": "SOCRATIC_WITH_HINT"
+    },
+    "subjectOverrides": {
+      "DATA_STRUCTURES": {
+        "preferredResourceTypes": ["DIAGRAM", "CODE_TRACE", "CODE_EXAMPLE"],
+        "preferredExplanationSequence": "VISUALIZE_THEN_CODE",
+        "reason": "链表、树和图结构需要先建立状态变化的可视化理解",
+        "confidence": 0.94,
+        "evidenceIds": ["msg_10101", "behavior_stat_201"]
+      }
+    },
+    "metadata": {
+      "schemaVersion": "1.0",
+      "confidence": 0.88,
+      "completeness": 86,
+      "sourceTypes": ["USER_EXPLICIT", "LEARNING_BEHAVIOR", "RESOURCE_FEEDBACK"],
+      "evidenceIds": ["msg_10101", "behavior_stat_201", "behavior_stat_202"],
+      "lastUpdatedAt": "2026-06-15T18:30:00Z",
+      "updatedBy": "RECOMMENDATION_AGENT",
+      "updateReason": "结合用户声明和不同资源的实际学习效果更新",
+      "validUntil": "2026-09-15T18:30:00Z"
+    }
+  },
+  "metacognitive_profile": {
+    "overallScore": 58.6,
+    "overallLevel": "DEVELOPING",
+    "dimensions": {
+      "PLANNING": {
+        "dimensionCode": "PLANNING",
+        "dimensionName": "学习规划",
+        "score": 68,
+        "level": "DEVELOPING",
+        "trend": "IMPROVING",
+        "description": "能够接受并执行短期计划，但自主拆分长期目标的能力不足",
+        "confidence": 0.8,
+        "evidenceIds": ["plan_event_101"]
+      },
+      "SELF_EVALUATION": {
+        "dimensionCode": "SELF_EVALUATION",
+        "dimensionName": "自我评估",
+        "score": 48,
+        "level": "BEGINNER",
+        "trend": "STABLE",
+        "description": "对知识掌握程度的判断与实际测试结果存在偏差",
+        "confidence": 0.88,
+        "evidenceIds": ["prediction_test_101"]
+      },
+      "HELP_SEEKING": {
+        "dimensionCode": "HELP_SEEKING",
+        "dimensionName": "主动求助",
+        "score": 72,
+        "level": "PROFICIENT",
+        "trend": "IMPROVING",
+        "description": "遇到持续困难时能够主动向智能体提问",
+        "confidence": 0.85,
+        "evidenceIds": ["dialogue_behavior_201"]
+      },
+      "TIME_MANAGEMENT": {
+        "dimensionCode": "TIME_MANAGEMENT",
+        "dimensionName": "时间管理",
+        "score": 73,
+        "level": "PROFICIENT",
+        "trend": "IMPROVING",
+        "description": "近两周学习时间较稳定，计划完成率较高",
+        "confidence": 0.87,
+        "evidenceIds": ["behavior_stat_302"]
+      }
+    },
+    "calibrationStatistics": {
+      "selfPredictedAccuracyRate": 0.82,
+      "actualAccuracyRate": 0.64,
+      "calibrationGap": 0.18,
+      "calibrationStatus": "OVERCONFIDENT",
+      "sampleCount": 15
+    },
+    "recommendedSupport": {
+      "planningSupportLevel": "MEDIUM",
+      "reflectionPromptFrequency": "AFTER_EACH_LEARNING_UNIT",
+      "requireConfidencePredictionBeforeAnswer": true,
+      "recommendedInterventions": [
+        "答题前先预测正确概率",
+        "答题后比较预测与实际结果",
+        "每完成一个知识点生成一次复盘"
+      ]
+    },
+    "metadata": {
+      "schemaVersion": "1.0",
+      "confidence": 0.82,
+      "completeness": 79,
+      "sourceTypes": ["LEARNING_BEHAVIOR", "QUIZ_RESULT", "DIALOGUE_INFERENCE"],
+      "evidenceIds": ["prediction_test_101", "behavior_stat_302"],
+      "lastUpdatedAt": "2026-06-15T18:30:00Z",
+      "updatedBy": "ASSESSMENT_AGENT",
+      "updateReason": "根据计划执行、信心预测和复盘行为综合更新",
+      "validUntil": "2026-07-15T18:30:00Z"
+    }
+  },
+  "subject_profiles": {
+    "DATA_STRUCTURES": {
+      "subjectId": "DATA_STRUCTURES",
+      "subjectNameCache": "数据结构",
+      "subjectStatus": "ACTIVE",
+      "profileVersion": 12,
+      "subjectGoals": {
+        "goalIds": ["GOAL-DS-001"]
+      },
+      "knowledgeMastery": {
+        "overallMasteryScore": 63.5,
+        "overallMasteryLevel": "DEVELOPING",
+        "coverageRate": 0.42,
+        "trend": "IMPROVING",
+        "currentChapterId": "DS-LINEAR-LIST",
+        "chapterSummaries": {
+          "DS-LINEAR-LIST": {
+            "chapterId": "DS-LINEAR-LIST",
+            "chapterName": "线性表",
+            "masteryScore": 68,
+            "masteryLevel": "DEVELOPING",
+            "completedKnowledgePointCount": 4,
+            "totalKnowledgePointCount": 7,
+            "weakKnowledgePointIds": ["DS-LINKED-LIST-DELETE"]
+          }
+        },
+        "knowledgePoints": {
+          "DS-LINKED-LIST-DELETE": {
+            "knowledgePointId": "DS-LINKED-LIST-DELETE",
+            "knowledgePointNameCache": "单链表删除操作",
+            "chapterId": "DS-LINEAR-LIST",
+            "knowledgeType": "PROCEDURE_AND_IMPLEMENTATION",
+            "importance": "HIGH",
+            "prerequisiteKnowledgePointIds": ["DS-LINKED-LIST-BASIC", "DS-REFERENCE-BASIC"],
+            "masteryScore": 58.5,
+            "masteryLevel": "DEVELOPING",
+            "cognitiveMastery": {
+              "remember": 88,
+              "understand": 74,
+              "apply": 61,
+              "analyze": 52,
+              "implement": 48
+            },
+            "independenceLevel": "WITH_HINT",
+            "assessmentStatistics": {
+              "attemptCount": 12,
+              "correctCount": 6,
+              "accuracyRate": 0.58,
+              "independentCorrectRate": 0.33,
+              "averageResponseSeconds": 185,
+              "highestCompletedDifficulty": "MEDIUM"
+            },
+            "retention": {
+              "lastLearnedAt": "2026-06-13T14:00:00Z",
+              "lastPracticedAt": "2026-06-15T17:40:00Z",
+              "nextReviewAt": "2026-06-18T14:00:00Z",
+              "forgettingRisk": "MEDIUM",
+              "retentionScore": 66
+            },
+            "confidence": 0.9,
+            "evidenceIds": ["answer_881", "quiz_ds_006", "code_eval_205"],
+            "firstLearnedAt": "2026-06-10T10:00:00Z",
+            "lastUpdatedAt": "2026-06-15T18:30:00Z"
+          }
+        },
+        "metadata": {
+          "schemaVersion": "1.0",
+          "confidence": 0.87,
+          "completeness": 76,
+          "sourceTypes": ["QUIZ_RESULT", "CODE_EVALUATION", "SYSTEM_DERIVED"],
+          "evidenceIds": ["quiz_ds_006", "code_eval_205"],
+          "lastUpdatedAt": "2026-06-15T18:30:00Z",
+          "updatedBy": "MASTERY_AGENT",
+          "updateReason": "完成单链表删除专项练习后更新掌握度",
+          "validUntil": "2026-06-22T18:30:00Z"
+        }
+      },
+      "subjectMisconceptions": {
+        "patterns": {}
+      },
+      "learningPreferenceOverride": {
+        "preferredResourceTypes": ["DIAGRAM", "CODE_TRACE", "CODE_EXAMPLE"]
+      },
+      "learningBehavior": {
+        "statisticsWindows": {
+          "LAST_7_DAYS": {
+            "activeDays": 5,
+            "studyMinutes": 248,
+            "sessionCount": 8,
+            "averageSessionMinutes": 31,
+            "resourceViewCount": 18,
+            "resourceCompletionRate": 0.74,
+            "exerciseAttemptCount": 42,
+            "exerciseAccuracyRate": 0.69,
+            "independentAccuracyRate": 0.52,
+            "hintUsageRate": 0.31,
+            "reviewCount": 4,
+            "activeQuestionCount": 7,
+            "taskAbandonmentRate": 0.12
+          }
+        },
+        "behaviorPatterns": {
+          "preferredStudyPeriod": "EVENING",
+          "averageSessionMinutes": 30,
+          "studyRegularnessScore": 78,
+          "persistenceScore": 72,
+          "procrastinationRisk": "LOW",
+          "hintDependency": "MEDIUM"
+        },
+        "trends": {
+          "studyDurationTrend": "IMPROVING",
+          "accuracyTrend": "IMPROVING",
+          "independentCompletionTrend": "IMPROVING",
+          "hintUsageTrend": "DECREASING"
+        },
+        "engagement": {
+          "engagementScore": 76,
+          "engagementLevel": "HIGH",
+          "riskFlags": []
+        },
+        "metadata": {
+          "schemaVersion": "1.0",
+          "confidence": 0.96,
+          "completeness": 92,
+          "sourceTypes": ["LEARNING_BEHAVIOR", "SYSTEM_DERIVED"],
+          "evidenceIds": ["behavior_batch_20260615"],
+          "lastUpdatedAt": "2026-06-15T23:59:59Z",
+          "updatedBy": "BEHAVIOR_ANALYSIS_AGENT",
+          "updateReason": "完成每日学习行为聚合",
+          "validUntil": "2026-06-16T23:59:59Z"
+        }
+      },
+      "currentLearningState": {
+        "stateId": "STATE-DS-20260615-001",
+        "learningStatus": "STUCK",
+        "currentGoalId": "GOAL-DS-001",
+        "currentChapterId": "DS-LINEAR-LIST",
+        "currentKnowledgePointId": "DS-LINKED-LIST-DELETE",
+        "currentTask": {
+          "taskId": "TASK-DS-10021",
+          "taskType": "CODE_IMPLEMENTATION",
+          "title": "实现单链表按值删除节点",
+          "difficulty": "MEDIUM",
+          "startedAt": "2026-06-15T17:20:00Z",
+          "attemptCount": 3,
+          "hintCount": 1
+        },
+        "blockingIssues": {
+          "ISSUE-001": {
+            "issueId": "ISSUE-001",
+            "issueType": "PROCEDURE_ORDER_ERROR",
+            "description": "删除节点前没有正确保存引用，导致链表断裂",
+            "severity": "HIGH",
+            "status": "ACTIVE",
+            "confidence": 0.93,
+            "evidenceIds": ["code_eval_205", "dialogue_301"]
+          }
+        },
+        "sessionSignals": {
+          "engagementLevel": "MEDIUM",
+          "cognitiveLoad": "HIGH",
+          "confusionLevel": "HIGH"
+        },
+        "recentPerformance": {
+          "recentAttemptCount": 3,
+          "recentAccuracyRate": 0.33,
+          "consecutiveWrongCount": 2,
+          "averageResponseSeconds": 220,
+          "hintUsageCount": 1
+        },
+        "readiness": {
+          "continueCurrentTask": false,
+          "needRemediation": true,
+          "recommendedDifficulty": "EASY",
+          "recommendedSupportLevel": "GUIDED"
+        },
+        "nextActions": [
+          {
+            "order": 1,
+            "actionType": "VIEW_DIAGRAM",
+            "title": "查看单链表删除指针变化图",
+            "knowledgePointId": "DS-LINKED-LIST-DELETE",
+            "estimatedMinutes": 5,
+            "reason": "先建立删除前后引用关系的可视化理解"
+          },
+          {
+            "order": 2,
+            "actionType": "PRACTICE",
+            "title": "完成两道低难度链表删除练习",
+            "knowledgePointId": "DS-LINKED-LIST-DELETE",
+            "estimatedMinutes": 12,
+            "reason": "验证是否能够在提示下正确实现"
+          }
+        ],
+        "validFrom": "2026-06-15T17:20:00Z",
+        "validUntil": "2026-06-16T17:20:00Z",
+        "metadata": {
+          "schemaVersion": "1.0",
+          "confidence": 0.91,
+          "completeness": 90,
+          "sourceTypes": ["CODE_EVALUATION", "USER_EXPLICIT", "DIALOGUE_INFERENCE"],
+          "evidenceIds": ["code_eval_205", "dialogue_301"],
+          "lastUpdatedAt": "2026-06-15T18:30:00Z",
+          "updatedBy": "TUTOR_AGENT",
+          "updateReason": "学生连续两次链表删除失败并明确表示不理解指针变化",
+          "validUntil": "2026-06-16T17:20:00Z"
+        }
+      },
+      "metadata": {
+        "confidence": 0.88,
+        "completeness": 84,
+        "lastUpdatedAt": "2026-06-15T18:30:00Z",
+        "lastAssessedAt": "2026-06-15T18:30:00Z"
+      }
+    }
+  }
+}

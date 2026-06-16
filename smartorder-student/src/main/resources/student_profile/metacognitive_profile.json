@@ -1,0 +1,139 @@
+{
+  "overall_score": 58.6,
+  "overall_level": "DEVELOPING",
+  "dimensions": {
+    "PLANNING": {
+      "dimension_code": "PLANNING",
+      "dimension_name": "学习规划",
+      "score": 68,
+      "level": "DEVELOPING",
+      "trend": "IMPROVING",
+      "description": "能够接受并执行短期计划，但自主拆分长期目标的能力不足",
+      "confidence": 0.8,
+      "evidence_ids": [
+        "plan_event_101"
+      ]
+    },
+    "PROCESS_MONITORING": {
+      "dimension_code": "PROCESS_MONITORING",
+      "dimension_name": "过程监控",
+      "score": 55,
+      "level": "DEVELOPING",
+      "trend": "STABLE",
+      "description": "学习过程中较少主动检查是否真正理解",
+      "confidence": 0.76,
+      "evidence_ids": [
+        "behavior_stat_301"
+      ]
+    },
+    "SELF_EVALUATION": {
+      "dimension_code": "SELF_EVALUATION",
+      "dimension_name": "自我评估",
+      "score": 48,
+      "level": "BEGINNER",
+      "trend": "STABLE",
+      "description": "对知识掌握程度的判断与实际测试结果存在偏差",
+      "confidence": 0.88,
+      "evidence_ids": [
+        "prediction_test_101"
+      ]
+    },
+    "REFLECTION": {
+      "dimension_code": "REFLECTION",
+      "dimension_name": "学习反思",
+      "score": 57,
+      "level": "DEVELOPING",
+      "trend": "IMPROVING",
+      "description": "在引导下能够总结错误，但主动复盘频率较低",
+      "confidence": 0.81,
+      "evidence_ids": [
+        "reflection_201"
+      ]
+    },
+    "HELP_SEEKING": {
+      "dimension_code": "HELP_SEEKING",
+      "dimension_name": "主动求助",
+      "score": 72,
+      "level": "PROFICIENT",
+      "trend": "IMPROVING",
+      "description": "遇到持续困难时能够主动向智能体提问",
+      "confidence": 0.85,
+      "evidence_ids": [
+        "dialogue_behavior_201"
+      ]
+    },
+    "CONFIDENCE_CALIBRATION": {
+      "dimension_code": "CONFIDENCE_CALIBRATION",
+      "dimension_name": "信心校准",
+      "score": 42,
+      "level": "BEGINNER",
+      "trend": "STABLE",
+      "description": "存在一定过度自信倾向",
+      "confidence": 0.9,
+      "evidence_ids": [
+        "prediction_test_101",
+        "quiz_ds_006"
+      ]
+    },
+    "STRATEGY_ADJUSTMENT": {
+      "dimension_code": "STRATEGY_ADJUSTMENT",
+      "dimension_name": "策略调整",
+      "score": 54,
+      "level": "DEVELOPING",
+      "trend": "IMPROVING",
+      "description": "在系统提醒后能够更换学习方式，但主动调整较少",
+      "confidence": 0.74,
+      "evidence_ids": [
+        "resource_switch_101"
+      ]
+    },
+    "TIME_MANAGEMENT": {
+      "dimension_code": "TIME_MANAGEMENT",
+      "dimension_name": "时间管理",
+      "score": 73,
+      "level": "PROFICIENT",
+      "trend": "IMPROVING",
+      "description": "近两周学习时间较稳定，计划完成率较高",
+      "confidence": 0.87,
+      "evidence_ids": [
+        "behavior_stat_302"
+      ]
+    }
+  },
+  "calibration_statistics": {
+    "self_predicted_accuracy_rate": 0.82,
+    "actual_accuracy_rate": 0.64,
+    "calibration_gap": 0.18,
+    "calibration_status": "OVERCONFIDENT",
+    "sample_count": 15
+  },
+  "recommended_support": {
+    "planning_support_level": "MEDIUM",
+    "reflection_prompt_frequency": "AFTER_EACH_LEARNING_UNIT",
+    "require_confidence_prediction_before_answer": true,
+    "recommended_interventions": [
+      "答题前先预测正确概率",
+      "答题后比较预测与实际结果",
+      "每完成一个知识点生成一次复盘"
+    ]
+  },
+  "metadata": {
+    "schema_version": "1.0",
+    "confidence": 0.82,
+    "completeness": 79,
+    "source_types": [
+      "LEARNING_BEHAVIOR",
+      "QUIZ_RESULT",
+      "DIALOGUE_INFERENCE"
+    ],
+    "evidence_ids": [
+      "prediction_test_101",
+      "behavior_stat_302",
+      "reflection_201"
+    ],
+    "last_updated_at": "2026-06-15T18:30:00Z",
+    "updated_by": "ASSESSMENT_AGENT",
+    "update_reason": "根据计划执行、信心预测和复盘行为综合更新",
+    "valid_until": "2026-07-15T18:30:00Z"
+  }
+}

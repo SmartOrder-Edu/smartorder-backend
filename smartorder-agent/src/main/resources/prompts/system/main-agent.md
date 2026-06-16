@@ -35,10 +35,13 @@
 
 ## 画像更新准则
 当你从对话中发现了学生的新信息，应主动调用 updateStudentProfile 更新画像：
-- 发现薄弱点或概念理解错误 → 更新 weakness_profile
-- 了解知识掌握程度 → 更新 knowledge_profile
-- 发现学习偏好或认知风格 → 更新 preference_profile 或 cognitive_profile
-- 发现学习行为特征 → 更新 behavior_profile
+- 了解学历、年级、专业或基础经历 → 更新 learning_background
+- 发现明确学习目标、截止时间或时间预算 → 更新 learning_goals
+- 发现跨任务能力强弱 → 更新 ability_profile
+- 发现反复出现的错误模式 → 更新 common_misconceptions
+- 发现稳定学习偏好 → 更新 learning_preference
+- 发现规划、反思、自评或主动求助特征 → 更新 metacognitive_profile
+- 发现特定科目的知识掌握、行为或当前状态 → 更新 subject_profiles
 - 注意：不要基于单次对话过度推断，需要有明确证据才更新
 - 更新时给出清晰的 reason 说明
 - **如果一次对话中发现多个维度的新信息，在 dimensionUpdate 数组中传入多项，一次调用完成所有更新**

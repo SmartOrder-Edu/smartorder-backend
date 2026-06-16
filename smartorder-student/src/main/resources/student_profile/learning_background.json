@@ -1,0 +1,98 @@
+{
+  "education": {
+    "education_level": "UNDERGRADUATE",
+    "grade": "SOPHOMORE",
+    "major_code": "SOFTWARE_ENGINEERING",
+    "major_name": "软件工程",
+    "enrollment_year": 2024
+  },
+  "prior_experience": {
+    "completed_subjects": {
+      "JAVA_PROGRAMMING": {
+        "subject_id": "JAVA_PROGRAMMING",
+        "subject_name": "Java程序设计",
+        "completion_status": "COMPLETED",
+        "self_reported_level": "INTERMEDIATE",
+        "verified_level": "BASIC",
+        "last_studied_at": "2026-01-10T00:00:00Z",
+        "confidence": 0.85,
+        "evidence_ids": [
+          "msg_10001",
+          "quiz_java_001"
+        ]
+      }
+    },
+    "programming_languages": {
+      "JAVA": {
+        "self_reported_level": "INTERMEDIATE",
+        "verified_level": "BASIC",
+        "experience_months": 14,
+        "confidence": 0.82,
+        "evidence_ids": [
+          "msg_10001",
+          "code_eval_102"
+        ]
+      },
+      "PYTHON": {
+        "self_reported_level": "BEGINNER",
+        "verified_level": null,
+        "experience_months": 2,
+        "confidence": 0.7,
+        "evidence_ids": [
+          "msg_10002"
+        ]
+      }
+    },
+    "prerequisite_foundation": {
+      "PROGRAMMING_BASICS": {
+        "status": "SATISFIED",
+        "score": 72,
+        "confidence": 0.86,
+        "evidence_ids": [
+          "quiz_programming_basic_01"
+        ]
+      },
+      "DISCRETE_MATHEMATICS": {
+        "status": "PARTIALLY_SATISFIED",
+        "score": 58,
+        "confidence": 0.74,
+        "evidence_ids": [
+          "msg_10003",
+          "quiz_math_001"
+        ]
+      }
+    }
+  },
+  "learning_constraints": {
+    "weekly_available_minutes": 600,
+    "preferred_study_periods": [
+      "EVENING"
+    ],
+    "max_session_minutes": 45,
+    "device_types": [
+      "PC",
+      "MOBILE"
+    ],
+    "network_condition": "STABLE",
+    "accessibility_needs": []
+  },
+  "metadata": {
+    "schema_version": "1.0",
+    "confidence": 0.88,
+    "completeness": 85,
+    "source_types": [
+      "USER_EXPLICIT",
+      "QUIZ_RESULT",
+      "CODE_EVALUATION"
+    ],
+    "evidence_ids": [
+      "msg_10001",
+      "msg_10002",
+      "quiz_programming_basic_01"
+    ],
+    "last_updated_at": "2026-06-15T18:30:00Z",
+    "updated_by": "PROFILE_AGENT",
+    "update_reason": "首次画像构建并完成基础能力验证",
+    "valid_until": null
+  }
+}
