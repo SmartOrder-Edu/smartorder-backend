@@ -58,7 +58,7 @@ public class AgentRunStateService {
     /**
      * 状态转换——更新运行状态到目标状态，并记录暂停/完成信息
      */
-    @Transactional(rollbackFor = Exception.class, transactionManager = "mysqlTransactionManager")
+    @Transactional(rollbackFor = Exception.class, transactionManager = "transactionManager")
     public void transitionTo(String runId, String newStatus) {
         transitionTo(runId, newStatus, null, null, null, null);
     }
@@ -66,7 +66,7 @@ public class AgentRunStateService {
     /**
      * 状态转换（带暂停信息）
      */
-    @Transactional(rollbackFor = Exception.class, transactionManager = "mysqlTransactionManager")
+    @Transactional(rollbackFor = Exception.class, transactionManager = "transactionManager")
     public void transitionTo(String runId, String newStatus, String traceId,
                               String pausedReason, String pausedTaskId, String pausedClarificationId) {
         AgentRunState state = mapper.selectByRunId(runId);
@@ -107,7 +107,7 @@ public class AgentRunStateService {
     /**
      * 更新当前步骤索引
      */
-    @Transactional(rollbackFor = Exception.class, transactionManager = "mysqlTransactionManager")
+    @Transactional(rollbackFor = Exception.class, transactionManager = "transactionManager")
     public void updateStepIndex(String runId, int stepIndex) {
         AgentRunState state = mapper.selectByRunId(runId);
         if (state != null && !TERMINAL_STATUSES.contains(state.getStatus())) {
@@ -141,7 +141,7 @@ public class AgentRunStateService {
     /**
      * 按 draftId 进行状态转换（引擎内部常用 draftId，而非 runId）
      */
-    @Transactional(rollbackFor = Exception.class, transactionManager = "mysqlTransactionManager")
+    @Transactional(rollbackFor = Exception.class, transactionManager = "transactionManager")
     public void transitionByDraftId(String draftId, String newStatus, String traceId,
                                      String pausedReason, String pausedTaskId, String pausedClarificationId) {
         // 使用 FOR UPDATE 行锁防止并发状态转换
@@ -156,7 +156,7 @@ public class AgentRunStateService {
     /**
      * 按 draftId 进行简单状态转换（无暂停信息）
      */
-    @Transactional(rollbackFor = Exception.class, transactionManager = "mysqlTransactionManager")
+    @Transactional(rollbackFor = Exception.class, transactionManager = "transactionManager")
     public void transitionByDraftId(String draftId, String newStatus) {
         transitionByDraftId(draftId, newStatus, null, null, null, null);
     }
