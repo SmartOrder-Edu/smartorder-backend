@@ -13,7 +13,7 @@
       "dependsOn": [],
       "gate": "NORMAL",
       "riskLevel": "READ",
-      "expectedOutput": "学生画像JSON"
+      "expectedOutput": "学生学习档案信息"
     },
     {
       "stepId": "step-2",
@@ -57,6 +57,8 @@
 10. queryKnowledge 工具需要一个已存在的学习空间ID（spaceId），因此只能在已有学习空间的场景使用（如：在某个空间内查询知识、生成资料等）。新建学习规划时不要使用 queryKnowledge，应依赖 LLM 自身的学科知识体系进行规划。
 11. 新建学习规划时使用 createLearningPlan 工具（非 manageLearningPlan），该工具只保存草稿，不创建学习空间实体。
 12. 若用户的目标模糊或画像信息不足以生成有效计划，应添加 CLARIFICATION 门步骤让用户补充信息，而不是硬编码画像采集流程。
+13. 如果某个步骤的工具可能失败（如网络搜索、知识库检索），在 description 中包含降级策略（如"如果搜索失败，基于已有知识回答"）
+14. 步骤的 description 和 expectedOutput 必须使用自然、易懂的语言，不要包含"JSON"、"工具调用"等技术术语。如果获取学生画像失败，降级策略应为"通过对话了解学生的学习目标和当前水平"，而非"画像JSON获取失败"
 
 ## 典型场景示例
 

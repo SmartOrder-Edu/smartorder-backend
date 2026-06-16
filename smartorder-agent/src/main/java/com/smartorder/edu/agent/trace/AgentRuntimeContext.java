@@ -1,5 +1,6 @@
 package com.smartorder.edu.agent.trace;
 
+import com.smartorder.edu.agent.orchestrator.ExecutionBudget;
 import com.smartorder.edu.agent.route.AgentRunMode;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -58,6 +59,23 @@ public class AgentRuntimeContext {
 
     @Builder.Default
     private AtomicInteger sequence = new AtomicInteger(0);
+
+    /**
+     * 执行预算——在 ReAct 和 Plan 循环的每次迭代中检查
+     */
+    private ExecutionBudget budget;
+
+    /**
+     * 客户端是否已断开 SSE 连接
+     */
+    @Builder.Default
+    private volatile boolean clientDisconnected = false;
+
+    /**
+     * 助手消息是否已保存（防止 AgentRunSupervisor 重复保存）
+     */
+    @Builder.Default
+    private boolean assistantMessageSaved = false;
 
     /**
      * 获取下一个事件序号

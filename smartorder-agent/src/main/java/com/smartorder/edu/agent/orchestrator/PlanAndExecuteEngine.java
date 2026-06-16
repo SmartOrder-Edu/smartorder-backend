@@ -79,6 +79,14 @@ public class PlanAndExecuteEngine {
         // 2. 构建 PlannerAgent prompt（工具需求由 PlannerAgent 在执行计划中动态决定）
         String prompt = buildPlannerPrompt(request, routeResult, context);
 
+        // 预算检查 + 记录 LLM 调用
+        if (context.getBudget() != null && context.getBudget().isExceeded()) {
+            throw new BudgetExceededException("Plan 规划超出预算: traceId=" + context.getTraceId());
+        }
+        if (context.getBudget() != null) {
+            context.getBudget().recordLlmCall();
+        }
+
         // 3. 调用 PlannerAgent 生成 ExecutionPlan
         String planRaw;
         try {
@@ -98,6 +106,7 @@ public class PlanAndExecuteEngine {
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", errorMsg));
             memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                     errorMsg, null, context.getTraceId(), null);
+            context.setAssistantMessageSaved(true);
             return;
         }
 
@@ -113,6 +122,7 @@ public class PlanAndExecuteEngine {
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", errorMsg));
             memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                     errorMsg, null, context.getTraceId(), null);
+            context.setAssistantMessageSaved(true);
             return;
         }
 
@@ -170,6 +180,7 @@ public class PlanAndExecuteEngine {
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", summaryText));
             memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                     summaryText, null, context.getTraceId(), null);
+            context.setAssistantMessageSaved(true);
             return;
         }
 
@@ -190,6 +201,7 @@ public class PlanAndExecuteEngine {
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", summaryText));
         memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                 summaryText, null, context.getTraceId(), null);
+        context.setAssistantMessageSaved(true);
     }
 
     /**
@@ -289,6 +301,17 @@ public class PlanAndExecuteEngine {
         int stepIndex = plan.getCurrentStepIndex();
 
         while (stepIndex < sortedSteps.size()) {
+            // 预算检查：超出则抛出 BudgetExceededException，由 AgentRunSupervisor 捕获
+            if (context.getBudget() != null && context.getBudget().isExceeded()) {
+                throw new BudgetExceededException("Plan 执行超出预算: traceId=" + context.getTraceId());
+            }
+
+            // 客户端断连检查
+            if (context.isClientDisconnected()) {
+                log.warn("[PlanAndExecute] 客户端已断开，提前退出: traceId={}", context.getTraceId());
+                break;
+            }
+
             ExecutionStep task = sortedSteps.get(stepIndex);
 
             // 跳过已完成的任务
@@ -310,7 +333,7 @@ public class PlanAndExecuteEngine {
             if ("CLARIFICATION".equals(task.getGate())) {
                 task.setStatus("RUNNING");
                 dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_STARTED, stepToPayload(task));
-                handleClarificationGate(plan, stepIndex, context, emitter, null);
+                handleClarificationGate(plan, stepIndex, context, emitter, null, draftId);
                 plan.setCurrentStepIndex(stepIndex);
                 draftService.updateExecutionPlan(draftId, plan);
                 return;
@@ -331,6 +354,7 @@ public class PlanAndExecuteEngine {
                 dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", confirmText));
                 memoryService.saveAssistantMessage(conversationId, userId, confirmText, null,
                         context.getTraceId(), null);
+                context.setAssistantMessageSaved(true);
                 return;
             }
 
@@ -369,8 +393,11 @@ public class PlanAndExecuteEngine {
                     replanStatus.put("taskList", toTaskList(draftId, plan));
                     dispatcher.emit(emitter, context, AgentEventType.STATUS, replanStatus);
                 } else {
-                    // 无法重规划，跳过当前任务
-                    log.warn("[PlanAndExecute] 重规划失败，跳过任务: taskId={}", task.getStepId());
+                    // 无法重规划，标记当前任务为 FAILED（而非静默跳过）
+                    log.warn("[PlanAndExecute] 重规划失败，标记任务为 FAILED: taskId={}", task.getStepId());
+                    task.setStatus("FAILED");
+                    task.setErrorMessage("重规划失败，无法继续执行此任务");
+                    dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_FAILED, stepToPayload(task));
                     stepIndex++;
                 }
             } else {
@@ -400,8 +427,9 @@ public class PlanAndExecuteEngine {
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", finalSummary));
         memoryService.saveAssistantMessage(conversationId, userId,
                 finalSummary, null, context.getTraceId(), null);
+        context.setAssistantMessageSaved(true);
 
-        dispatcher.complete(emitter, context);
+        // SSE 关闭由 AgentRunSupervisor 统一负责，此处不再调用 dispatcher.complete()
     }
 
     private boolean resumeConfirmationGateIfNeeded(String draftId, ExecutionPlan plan, ExecutionStep explicitTask) {
@@ -457,13 +485,22 @@ public class PlanAndExecuteEngine {
 
             // 将用户回复注入任务输出
             String userResponse = request.getMessage();
-            plan.getStepOutputs().put(pausedTask.getStepId(), "用户澄清: " + userResponse);
+            Map<String, String> stepOutputs = plan.getStepOutputs();
+            stepOutputs.put(pausedTask.getStepId(), "用户澄清: " + userResponse);
+            stepOutputs.put("__userClarification", "用户补充信息: " + userResponse);
+            plan.setStepOutputs(stepOutputs);
             pausedTask.setStatus("COMPLETED");
             pausedTask.setResultSummary("用户回复: " + truncate(userResponse, 200));
             pausedTask.setGate("NORMAL"); // 清除门
 
             plan.setCurrentStepIndex(pausedIndex + 1);
             plan.setStatus("EXECUTING");
+            applyClarificationToRemainingSteps(plan, pausedIndex, userResponse);
+
+            draftService.updateExecutionPlan(draft.getDraftId(), plan);
+
+            dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
+                    planCreatedPayload(draft.getDraftId(), plan, false, ""));
 
             dispatcher.emit(emitter, context, AgentEventType.PLAN_RESUMED, Map.of(
                     "reason", "CLARIFICATION",
@@ -471,7 +508,6 @@ public class PlanAndExecuteEngine {
                     "resumeFromIndex", plan.getCurrentStepIndex()
             ));
 
-            draftService.updateExecutionPlan(draft.getDraftId(), plan);
             executeExecutionPlanWithContext(draft.getDraftId(), context.getUserId(),
                     context, emitter);
 
@@ -506,20 +542,62 @@ public class PlanAndExecuteEngine {
                 request.getMessage(), planHint, attachmentSection);
     }
 
+    private void applyClarificationToRemainingSteps(ExecutionPlan plan, int pausedIndex, String userResponse) {
+        String clarificationSummary = truncate(userResponse, 300);
+        for (int i = pausedIndex + 1; i < plan.getSteps().size(); i++) {
+            ExecutionStep step = plan.getSteps().get(i);
+            if ("COMPLETED".equals(step.getStatus())) {
+                continue;
+            }
+
+            String description = step.getDescription();
+            if (description != null && description.contains("学生画像")) {
+                description = description.replace("学生画像", "用户补充信息");
+            }
+            if (description != null && description.contains("学习档案")) {
+                description = description.replace("学习档案", "用户补充信息");
+            }
+
+            if (description != null && !description.contains("用户补充信息")) {
+                description = description + "。请结合用户补充信息：" + clarificationSummary;
+            } else if (description != null && !description.contains(clarificationSummary)) {
+                description = description + "（用户补充信息：" + clarificationSummary + "）";
+            }
+
+            step.setDescription(description);
+
+            List<String> tools = step.getRequiredTools();
+            if (tools != null && tools.contains("getStudentProfile")) {
+                step.setRequiredTools(tools.stream()
+                        .filter(tool -> !"getStudentProfile".equals(tool))
+                        .toList());
+            }
+        }
+    }
+
     private void handleClarificationGate(ExecutionPlan plan, int stepIndex,
                                           AgentRuntimeContext context, SseEmitter emitter,
                                           AgentChatRequest request) {
+        handleClarificationGate(plan, stepIndex, context, emitter, request, null);
+    }
+
+    private void handleClarificationGate(ExecutionPlan plan, int stepIndex,
+                                          AgentRuntimeContext context, SseEmitter emitter,
+                                          AgentChatRequest request, String existingDraftId) {
         ExecutionStep task = plan.getSteps().get(stepIndex);
         String question = task.getDescription();
 
+        task.setStatus("PAUSED");
         plan.setStatus("PAUSED_CLARIFICATION");
         plan.setClarificationQuestion(question);
         plan.setCurrentStepIndex(stepIndex);
 
-        // 保存草稿
-        String draftId = draftService.saveExecutionPlanDraft(
-                context.getConversationId(), context.getTraceId(),
-                request != null ? request.getUserId() : context.getUserId(), plan);
+        String draftId = existingDraftId;
+        if (draftId == null || draftId.isBlank()) {
+            draftId = draftService.saveExecutionPlanDraft(
+                    context.getConversationId(), context.getTraceId(),
+                    request != null ? request.getUserId() : context.getUserId(), plan);
+        }
         plan.setConfirmationDraftId(draftId);
         draftService.updateExecutionPlan(draftId, plan);
 
@@ -539,6 +617,7 @@ public class PlanAndExecuteEngine {
         memoryService.saveAssistantMessage(context.getConversationId(),
                 request != null ? request.getUserId() : context.getUserId(),
                 question, null, context.getTraceId(), null);
+        context.setAssistantMessageSaved(true);
     }
 
     /**
@@ -584,6 +663,7 @@ public class PlanAndExecuteEngine {
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", summaryText));
         memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                 summaryText, null, context.getTraceId(), null);
+        context.setAssistantMessageSaved(true);
     }
 
     /**
@@ -674,6 +754,12 @@ public class PlanAndExecuteEngine {
                 return false;
             }
 
+            if (shouldPauseForProfileClarification(task, result)) {
+                log.info("[PlanAndExecute] 学生画像不可用，转入澄清门: taskId={}", task.getStepId());
+                pauseForProfileClarification(plan, task, context, emitter, draftId);
+                return false;
+            }
+
             // 验证结果质量
             VerificationResult verification = stepVerifier.verify(task, result, stepOutputs);
 
@@ -724,7 +810,7 @@ public class PlanAndExecuteEngine {
                     task.setDescription(verification.getFeedback());
                     task.setStatus("PAUSED");
                     handleClarificationGate(plan,
-                            plan.getSteps().indexOf(task), context, emitter, null);
+                            plan.getSteps().indexOf(task), context, emitter, null, draftId);
                     return false; // 暂停
                 }
                 default -> { // CONTINUE (should not happen when !passed)
@@ -739,6 +825,49 @@ public class PlanAndExecuteEngine {
         }
 
         return false; // 重试耗尽
+    }
+
+    private boolean shouldPauseForProfileClarification(ExecutionStep task, String result) {
+        if (task.getRequiredTools() == null || !task.getRequiredTools().contains("getStudentProfile")) {
+            return false;
+        }
+        if (result == null || result.isBlank()) {
+            return false;
+        }
+
+        String normalized = result.toLowerCase(Locale.ROOT);
+        return normalized.contains("尚未完成画像建档")
+                || normalized.contains("暂无学习偏好")
+                || normalized.contains("暂无学习档案")
+                || normalized.contains("无法获取学生的学习档案")
+                || normalized.contains("暂时无法获取")
+                || normalized.contains("通过对话")
+                || normalized.contains("直接了解学生的学习目标和当前水平")
+                || normalized.contains("直接告诉我你的学习目标和当前水平")
+                || (normalized.contains("补充")
+                        && (normalized.contains("当前基础") || normalized.contains("当前水平"))
+                        && (normalized.contains("截止时间") || normalized.contains("可投入时间")))
+                || normalized.contains("profile unavailable")
+                || normalized.contains("no profile");
+    }
+
+    private void pauseForProfileClarification(ExecutionPlan plan, ExecutionStep task,
+                                              AgentRuntimeContext context, SseEmitter emitter,
+                                              String draftId) {
+        String question = buildProfileClarificationQuestion(plan);
+        task.setGate("CLARIFICATION");
+        task.setDescription(question);
+        task.setStatus("PAUSED");
+        task.setErrorMessage("学生画像不可用，等待用户补充关键信息");
+        handleClarificationGate(plan, plan.getSteps().indexOf(task), context, emitter, null, draftId);
+    }
+
+    private String buildProfileClarificationQuestion(ExecutionPlan plan) {
+        String goal = plan.getUserGoal();
+        String prefix = goal != null && !goal.isBlank()
+                ? "我暂时拿不到你的学习档案。为了给「" + goal + "」制定更贴合的计划，"
+                : "我暂时拿不到你的学习档案。为了制定更贴合的计划，";
+        return prefix + "请补充这几项信息：当前基础或水平、目标/考试范围、截止时间、每周可投入时间，以及偏好的学习方式。";
     }
 
     /**
@@ -756,6 +885,9 @@ public class PlanAndExecuteEngine {
             String replanPrompt = buildReplanPrompt(plan, failedTask, stepOutputs);
 
             // 2. 调用 PlannerAgent.replan()
+            if (context.getBudget() != null) {
+                context.getBudget().recordLlmCall();
+            }
             PlannerAgent plannerAgent = AiServices.builder(PlannerAgent.class)
                     .chatModel(planningChatModel)
                     .systemMessageProvider(memoryId -> promptLoader.getPlannerReplanPrompt())

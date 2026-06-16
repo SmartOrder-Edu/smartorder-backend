@@ -26,7 +26,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -35,7 +34,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 支持 EXECUTION_PLAN（Agent 执行规划）和 LEARNING_PLAN（学习计划草稿）两种草稿类型。
  */
 @Slf4j
-@RequiredArgsConstructor
 @RestController
 @RequestMapping("/agent")
 @Tag(name = "Agent 规划", description = "学习规划确认与执行接口")
@@ -46,7 +44,21 @@ public class AgentPlanController {
     private final PlanAndExecuteEngine planAndExecuteEngine;
     private final AgentTraceEventMapper traceEventMapper;
     private final TraceEventDispatcher dispatcher;
-    private final ExecutorService executor = Executors.newCachedThreadPool();
+    private final ExecutorService executor;
+
+    public AgentPlanController(PlanConfirmService planConfirmService,
+                               PlanDraftService planDraftService,
+                               PlanAndExecuteEngine planAndExecuteEngine,
+                               AgentTraceEventMapper traceEventMapper,
+                               TraceEventDispatcher dispatcher,
+                               @org.springframework.beans.factory.annotation.Qualifier("agentPlanExecutor") ExecutorService executor) {
+        this.planConfirmService = planConfirmService;
+        this.planDraftService = planDraftService;
+        this.planAndExecuteEngine = planAndExecuteEngine;
+        this.traceEventMapper = traceEventMapper;
+        this.dispatcher = dispatcher;
+        this.executor = executor;
+    }
 
     @PostMapping(value = "/plan/confirm", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "确认学习规划并执行",
@@ -128,7 +140,10 @@ public class AgentPlanController {
             }
         });
 
-        emitter.onTimeout(() -> log.warn("[PlanConfirm] SSE 超时: draftId={}", draftId));
+        emitter.onTimeout(() -> {
+            log.warn("[PlanConfirm] SSE 超时: draftId={}", draftId);
+            emitter.complete();
+        });
         emitter.onError(ex -> log.error("[PlanConfirm] SSE 错误: draftId={}", draftId, ex));
 
         return emitter;

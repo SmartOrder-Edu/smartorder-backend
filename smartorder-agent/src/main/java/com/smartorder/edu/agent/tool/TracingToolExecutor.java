@@ -1,37 +1,60 @@
 package com.smartorder.edu.agent.tool;
 
 import com.smartorder.edu.agent.trace.AgentEventType;
+import com.smartorder.edu.agent.trace.AgentRuntimeContext;
 import com.smartorder.edu.agent.trace.TraceEventDispatcher;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.*;
 
 /**
  * 工具执行安全层——所有工具调用必须经过此执行器
  *
  * 执行链路：
- * 参数解析 → 权限校验 → 推送 TOOL_STARTED → 执行工具 → 结果截断 → 推送 TOOL_COMPLETED/FAILED
+ * 参数解析 → 权限校验 → 推送 TOOL_STARTED → 执行工具（带超时）→ 结果截断 → 推送 TOOL_COMPLETED/FAILED
+ * <p>
+ * 工具执行失败时返回 {@link ToolResult#error(String)} 而非抛异常，
+ * 让 ReAct 循环可以继续，而非进入异常路径。
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class TracingToolExecutor {
 
     private final TraceEventDispatcher dispatcher;
     private final ToolPermissionChecker permissionChecker;
     private final ToolResultTruncator resultTruncator;
+    private final ExecutorService toolExecutorService;
+
+    public TracingToolExecutor(TraceEventDispatcher dispatcher,
+                               ToolPermissionChecker permissionChecker,
+                               ToolResultTruncator resultTruncator,
+                               @Qualifier("toolExecutionExecutor") ExecutorService toolExecutorService) {
+        this.dispatcher = dispatcher;
+        this.permissionChecker = permissionChecker;
+        this.resultTruncator = resultTruncator;
+        this.toolExecutorService = toolExecutorService;
+    }
 
     /**
-     * 执行工具，带完整追踪和审计
+     * 执行工具，带完整追踪、超时和审计
+     * <p>
+     * 失败时返回 {@link ToolResult#error(String)} 而非抛异常，
+     * 让调用方可以继续 ReAct 循环。
      */
     public Object execute(ToolHandler handler, Object arguments, ToolInvokeContext context) {
         long start = System.currentTimeMillis();
 
-        // 1. 权限校验
-        permissionChecker.check(handler, arguments, context);
+        // 1. 权限校验（失败返回 ToolResult 而非抛异常）
+        try {
+            permissionChecker.check(handler, arguments, context);
+        } catch (Exception e) {
+            log.warn("[TracingToolExecutor] 权限校验失败: tool={}", handler.name(), e);
+            return ToolResult.error("当前暂无权限执行此操作", e.getMessage());
+        }
 
         // 2. 推送 TOOL_STARTED
         dispatcher.emit(
@@ -44,54 +67,134 @@ public class TracingToolExecutor {
                 )
         );
 
-        // 3. 执行工具
-        try {
-            Object result = handler.execute(arguments, context);
-            long duration = System.currentTimeMillis() - start;
+        // 3. 计算工具超时时间（基于剩余预算）
+        long toolTimeoutMs = deriveToolTimeout(context.getRuntimeContext());
 
-            // 4. 结果截断
-            Object truncatedResult = resultTruncator.truncate(result);
+        // 4. 执行工具（带超时和重试）
+        int maxRetries = handler.maxRetries();
+        long retryDelayMs = handler.retryDelayMs();
+        Exception lastException = null;
 
-            // 5. 推送 TOOL_COMPLETED（含工具自定义 metadata）
-            Map<String, Object> completedPayload = new LinkedHashMap<>();
-            completedPayload.put("toolName", handler.name());
-            completedPayload.put("result", truncatedResult);
-            completedPayload.put("durationMs", duration);
-            // 从 context attributes 中提取工具附加数据（完整，不截断）
-            if (context.getAttributes() != null) {
-                Object webSearchRefs = context.getAttributes().get("webSearchReferences");
-                if (webSearchRefs != null) {
-                    completedPayload.put("webSearchReferences", webSearchRefs);
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            if (attempt > 0) {
+                log.info("[TracingToolExecutor] {} 重试第{}次", handler.name(), attempt);
+                try {
+                    Thread.sleep(Math.min(retryDelayMs * (1L << (attempt - 1)), 10_000L));
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
                 }
             }
-            dispatcher.emit(
-                    context.getEmitter(),
-                    context.getRuntimeContext(),
-                    AgentEventType.TOOL_COMPLETED,
-                    completedPayload
-            );
 
-            log.info("[TracingToolExecutor] {} 执行成功, 耗时{}ms", handler.name(), duration);
+            try {
+                Future<Object> future = toolExecutorService.submit(
+                        () -> handler.execute(arguments, context));
+                Object result = future.get(toolTimeoutMs, TimeUnit.MILLISECONDS);
+                long duration = System.currentTimeMillis() - start;
 
-            return result;
+                // 5. 结果截断
+                Object truncatedResult = resultTruncator.truncate(result);
 
-        } catch (Exception e) {
-            long duration = System.currentTimeMillis() - start;
-            log.error("[TracingToolExecutor] {} 执行失败, 耗时{}ms", handler.name(), duration, e);
+                // 6. 推送 TOOL_COMPLETED
+                Map<String, Object> completedPayload = new LinkedHashMap<>();
+                completedPayload.put("toolName", handler.name());
+                completedPayload.put("result", truncatedResult);
+                completedPayload.put("durationMs", duration);
+                if (context.getAttributes() != null) {
+                    Object webSearchRefs = context.getAttributes().get("webSearchReferences");
+                    if (webSearchRefs != null) {
+                        completedPayload.put("webSearchReferences", webSearchRefs);
+                    }
+                }
+                dispatcher.emit(
+                        context.getEmitter(),
+                        context.getRuntimeContext(),
+                        AgentEventType.TOOL_COMPLETED,
+                        completedPayload
+                );
 
-            // 6. 推送 TOOL_FAILED
-            dispatcher.emit(
-                    context.getEmitter(),
-                    context.getRuntimeContext(),
-                    AgentEventType.TOOL_FAILED,
-                    Map.of(
-                            "toolName", handler.name(),
-                            "error", e.getMessage(),
-                            "durationMs", duration
-                    )
-            );
+                log.info("[TracingToolExecutor] {} 执行成功, 耗时{}ms", handler.name(), duration);
+                return result;
 
-            throw new RuntimeException("工具 [" + handler.name() + "] 执行失败: " + e.getMessage(), e);
+            } catch (TimeoutException e) {
+                long duration = System.currentTimeMillis() - start;
+                log.error("[TracingToolExecutor] {} 执行超时, 耗时{}ms, timeout={}ms",
+                        handler.name(), duration, toolTimeoutMs);
+                lastException = e;
+                // 超时不重试，直接返回错误
+                break;
+
+            } catch (ExecutionException e) {
+                lastException = e.getCause() != null ? (Exception) e.getCause() : e;
+                log.warn("[TracingToolExecutor] {} 执行失败 (attempt {}): {}",
+                        handler.name(), attempt, lastException.getMessage());
+                // 如果还有重试次数，继续循环
+                if (attempt < maxRetries) {
+                    continue;
+                }
+
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                long duration = System.currentTimeMillis() - start;
+                dispatcher.emit(
+                        context.getEmitter(),
+                        context.getRuntimeContext(),
+                        AgentEventType.TOOL_FAILED,
+                        Map.of(
+                                "toolName", handler.name(),
+                                "error", "执行被中断",
+                                "durationMs", duration
+                        )
+                );
+                return ToolResult.error("操作被中断，请稍后重试");
+
+            } catch (Exception e) {
+                lastException = e;
+                log.warn("[TracingToolExecutor] {} 执行异常 (attempt {}): {}",
+                        handler.name(), attempt, e.getMessage());
+                if (attempt < maxRetries) {
+                    continue;
+                }
+            }
         }
+
+        // 所有尝试均失败，返回结构化错误
+        long duration = System.currentTimeMillis() - start;
+        String rawErrorMsg = lastException instanceof TimeoutException
+                ? "执行超时（" + toolTimeoutMs + "ms）"
+                : (lastException != null ? lastException.getMessage() : "未知错误");
+
+        // 面向用户的可读描述（不含内部工具名、异常类名等）
+        String userFriendlyMsg = lastException instanceof TimeoutException
+                ? "操作超时，请稍后重试"
+                : handler.userFriendlyErrorMessage();
+
+        // TOOL_FAILED SSE 事件：error 字段使用用户可读描述
+        dispatcher.emit(
+                context.getEmitter(),
+                context.getRuntimeContext(),
+                AgentEventType.TOOL_FAILED,
+                Map.of(
+                        "toolName", handler.name(),
+                        "error", userFriendlyMsg,
+                        "durationMs", duration
+                )
+        );
+
+        return ToolResult.error(userFriendlyMsg, rawErrorMsg);
+    }
+
+    /**
+     * 根据执行预算计算单个工具调用的超时时间
+     * <p>
+     * 策略：取剩余时间的 60%，clamp 到 [10s, 60s]；无预算时默认 30s
+     */
+    private long deriveToolTimeout(AgentRuntimeContext context) {
+        if (context == null || context.getBudget() == null) {
+            return 30_000L; // 默认 30 秒
+        }
+        long remaining = context.getBudget().remainingMs();
+        // 使用剩余时间的 60%，最少 10s，最多 60s
+        return Math.max(10_000L, Math.min(60_000L, (long) (remaining * 0.6)));
     }
 }

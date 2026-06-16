@@ -28,6 +28,11 @@ public class LangChain4jToolAdapter {
     private final ToolRegistry toolRegistry;
     private final TracingToolExecutor tracingToolExecutor;
 
+    /** 暴露 ToolRegistry 给需要查询工具信息的调用方 */
+    public ToolRegistry getToolRegistry() {
+        return toolRegistry;
+    }
+
     /**
      * 根据工具名列表构建 LangChain4j ToolSpecification 列表
      *
@@ -68,6 +73,11 @@ public class LangChain4jToolAdapter {
 
         // 通过安全层执行
         Object result = tracingToolExecutor.execute(handler, arguments, context);
+
+        // 处理结构化返回
+        if (result instanceof ToolResult toolResult) {
+            return toolResult.toLlmContext();
+        }
 
         // 返回结果 JSON 字符串
         return result instanceof String ? (String) result : JSON.toJSONString(result);
