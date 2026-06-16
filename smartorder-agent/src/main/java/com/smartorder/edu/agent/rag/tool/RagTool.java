@@ -51,21 +51,35 @@ public class RagTool implements ToolHandler {
     @Override
     public Object execute(Object request, ToolInvokeContext context) {
         RagRetrieveRequest req = (RagRetrieveRequest) request;
+
+        // 始终使用前端传递的 ID（runtimeContext），忽略 LLM 提取的 ID
+        List<Long> knowledgeBaseIds = context.getRuntimeContext().getKnowledgeBaseIds();
+        List<Long> fileIds = context.getRuntimeContext().getFileIds();
+
         log.info("[RagTool] 开始执行，query={}, fileIds={}, knowledgeBaseIds={}, mode={}",
-                req.getQuery(), req.getFileIds(), req.getKnowledgeBaseIds(), req.getRetrievalMode());
+                req.getQuery(), fileIds, knowledgeBaseIds, req.getRetrievalMode());
+
+        // 如果仍然没有 ID，返回提示信息
+        if ((knowledgeBaseIds == null || knowledgeBaseIds.isEmpty())
+                && (fileIds == null || fileIds.isEmpty())) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", false);
+            result.put("errorMessage", "未指定知识库ID或文件ID，请用户提供要检索的知识库或文件");
+            return result;
+        }
 
         // 构建 RAG 查询请求
         RagQueryRequest ragRequest = RagQueryRequest.builder()
                 .userId(context.getUserId())
                 .query(req.getQuery() != null ? req.getQuery() : context.getRuntimeContext().getMessage())
-                .fileIds(req.getFileIds())
-                .knowledgeBaseIds(req.getKnowledgeBaseIds())
+                .fileIds(fileIds)
+                .knowledgeBaseIds(knowledgeBaseIds)
                 .topK(req.getTopK())
                 .retrievalMode(req.getRetrievalMode())
                 .build();
 
         // 执行 RAG 检索
-        RagQueryResponse ragResponse = ragOrchestrator.retrieve(ragRequest);
+      RagQueryResponse ragResponse = ragOrchestrator.retrieve(ragRequest);
 
         // 构建返回结果
         Map<String, Object> result = new LinkedHashMap<>();

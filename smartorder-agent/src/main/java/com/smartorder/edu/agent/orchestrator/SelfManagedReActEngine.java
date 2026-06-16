@@ -82,6 +82,20 @@ public class SelfManagedReActEngine {
             messages.add(Math.min(1, messages.size()), SystemMessage.from(runtimeContext.getAttachmentContext()));
         }
 
+        // 注入 RAG 上下文（自动触发时生成）
+        if (runtimeContext.getRagContext() != null && !runtimeContext.getRagContext().isBlank()) {
+            messages.add(Math.min(1, messages.size()), SystemMessage.from(runtimeContext.getRagContext()));
+            log.info("[SelfManagedReActEngine] 注入 RAG 上下文，长度={}", runtimeContext.getRagContext().length());
+        }
+
+        // 注入强制 ragRetrieve 指令（当前端传递了 fileIds 或 knowledgeBaseIds 时）
+        if (runtimeContext.isForceRagRetrieve()) {
+            String forceRagInstruction = "[系统指令] 当前用户已指定知识库ID或文件ID，你必须先调用 ragRetrieve 工具进行检索，然后再回答用户的问题。" +
+                    "不要尝试自己编造答案，必须基于检索结果回答。";
+            messages.add(Math.min(1, messages.size()), SystemMessage.from(forceRagInstruction));
+            log.info("[SelfManagedReActEngine] 注入强制 ragRetrieve 指令");
+        }
+
         // 2. 构建工具规范
         List<ToolSpecification> tools = toolAdapter.buildToolSpecifications(routeResult.getRequiredTools());
 
@@ -133,6 +147,14 @@ public class SelfManagedReActEngine {
         // 附件上下文
         if (runtimeContext.getAttachmentContext() != null && !runtimeContext.getAttachmentContext().isBlank()) {
             messages.add(SystemMessage.from(runtimeContext.getAttachmentContext()));
+        }
+
+        // 注入强制 ragRetrieve 指令（当前端传递了 fileIds 或 knowledgeBaseIds 时）
+        if (runtimeContext.isForceRagRetrieve()) {
+            String forceRagInstruction = "[系统指令] 当前用户已指定知识库ID或文件ID，你必须先调用 ragRetrieve 工具进行检索，然后再回答用户的问题。" +
+                    "不要尝试自己编造答案，必须基于检索结果回答。";
+            messages.add(SystemMessage.from(forceRagInstruction));
+            log.info("[SelfManagedReActEngine] 注入强制 ragRetrieve 指令（executeWithTaskContext）");
         }
 
         // 当前任务作为用户消息
@@ -195,6 +217,14 @@ public class SelfManagedReActEngine {
 
         if (runtimeContext.getAttachmentContext() != null && !runtimeContext.getAttachmentContext().isBlank()) {
             messages.add(SystemMessage.from(runtimeContext.getAttachmentContext()));
+        }
+
+        // 注入强制 ragRetrieve 指令（当前端传递了 fileIds 或 knowledgeBaseIds 时）
+        if (runtimeContext.isForceRagRetrieve()) {
+            String forceRagInstruction = "[系统指令] 当前用户已指定知识库ID或文件ID，你必须先调用 ragRetrieve 工具进行检索，然后再回答用户的问题。" +
+                    "不要尝试自己编造答案，必须基于检索结果回答。";
+            messages.add(SystemMessage.from(forceRagInstruction));
+            log.info("[SelfManagedReActEngine] 注入强制 ragRetrieve 指令（buildTaskMessages）");
         }
 
         messages.add(UserMessage.from(request.getMessage()));

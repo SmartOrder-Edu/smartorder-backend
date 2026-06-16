@@ -2,9 +2,7 @@ package com.smartorder.edu.agent.orchestrator;
 
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
-import com.smartorder.edu.agent.rag.model.RagQueryRequest;
-import com.smartorder.edu.agent.rag.model.RagQueryResponse;
-import com.smartorder.edu.agent.rag.orchestrator.RagOrchestrator;
+
 import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentRouteService;
@@ -43,7 +41,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
     private final TraceEventDispatcher dispatcher;
     private final ConversationMemoryService memoryService;
     private final AgentConversationAttachmentService attachmentService;
-    private final RagOrchestrator ragOrchestrator;
+
     private final AgentRunSupervisor runSupervisor;
 
     @Override
@@ -55,6 +53,8 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 .conversationId(conversationId)
                 .userId(request.getUserId())
                 .message(request.getMessage())
+                .knowledgeBaseIds(request.getKnowledgeBaseIds())
+                .fileIds(request.getFileIds())
                 .build();
 
         // 初始化执行预算（默认 ReAct 预算，路由后按模式调整）
@@ -97,42 +97,9 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 }
             }
 
-            // 0.6 RAG 知识库检索（当指定 knowledgeBaseIds 时）
-            String ragContext = null;
-            if (request.getKnowledgeBaseIds() != null && !request.getKnowledgeBaseIds().isEmpty()) {
-                try {
-                    RagQueryRequest ragRequest = RagQueryRequest.builder()
-                            .userId(request.getUserId())
-                            .query(request.getMessage())
-                            .knowledgeBaseIds(request.getKnowledgeBaseIds())
-                            .retrievalMode(request.getRagRetrievalMode() != null ?
-                                    request.getRagRetrievalMode() : "auto")
-                            .build();
-                    RagQueryResponse ragResponse = ragOrchestrator.retrieve(ragRequest);
-
-                    if (ragResponse.isSuccess() && ragResponse.getContextText() != null
-                            && !ragResponse.getContextText().isBlank()) {
-                        ragContext = ragResponse.getContextText();
-                        context.setRagContext(ragContext);
-                        dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
-                                "type", "rag_retrieval",
-                                "knowledgeBaseIds", request.getKnowledgeBaseIds(),
-                                "usedMode", ragResponse.getUsedRetrievalMode(),
-                                "chunkCount", ragResponse.getChunks() != null ?
-                                        ragResponse.getChunks().size() : 0,
-                                "degraded", ragResponse.isDegraded()
-                        ));
-                    }
-                } catch (Exception e) {
-                    log.warn("[AgentOrchestrator] RAG 知识库检索失败，继续执行: {}", e.getMessage());
-                    // 通知用户知识库检索不可用，而非静默吞掉
-                    dispatcher.emit(emitter, context, AgentEventType.STATUS, Map.of(
-                            "type", "rag_failure",
-                            "knowledgeBaseIds", request.getKnowledgeBaseIds(),
-                            "message", "知识库检索暂时不可用，将基于已有知识回答"
-                    ));
-                }
-            }
+            // RAG 检索已改为 Agent 工具注入模式（addRagToolIfNeeded），
+            // Agent 在 ReAct 循环中通过 ragRetrieve 工具自主决定何时检索，
+            // 不再由编排器自动触发
 
             // 0.5 显式模式短路：跳过意图路由，直接按用户选择的模式执行
             if (request.getForceMode() != null && !request.getForceMode().isBlank()) {
@@ -149,6 +116,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
             IntentRouteResult routeResult = intentRouteService.route(routeCtx);
             context.setMode(routeResult.getRunMode());
             addAttachmentSearchToolIfNeeded(routeResult, context);
+            addRagToolIfNeeded(routeResult, context);
 
             // 根据路由结果调整执行预算
             if (routeResult.getRunMode() == AgentRunMode.PLAN_AND_EXECUTE) {
@@ -245,6 +213,38 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         routeResult.setRequiredTools(tools);
     }
 
+    /**
+     * 当用户指定了知识库ID或文件ID时，注入 ragRetrieve 工具供 LLM 自主调用
+     */
+    private void addRagToolIfNeeded(IntentRouteResult routeResult, AgentRuntimeContext context) {
+        if (routeResult.getRunMode() != AgentRunMode.REACT) {
+            return;
+        }
+        boolean hasKnowledgeBases = context.getKnowledgeBaseIds() != null
+                && !context.getKnowledgeBaseIds().isEmpty();
+        boolean hasFiles = context.getFileIds() != null
+                && !context.getFileIds().isEmpty();
+        if (!hasKnowledgeBases && !hasFiles) {
+            return;
+        }
+
+        List<String> currentTools = routeResult.getRequiredTools() != null
+                ? routeResult.getRequiredTools() : List.of();
+        if (currentTools.contains("ragRetrieve")) {
+            return;
+        }
+
+        List<String> tools = new ArrayList<>(currentTools);
+        tools.add("ragRetrieve");
+        routeResult.setRequiredTools(tools);
+
+        // 设置强制调用 ragRetrieve 工具标志
+        context.setForceRagRetrieve(true);
+
+        log.info("[AgentOrchestrator] 注入 ragRetrieve 工具，knowledgeBaseIds={}, fileIds={}",
+                context.getKnowledgeBaseIds(), context.getFileIds());
+    }
+
     // ============ 显式模式短路 ============
 
     /**
@@ -263,6 +263,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         IntentRouteResult forcedResult = buildForcedRouteResult(mode);
         context.setMode(forcedResult.getRunMode());
         addAttachmentSearchToolIfNeeded(forcedResult, context);
+        addRagToolIfNeeded(forcedResult, context);
 
         // 根据模式调整预算
         if (forcedResult.getRunMode() == AgentRunMode.PLAN_AND_EXECUTE) {
@@ -323,4 +324,5 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         }
         return new ArrayList<>(new LinkedHashSet<>(fileIds));
     }
+
 }
