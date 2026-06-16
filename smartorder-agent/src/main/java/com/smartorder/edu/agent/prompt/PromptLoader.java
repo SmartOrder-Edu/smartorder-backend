@@ -1,5 +1,6 @@
 package com.smartorder.edu.agent.prompt;
 
+import com.smartorder.edu.agent.tool.ToolHandler;
 import dev.langchain4j.data.message.SystemMessage;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -10,8 +11,10 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
+import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * 统一提示词加载器——从 classpath:prompts/ 目录加载所有 .md 提示词文件。
@@ -20,7 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 模板类提示词使用 MessageFormat 的 {0} {1} 占位符，调用方通过 format() 方法替换。
  */
 @Slf4j
-@Service
+@Service("agentPromptLoader")
 public class PromptLoader {
 
     private final ResourceLoader resourceLoader;
@@ -37,6 +40,29 @@ public class PromptLoader {
     void init() {
         loadAll();
         log.info("[PromptLoader] 提示词加载完成，共 {} 个文件", cache.size());
+    }
+
+    /**
+     * 注入工具列表以替换提示词中的 {available_tools_list} 和 {available_tools_with_desc} 占位符。
+     * 由 ToolRegistry 在完成所有工具注册后调用，避免 PromptLoader ↔ ToolRegistry 循环依赖。
+     */
+    public void injectToolList(Collection<ToolHandler> handlers) {
+        String toolNames = handlers.stream()
+                .map(ToolHandler::name).sorted().collect(Collectors.joining(", "));
+        String toolsWithDesc = handlers.stream()
+                .sorted((a, b) -> a.name().compareToIgnoreCase(b.name()))
+                .map(h -> "   " + h.name() + "：" + h.description())
+                .collect(Collectors.joining("\n"));
+
+        for (Map.Entry<String, String> entry : cache.entrySet()) {
+            String content = entry.getValue();
+            if (content.contains("{available_tools_list}") || content.contains("{available_tools_with_desc}")) {
+                content = content.replace("{available_tools_list}", toolNames);
+                content = content.replace("{available_tools_with_desc}", toolsWithDesc);
+                cache.put(entry.getKey(), content);
+                log.info("[PromptLoader] 动态注入工具列表到: {} ({} 个工具)", entry.getKey(), handlers.size());
+            }
+        }
     }
 
     // ============ Public: 静态 System Prompt ============
@@ -129,10 +155,6 @@ public class PromptLoader {
 
     public String getResourceTopicClarification() {
         return cache.get("clarification/resource-topic.md");
-    }
-
-    public String getProfileClarification() {
-        return cache.get("clarification/profile-clarification.md");
     }
 
     public String getCitationInstruction() {

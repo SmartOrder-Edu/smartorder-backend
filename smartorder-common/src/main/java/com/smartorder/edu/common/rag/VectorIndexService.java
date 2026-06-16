@@ -15,6 +15,7 @@ import io.milvus.v2.service.vector.request.SearchReq;
 import io.milvus.v2.service.vector.request.UpsertReq;
 import io.milvus.v2.service.vector.request.data.BaseVector;
 import io.milvus.v2.service.vector.request.data.FloatVec;
+import io.milvus.v2.service.vector.request.data.SparseFloatVec;
 import io.milvus.v2.service.vector.response.UpsertResp;
 import io.milvus.v2.service.vector.response.SearchResp;
 import lombok.extern.slf4j.Slf4j;
@@ -24,9 +25,13 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -40,8 +45,23 @@ public class VectorIndexService {
     @Value("${milvus.collection-name:rag_chunks}")
     private String collectionName;
 
+    @Value("${hybrid-search.rrf-k:60}")
+    private int rrfK;
+
+    @Value("${hybrid-search.dense-weight:0.7}")
+    private float denseWeight;
+
+    @Value("${hybrid-search.sparse-weight:0.3}")
+    private float sparseWeight;
+
     // 嵌入模型批量处理大小
     private static final int EMBEDDING_BATCH_SIZE = 10;
+
+    private static final List<String> BUSINESS_FIELDS = List.of(
+            "vector_id", "content", "chunk_id", "user_id",
+            "knowledge_base_id", "file_id", "document_id", "chunk_index",
+            "chunk_type", "section_title", "title_path", "page_number", "embedding_model"
+    );
 
     public VectorIndexService(MilvusClientV2 milvusClient,
                               @Qualifier("embeddingModel") EmbeddingModel embeddingModel,
@@ -83,9 +103,71 @@ public class VectorIndexService {
         }
 
         try {
+            String filter = buildFileIdsFilter(userId, fileIds);
+
+            // 执行密集向量和稀疏向量检索
+            List<AttachmentRagSearchResult> denseResults = searchDense(query, filter, topK);
+            List<AttachmentRagSearchResult> sparseResults = searchSparse(query, filter, topK);
+
+            log.info("[VectorIndexService] 文件检索完成，密集结果: {}, 稀疏结果: {}",
+                    denseResults.size(), sparseResults.size());
+
+            // RRF 融合
+            List<AttachmentRagSearchResult> mergedResults = mergeAndRerank(denseResults, sparseResults);
+
+            // 截取 topK
+            return mergedResults.stream()
+                    .limit(topK)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.error("混合检索失败: userId={}, fileIds={}", userId, fileIds, e);
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * 按知识库ID检索向量（混合检索：密集向量 + 稀疏向量）
+     */
+    public List<AttachmentRagSearchResult> searchByKnowledgeBaseIds(String query, Long userId,
+                                                                     List<Long> knowledgeBaseIds, int topK) {
+        if (query == null || query.isBlank() || knowledgeBaseIds == null || knowledgeBaseIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        try {
+            String filter = buildKnowledgeBaseIdsFilter(userId, knowledgeBaseIds);
+
+            // 调试日志
+            log.info("[VectorIndexService] 按知识库混合检索，userId={}, knowledgeBaseIds={}, filter={}",
+                    userId, knowledgeBaseIds, filter);
+
+            // 执行密集向量和稀疏向量检索
+            List<AttachmentRagSearchResult> denseResults = searchDense(query, filter, topK);
+            List<AttachmentRagSearchResult> sparseResults = searchSparse(query, filter, topK);
+
+            log.info("[VectorIndexService] 知识库检索完成，密集结果: {}, 稀疏结果: {}",
+                    denseResults.size(), sparseResults.size());
+
+            // RRF 融合
+            List<AttachmentRagSearchResult> mergedResults = mergeAndRerank(denseResults, sparseResults);
+
+            // 截取 topK
+            return mergedResults.stream()
+                    .limit(topK)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.error("按知识库混合检索失败: userId={}, knowledgeBaseIds={}", userId, knowledgeBaseIds, e);
+            return Collections.emptyList();
+        }
+    }
+    
+    /**
+     * 密集向量检索
+     */
+    private List<AttachmentRagSearchResult> searchDense(String query, String filter, int topK) {
+        try {
             Embedding embedding = embeddingModel.embed(TextSegment.from(query)).content();
             List<BaseVector> data = Collections.singletonList(new FloatVec(embedding.vectorAsList()));
-            String filter = buildFileIdsFilter(userId, fileIds);
 
             SearchReq searchReq = SearchReq.builder()
                     .collectionName(collectionName)
@@ -93,16 +175,93 @@ public class VectorIndexService {
                     .annsField("dense_vector")
                     .topK(Math.max(1, topK))
                     .filter(filter)
+                    .outputFields(BUSINESS_FIELDS)
                     .build();
 
             SearchResp resp = milvusClient.search(searchReq);
             return parseAttachmentSearchResults(resp);
         } catch (Exception e) {
-            log.error("按会话附件检索向量失败: userId={}, fileIds={}", userId, fileIds, e);
+            log.error("密集向量检索失败", e);
             return Collections.emptyList();
         }
     }
-    
+
+    /**
+     * 稀疏向量检索
+     */
+    private List<AttachmentRagSearchResult> searchSparse(String query, String filter, int topK) {
+        try {
+            Map<Long, Float> sparseVector = tfidfService.computeTfidfVector(query);
+            if (sparseVector == null || sparseVector.isEmpty()) {
+                log.debug("稀疏向量为空，跳过稀疏检索");
+                return Collections.emptyList();
+            }
+
+            SortedMap<Long, Float> sortedSparseVector = new TreeMap<>(sparseVector);
+            List<BaseVector> data = Collections.singletonList(new SparseFloatVec(sortedSparseVector));
+
+            SearchReq searchReq = SearchReq.builder()
+                    .collectionName(collectionName)
+                    .data(data)
+                    .annsField("sparse_vector")
+                    .topK(Math.max(1, topK))
+                    .filter(filter)
+                    .outputFields(BUSINESS_FIELDS)
+                    .build();
+
+            SearchResp resp = milvusClient.search(searchReq);
+            return parseAttachmentSearchResults(resp);
+        } catch (Exception e) {
+            log.error("稀疏向量检索失败", e);
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * RRF (Reciprocal Rank Fusion) 融合密集和稀疏检索结果
+     */
+    private List<AttachmentRagSearchResult> mergeAndRerank(
+            List<AttachmentRagSearchResult> denseResults,
+            List<AttachmentRagSearchResult> sparseResults) {
+
+        Map<String, AttachmentRagSearchResult> mergedMap = new LinkedHashMap<>();
+        Map<String, Integer> denseRankMap = new HashMap<>();
+        Map<String, Integer> sparseRankMap = new HashMap<>();
+
+        // 记录密集向量排名
+        for (int i = 0; i < denseResults.size(); i++) {
+            String key = denseResults.get(i).getVectorId();
+            if (key == null) continue;
+            denseRankMap.put(key, i + 1);
+            mergedMap.put(key, denseResults.get(i));
+        }
+
+        // 记录稀疏向量排名
+        for (int i = 0; i < sparseResults.size(); i++) {
+            String key = sparseResults.get(i).getVectorId();
+            if (key == null) continue;
+            sparseRankMap.put(key, i + 1);
+            mergedMap.putIfAbsent(key, sparseResults.get(i));
+        }
+
+        // 计算 RRF 分数
+        for (Map.Entry<String, AttachmentRagSearchResult> entry : mergedMap.entrySet()) {
+            String key = entry.getKey();
+            AttachmentRagSearchResult result = entry.getValue();
+
+            int denseRank = denseRankMap.getOrDefault(key, denseResults.size() + 100);
+            int sparseRank = sparseRankMap.getOrDefault(key, sparseResults.size() + 100);
+
+            double rrfScore = denseWeight / (rrfK + denseRank) + sparseWeight / (rrfK + sparseRank);
+            result.setScore((float) rrfScore);
+        }
+
+        // 按 RRF 分数排序
+        return mergedMap.values().stream()
+                .sorted(Comparator.comparing(AttachmentRagSearchResult::getScore).reversed())
+                .collect(Collectors.toList());
+    }
+
     /**
      * 处理单个批次的文档块
      */
@@ -213,6 +372,16 @@ public class VectorIndexService {
                 .map(id -> "file_id == " + id)
                 .collect(Collectors.joining(" || "));
         return "user_id == " + userId + " && (" + fileExpr + ")";
+    }
+
+    private String buildKnowledgeBaseIdsFilter(Long userId, List<Long> knowledgeBaseIds) {
+        String kbExpr = knowledgeBaseIds.stream()
+                .distinct()
+                .map(id -> "knowledge_base_id == " + id)
+                .collect(Collectors.joining(" || "));
+        // 按知识库检索时，不强制要求 user_id 匹配
+        // 因为知识库可能是共享的，或者数据的 user_id 可能与当前用户不同
+        return kbExpr;
     }
 
     private List<AttachmentRagSearchResult> parseAttachmentSearchResults(SearchResp resp) {

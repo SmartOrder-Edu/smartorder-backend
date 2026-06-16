@@ -2,6 +2,7 @@ package com.smartorder.edu.agent.orchestrator;
 
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
+
 import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentRouteService;
@@ -41,6 +42,8 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
     private final ConversationMemoryService memoryService;
     private final AgentConversationAttachmentService attachmentService;
 
+    private final AgentRunSupervisor runSupervisor;
+
     @Override
     public void handle(AgentChatRequest request, SseEmitter emitter) {
         String conversationId = resolveConversationId(request);
@@ -49,7 +52,13 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 .traceId(UUID.randomUUID().toString())
                 .conversationId(conversationId)
                 .userId(request.getUserId())
+                .message(request.getMessage())
+                .knowledgeBaseIds(request.getKnowledgeBaseIds())
+                .fileIds(request.getFileIds())
                 .build();
+
+        // 初始化执行预算（默认 ReAct 预算，路由后按模式调整）
+        context.setBudget(ExecutionBudget.reactDefault());
 
         try {
             // 0. 统一保存用户消息（所有模式都落库，含附件关联）
@@ -82,16 +91,20 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                     ));
                     memoryService.saveAssistantMessage(conversationId, request.getUserId(), answer,
                             null, context.getTraceId(), null);
+                    context.setAssistantMessageSaved(true);
                     dispatcher.complete(emitter, context);
                     return;
                 }
             }
 
+            // RAG 检索已改为 Agent 工具注入模式（addRagToolIfNeeded），
+            // Agent 在 ReAct 循环中通过 ragRetrieve 工具自主决定何时检索，
+            // 不再由编排器自动触发
+
             // 0.5 显式模式短路：跳过意图路由，直接按用户选择的模式执行
             if (request.getForceMode() != null && !request.getForceMode().isBlank()) {
                 handleForcedMode(request, emitter, context, conversationId);
-                dispatcher.complete(emitter, context);
-                return;
+                return; // handleForcedMode 内部通过 supervisor 完成 SSE
             }
 
             // 1. 意图路由（带会话上下文）
@@ -103,6 +116,12 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
             IntentRouteResult routeResult = intentRouteService.route(routeCtx);
             context.setMode(routeResult.getRunMode());
             addAttachmentSearchToolIfNeeded(routeResult, context);
+            addRagToolIfNeeded(routeResult, context);
+
+            // 根据路由结果调整执行预算
+            if (routeResult.getRunMode() == AgentRunMode.PLAN_AND_EXECUTE) {
+                context.setBudget(ExecutionBudget.planDefault());
+            }
 
             // 2. 推送 TRACE_STARTED
             dispatcher.emit(emitter, context, AgentEventType.TRACE_STARTED, Map.of(
@@ -123,31 +142,32 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                     "reason", routeResult.getReason()
             ));
 
-            // 4. 按运行模式分发
-            switch (routeResult.getRunMode()) {
-                case REACT -> {
-                    if (routeResult.isNeedsClarification()) {
-                        // 澄清短路：直接输出澄清文本，不走 ReAct
-                        String clarificationMsg = routeResult.getReason();
-                        dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of(
-                                "text", clarificationMsg
-                        ));
-                        memoryService.saveAssistantMessage(conversationId, request.getUserId(),
-                                clarificationMsg, null, context.getTraceId(), null);
-                    } else {
-                        reActEngine.execute(request, routeResult, context, emitter);
+            // 4. 在监督下执行引擎——保证收敛
+            runSupervisor.supervisedRun(context, emitter, context.getBudget(), () -> {
+                switch (routeResult.getRunMode()) {
+                    case REACT -> {
+                        if (routeResult.isNeedsClarification()) {
+                            // 澄清短路：直接输出澄清文本，不走 ReAct
+                            String clarificationMsg = routeResult.getReason();
+                            dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of(
+                                    "text", clarificationMsg
+                            ));
+                            memoryService.saveAssistantMessage(conversationId, request.getUserId(),
+                                    clarificationMsg, null, context.getTraceId(), null);
+                            context.setAssistantMessageSaved(true);
+                        } else {
+                            reActEngine.execute(request, routeResult, context, emitter);
+                        }
                     }
+                    case PLAN_AND_EXECUTE -> handlePlanAndExecute(request, routeResult, context, emitter);
+                    default -> throw new IllegalStateException("不支持的运行模式: " + routeResult.getRunMode());
                 }
-                case PLAN_AND_EXECUTE -> handlePlanAndExecute(request, routeResult, context, emitter);
-                default -> throw new IllegalStateException("不支持的运行模式: " + routeResult.getRunMode());
-            }
-
-            // 5. 完成
-            dispatcher.complete(emitter, context);
+            });
 
         } catch (Exception e) {
+            // supervisor 外部异常（路由前等）——仍保证收敛
             log.error("[AgentOrchestrator] 执行失败: traceId={}", context.getTraceId(), e);
-            dispatcher.error(emitter, context, e);
+            runSupervisor.handleUncaughtError(context, emitter, e);
         }
     }
 
@@ -193,6 +213,38 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         routeResult.setRequiredTools(tools);
     }
 
+    /**
+     * 当用户指定了知识库ID或文件ID时，注入 ragRetrieve 工具供 LLM 自主调用
+     */
+    private void addRagToolIfNeeded(IntentRouteResult routeResult, AgentRuntimeContext context) {
+        if (routeResult.getRunMode() != AgentRunMode.REACT) {
+            return;
+        }
+        boolean hasKnowledgeBases = context.getKnowledgeBaseIds() != null
+                && !context.getKnowledgeBaseIds().isEmpty();
+        boolean hasFiles = context.getFileIds() != null
+                && !context.getFileIds().isEmpty();
+        if (!hasKnowledgeBases && !hasFiles) {
+            return;
+        }
+
+        List<String> currentTools = routeResult.getRequiredTools() != null
+                ? routeResult.getRequiredTools() : List.of();
+        if (currentTools.contains("ragRetrieve")) {
+            return;
+        }
+
+        List<String> tools = new ArrayList<>(currentTools);
+        tools.add("ragRetrieve");
+        routeResult.setRequiredTools(tools);
+
+        // 设置强制调用 ragRetrieve 工具标志
+        context.setForceRagRetrieve(true);
+
+        log.info("[AgentOrchestrator] 注入 ragRetrieve 工具，knowledgeBaseIds={}, fileIds={}",
+                context.getKnowledgeBaseIds(), context.getFileIds());
+    }
+
     // ============ 显式模式短路 ============
 
     /**
@@ -211,6 +263,12 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         IntentRouteResult forcedResult = buildForcedRouteResult(mode);
         context.setMode(forcedResult.getRunMode());
         addAttachmentSearchToolIfNeeded(forcedResult, context);
+        addRagToolIfNeeded(forcedResult, context);
+
+        // 根据模式调整预算
+        if (forcedResult.getRunMode() == AgentRunMode.PLAN_AND_EXECUTE) {
+            context.setBudget(ExecutionBudget.planDefault());
+        }
 
         // 推送 TRACE_STARTED
         dispatcher.emit(emitter, context, AgentEventType.TRACE_STARTED, Map.of(
@@ -231,19 +289,21 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 "reason", forcedResult.getReason()
         ));
 
-        // 按模式分发
-        switch (forcedResult.getRunMode()) {
-            case REACT -> reActEngine.execute(request, forcedResult, context, emitter);
-            case PLAN_AND_EXECUTE -> handlePlanAndExecute(request, forcedResult, context, emitter);
-            default -> throw new IllegalStateException("不支持的运行模式: " + forcedResult.getRunMode());
-        }
+        // 在监督下执行引擎
+        runSupervisor.supervisedRun(context, emitter, context.getBudget(), () -> {
+            switch (forcedResult.getRunMode()) {
+                case REACT -> reActEngine.execute(request, forcedResult, context, emitter);
+                case PLAN_AND_EXECUTE -> handlePlanAndExecute(request, forcedResult, context, emitter);
+                default -> throw new IllegalStateException("不支持的运行模式: " + forcedResult.getRunMode());
+            }
+        });
     }
 
     private IntentRouteResult buildForcedRouteResult(AgentRunMode mode) {
         boolean needsPlanning = mode == AgentRunMode.PLAN_AND_EXECUTE;
         List<String> tools = needsPlanning
                 ? List.of()
-                : List.of("getStudentProfile", "queryKnowledge", "queryTasks");
+                : List.of("getStudentProfile", "queryKnowledge", "queryTasks", "webSearch");
         return IntentRouteResult.builder()
                 .intentType(needsPlanning ? "目标规划（手动选择）" : "知识问答（手动选择）")
                 .intentEnum(needsPlanning ? IntentType.GOAL_PLANNING : IntentType.KNOWLEDGE_QA)
@@ -264,4 +324,5 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         }
         return new ArrayList<>(new LinkedHashSet<>(fileIds));
     }
+
 }

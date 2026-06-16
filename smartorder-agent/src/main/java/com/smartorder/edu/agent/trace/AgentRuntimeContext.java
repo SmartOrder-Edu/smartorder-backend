@@ -1,5 +1,6 @@
 package com.smartorder.edu.agent.trace;
 
+import com.smartorder.edu.agent.orchestrator.ExecutionBudget;
 import com.smartorder.edu.agent.route.AgentRunMode;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -24,15 +25,57 @@ public class AgentRuntimeContext {
 
     private Long userId;
 
+    /**
+     * 用户原始消息
+     */
+    private String message;
+
     @Builder.Default
     private AgentRunMode mode = AgentRunMode.REACT;
 
     private String attachmentContext;
 
+    /**
+     * RAG 检索上下文（自动触发时生成）
+     */
+    private String ragContext;
+
+    /**
+     * 是否强制调用 ragRetrieve 工具（当前端传递了 fileIds 或 knowledgeBaseIds 时为 true）
+     */
+    private boolean forceRagRetrieve;
+
+    /**
+     * 前端传递的知识库ID列表（用于 RAG 检索）
+     */
+    private List<Long> knowledgeBaseIds;
+
+    /**
+     * 前端传递的文件ID列表（用于 RAG 检索）
+     */
+    private List<Long> fileIds;
+
     private List<Long> allowedAttachmentFileIds;
 
     @Builder.Default
     private AtomicInteger sequence = new AtomicInteger(0);
+
+    /**
+     * 执行预算——在 ReAct 和 Plan 循环的每次迭代中检查
+     */
+    private ExecutionBudget budget;
+
+    /**
+     * 客户端是否已断开 SSE 连接
+     */
+    @Builder.Default
+    private volatile boolean clientDisconnected = false;
+
+    /**
+     * 助手消息是否已保存（防止 AgentRunSupervisor 重复保存）
+     */
+    @Builder.Default
+    private boolean assistantMessageSaved = false;
 
     /**
      * 获取下一个事件序号

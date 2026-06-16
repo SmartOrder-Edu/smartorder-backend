@@ -44,6 +44,7 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
                         .data(JSON.toJSONString(event)));
             } catch (IOException e) {
                 log.warn("[TraceDispatcher] SSE 发送失败: traceId={}, event={}", context.getTraceId(), eventType.getEventName());
+                context.setClientDisconnected(true);
             }
         }
 

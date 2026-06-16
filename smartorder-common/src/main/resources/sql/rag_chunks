@@ -1,205 +1,1106 @@
 {
-  "collectionName": "rag_chunks",
-  "description": "RAG知识块混合向量集合，支持SigLIP密集向量和TF-IDF稀疏向量",
-
-  "primaryField": {
-    "name": "vector_id",
-    "dataType": "VarChar",
-    "maxLength": 128,
-    "autoId": false,
-    "description": "Milvus向量主键，对应KnowledgeChunk.vectorId"
-  },
-
-  "enableDynamicField": false,
-
-  "fields": [
-    {
+  "collection_name": "rag_chunks",
+  "schema": {
+    "fields": [
+      {
+        "type_params": [
+          {
+            "key": "max_length",
+            "value": "128"
+          }
+        ],
+        "index_params": [],
+        "fieldID": "100",
+        "name": "vector_id",
+        "is_primary_key": true,
+        "description": "",
+        "data_type": "VarChar",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 21,
+        "_placeholderType": 21,
+        "max_length": "128",
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": 128
+      },
+      {
+        "type_params": [
+          {
+            "key": "dim",
+            "value": "1024"
+          }
+        ],
+        "index_params": [],
+        "fieldID": "101",
+        "name": "dense_vector",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "FloatVector",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 101,
+        "_placeholderType": 101,
+        "dim": "1024",
+        "indexes": [
+          {
+            "params": [
+              {
+                "key": "index_type",
+                "value": "IVF_FLAT"
+              },
+              {
+                "key": "metric_type",
+                "value": "COSINE"
+              },
+              {
+                "key": "nlist",
+                "value": "1024"
+              }
+            ],
+            "index_name": "dense_vector",
+            "indexID": "466242765925360864",
+            "field_name": "dense_vector",
+            "indexed_rows": "107",
+            "total_rows": "107",
+            "state": "Finished",
+            "index_state_fail_reason": "",
+            "pending_index_rows": "0",
+            "min_index_version": 2147483647,
+            "max_index_version": -2147483648,
+            "indexType": "IVF_FLAT",
+            "metricType": "COSINE",
+            "indexParameterPairs": [
+              {
+                "key": "index_type",
+                "value": "IVF_FLAT"
+              },
+              {
+                "key": "metric_type",
+                "value": "COSINE"
+              },
+              {
+                "key": "nlist",
+                "value": "1024"
+              }
+            ]
+          }
+        ],
+        "dimension": 1024,
+        "maxCapacity": -1,
+        "maxLength": -1
+      },
+      {
+        "type_params": [],
+        "index_params": [],
+        "fieldID": "102",
+        "name": "sparse_vector",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "SparseFloatVector",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 104,
+        "_placeholderType": 104,
+        "indexes": [
+          {
+            "params": [
+              {
+                "key": "index_type",
+                "value": "SPARSE_INVERTED_INDEX"
+              },
+              {
+                "key": "metric_type",
+                "value": "IP"
+              },
+              {
+                "key": "inverted_index_algo",
+                "value": "DAAT_MAXSCORE"
+              }
+            ],
+            "index_name": "sparse_vector",
+            "indexID": "466242765925360866",
+            "field_name": "sparse_vector",
+            "indexed_rows": "107",
+            "total_rows": "107",
+            "state": "Finished",
+            "index_state_fail_reason": "",
+            "pending_index_rows": "0",
+            "min_index_version": 2147483647,
+            "max_index_version": -2147483648,
+            "indexType": "SPARSE_INVERTED_INDEX",
+            "metricType": "IP",
+            "indexParameterPairs": [
+              {
+                "key": "index_type",
+                "value": "SPARSE_INVERTED_INDEX"
+              },
+              {
+                "key": "metric_type",
+                "value": "IP"
+              },
+              {
+                "key": "inverted_index_algo",
+                "value": "DAAT_MAXSCORE"
+              }
+            ]
+          }
+        ],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1
+      },
+      {
+        "type_params": [
+          {
+            "key": "max_length",
+            "value": "65535"
+          }
+        ],
+        "index_params": [],
+        "fieldID": "103",
+        "name": "content",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "VarChar",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 21,
+        "_placeholderType": 21,
+        "max_length": "65535",
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": 65535
+      },
+      {
+        "type_params": [],
+        "index_params": [],
+        "fieldID": "104",
+        "name": "chunk_id",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "Int64",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 5,
+        "_placeholderType": 5,
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1
+      },
+      {
+        "type_params": [],
+        "index_params": [],
+        "fieldID": "105",
+        "name": "user_id",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "Int64",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 5,
+        "_placeholderType": 5,
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1
+      },
+      {
+        "type_params": [],
+        "index_params": [],
+        "fieldID": "106",
+        "name": "knowledge_base_id",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "Int64",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 5,
+        "_placeholderType": 5,
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1
+      },
+      {
+        "type_params": [],
+        "index_params": [],
+        "fieldID": "107",
+        "name": "file_id",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "Int64",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 5,
+        "_placeholderType": 5,
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1
+      },
+      {
+        "type_params": [],
+        "index_params": [],
+        "fieldID": "108",
+        "name": "document_id",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "Int64",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 5,
+        "_placeholderType": 5,
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1
+      },
+      {
+        "type_params": [],
+        "index_params": [],
+        "fieldID": "109",
+        "name": "chunk_index",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "Int32",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 4,
+        "_placeholderType": 4,
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1
+      },
+      {
+        "type_params": [
+          {
+            "key": "max_length",
+            "value": "50"
+          }
+        ],
+        "index_params": [],
+        "fieldID": "110",
+        "name": "chunk_type",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "VarChar",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 21,
+        "_placeholderType": 21,
+        "max_length": "50",
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": 50
+      },
+      {
+        "type_params": [
+          {
+            "key": "max_length",
+            "value": "500"
+          }
+        ],
+        "index_params": [],
+        "fieldID": "111",
+        "name": "section_title",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "VarChar",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 21,
+        "_placeholderType": 21,
+        "max_length": "500",
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": 500
+      },
+      {
+        "type_params": [
+          {
+            "key": "max_length",
+            "value": "1000"
+          }
+        ],
+        "index_params": [],
+        "fieldID": "112",
+        "name": "title_path",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "VarChar",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 21,
+        "_placeholderType": 21,
+        "max_length": "1000",
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": 1000
+      },
+      {
+        "type_params": [],
+        "index_params": [],
+        "fieldID": "113",
+        "name": "page_number",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "Int32",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 4,
+        "_placeholderType": 4,
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1
+      },
+      {
+        "type_params": [
+          {
+            "key": "max_length",
+            "value": "100"
+          }
+        ],
+        "index_params": [],
+        "fieldID": "114",
+        "name": "embedding_model",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "VarChar",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 21,
+        "_placeholderType": 21,
+        "max_length": "100",
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": 100
+      },
+      {
+        "name": "$meta",
+        "data_type": "JSON",
+        "type_params": [],
+        "indexes": [],
+        "description": "",
+        "index_params": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1,
+        "autoID": false,
+        "fieldID": "",
+        "state": "",
+        "nullable": false,
+        "default_value": null,
+        "dataType": 23,
+        "is_function_output": false,
+        "is_primary_key": false
+      }
+    ],
+    "properties": [],
+    "functions": [],
+    "struct_array_fields": [],
+    "name": "rag_chunks",
+    "description": "",
+    "autoID": false,
+    "enable_dynamic_field": true,
+    "dbName": "",
+    "version": 0,
+    "enable_namespace": false,
+    "primaryField": {
+      "type_params": [
+        {
+          "key": "max_length",
+          "value": "128"
+        }
+      ],
+      "index_params": [],
+      "fieldID": "100",
       "name": "vector_id",
-      "dataType": "VarChar",
-      "maxLength": 128,
-      "isPrimaryKey": true,
-      "description": "向量主键ID"
+      "is_primary_key": true,
+      "description": "",
+      "data_type": "VarChar",
+      "autoID": false,
+      "state": "FieldCreated",
+      "element_type": "None",
+      "default_value": null,
+      "is_dynamic": false,
+      "is_partition_key": false,
+      "is_clustering_key": false,
+      "nullable": false,
+      "is_function_output": false,
+      "dataType": 21,
+      "_placeholderType": 21,
+      "max_length": "128",
+      "indexes": [],
+      "dimension": -1,
+      "maxCapacity": -1,
+      "maxLength": 128
     },
-    {
-      "name": "content",
-      "dataType": "VarChar",
-      "maxLength": 65535,
-      "description": "用于检索和RAG上下文注入的文本内容"
-    },
-    {
-      "name": "siglip_dense_vector",
-      "dataType": "FloatVector",
-      "dimension": 1024,
-      "description": "SigLIP生成的密集向量，用于语义检索和图文检索"
-    },
-    {
-      "name": "tfidf_sparse_vector",
-      "dataType": "SparseFloatVector",
-      "description": "TF-IDF生成的稀疏向量，用于关键词、术语、精确匹配检索"
-    },
-
-    {
-      "name": "chunk_id",
-      "dataType": "Int64",
-      "description": "MySQL中的知识块ID"
-    },
-    {
-      "name": "user_id",
-      "dataType": "Int64",
-      "description": "用户ID，用于数据隔离"
-    },
-    {
-      "name": "knowledge_base_id",
-      "dataType": "Int64",
-      "description": "知识库ID，用于知识库范围过滤"
-    },
-    {
-      "name": "file_id",
-      "dataType": "Int64",
-      "description": "文件ID，用于文件范围过滤和溯源"
-    },
-    {
-      "name": "document_id",
-      "dataType": "Int64",
-      "description": "文档ID，用于文档范围过滤"
-    },
-
-    {
-      "name": "chunk_index",
-      "dataType": "Int64",
-      "description": "chunk在文档中的顺序"
-    },
-    {
-      "name": "chunk_type",
-      "dataType": "VarChar",
-      "maxLength": 64,
-      "description": "chunk类型，例如text、table、image_ocr"
-    },
-    {
-      "name": "section_title",
-      "dataType": "VarChar",
-      "maxLength": 512,
-      "description": "当前chunk所属章节标题"
-    },
-    {
-      "name": "title_path",
-      "dataType": "VarChar",
-      "maxLength": 1024,
-      "description": "Markdown标题路径，例如第一章/进程管理/进程调度"
-    },
-    {
-      "name": "page_number",
-      "dataType": "Int64",
-      "description": "页码，PDF、Word、PPT等文件可使用"
-    },
-
-    {
-      "name": "file_name",
-      "dataType": "VarChar",
-      "maxLength": 512,
-      "description": "源文件名称"
-    },
-    {
-      "name": "document_title",
-      "dataType": "VarChar",
-      "maxLength": 512,
-      "description": "文档标题"
-    },
-    {
-      "name": "content_hash",
-      "dataType": "VarChar",
-      "maxLength": 128,
-      "description": "chunk内容hash，用于判断是否需要重新向量化"
-    },
-
-    {
-      "name": "dense_model",
-      "dataType": "VarChar",
-      "maxLength": 128,
-      "description": "密集向量模型名称，例如siglip-base-patch16-224"
-    },
-    {
-      "name": "sparse_model",
-      "dataType": "VarChar",
-      "maxLength": 128,
-      "description": "稀疏向量模型名称，例如tfidf"
-    },
-    {
-      "name": "created_at",
-      "dataType": "VarChar",
-      "maxLength": 64,
-      "description": "向量记录创建时间"
-    }
-  ],
-
-  "indexes": [
-    {
-      "fieldName": "siglip_dense_vector",
-      "indexName": "idx_siglip_dense_vector",
-      "indexType": "HNSW",
-      "metricType": "COSINE",
-      "params": {
-        "M": 16,
-        "efConstruction": 200
+    "hasVectorIndex": true,
+    "enablePartitionKey": false,
+    "scalarFields": [
+      {
+        "type_params": [
+          {
+            "key": "max_length",
+            "value": "128"
+          }
+        ],
+        "index_params": [],
+        "fieldID": "100",
+        "name": "vector_id",
+        "is_primary_key": true,
+        "description": "",
+        "data_type": "VarChar",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 21,
+        "_placeholderType": 21,
+        "max_length": "128",
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": 128
       },
-      "description": "SigLIP密集向量索引"
-    },
-    {
-      "fieldName": "tfidf_sparse_vector",
-      "indexName": "idx_tfidf_sparse_vector",
-      "indexType": "SPARSE_INVERTED_INDEX",
-      "metricType": "IP",
-      "params": {
-        "drop_ratio_build": 0.2
+      {
+        "type_params": [
+          {
+            "key": "max_length",
+            "value": "65535"
+          }
+        ],
+        "index_params": [],
+        "fieldID": "103",
+        "name": "content",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "VarChar",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 21,
+        "_placeholderType": 21,
+        "max_length": "65535",
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": 65535
       },
-      "description": "TF-IDF稀疏向量倒排索引"
-    }
-  ],
-
-  "searchParams": {
-    "denseSearch": {
-      "fieldName": "siglip_dense_vector",
-      "metricType": "COSINE",
-      "params": {
-        "ef": 64
+      {
+        "type_params": [],
+        "index_params": [],
+        "fieldID": "104",
+        "name": "chunk_id",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "Int64",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 5,
+        "_placeholderType": 5,
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1
       },
-      "topK": 20
-    },
-    "sparseSearch": {
-      "fieldName": "tfidf_sparse_vector",
-      "metricType": "IP",
-      "params": {
-        "drop_ratio_search": 0.2
+      {
+        "type_params": [],
+        "index_params": [],
+        "fieldID": "105",
+        "name": "user_id",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "Int64",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 5,
+        "_placeholderType": 5,
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1
       },
-      "topK": 20
-    },
-    "hybridSearch": {
-      "topK": 10,
-      "denseWeight": 0.6,
-      "sparseWeight": 0.4,
-      "rerankType": "weighted"
-    }
+      {
+        "type_params": [],
+        "index_params": [],
+        "fieldID": "106",
+        "name": "knowledge_base_id",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "Int64",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 5,
+        "_placeholderType": 5,
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1
+      },
+      {
+        "type_params": [],
+        "index_params": [],
+        "fieldID": "107",
+        "name": "file_id",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "Int64",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 5,
+        "_placeholderType": 5,
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1
+      },
+      {
+        "type_params": [],
+        "index_params": [],
+        "fieldID": "108",
+        "name": "document_id",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "Int64",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 5,
+        "_placeholderType": 5,
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1
+      },
+      {
+        "type_params": [],
+        "index_params": [],
+        "fieldID": "109",
+        "name": "chunk_index",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "Int32",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 4,
+        "_placeholderType": 4,
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1
+      },
+      {
+        "type_params": [
+          {
+            "key": "max_length",
+            "value": "50"
+          }
+        ],
+        "index_params": [],
+        "fieldID": "110",
+        "name": "chunk_type",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "VarChar",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 21,
+        "_placeholderType": 21,
+        "max_length": "50",
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": 50
+      },
+      {
+        "type_params": [
+          {
+            "key": "max_length",
+            "value": "500"
+          }
+        ],
+        "index_params": [],
+        "fieldID": "111",
+        "name": "section_title",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "VarChar",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 21,
+        "_placeholderType": 21,
+        "max_length": "500",
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": 500
+      },
+      {
+        "type_params": [
+          {
+            "key": "max_length",
+            "value": "1000"
+          }
+        ],
+        "index_params": [],
+        "fieldID": "112",
+        "name": "title_path",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "VarChar",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 21,
+        "_placeholderType": 21,
+        "max_length": "1000",
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": 1000
+      },
+      {
+        "type_params": [],
+        "index_params": [],
+        "fieldID": "113",
+        "name": "page_number",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "Int32",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 4,
+        "_placeholderType": 4,
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1
+      },
+      {
+        "type_params": [
+          {
+            "key": "max_length",
+            "value": "100"
+          }
+        ],
+        "index_params": [],
+        "fieldID": "114",
+        "name": "embedding_model",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "VarChar",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 21,
+        "_placeholderType": 21,
+        "max_length": "100",
+        "indexes": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": 100
+      }
+    ],
+    "vectorFields": [
+      {
+        "type_params": [
+          {
+            "key": "dim",
+            "value": "1024"
+          }
+        ],
+        "index_params": [],
+        "fieldID": "101",
+        "name": "dense_vector",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "FloatVector",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 101,
+        "_placeholderType": 101,
+        "dim": "1024",
+        "indexes": [
+          {
+            "params": [
+              {
+                "key": "index_type",
+                "value": "IVF_FLAT"
+              },
+              {
+                "key": "metric_type",
+                "value": "COSINE"
+              },
+              {
+                "key": "nlist",
+                "value": "1024"
+              }
+            ],
+            "index_name": "dense_vector",
+            "indexID": "466242765925360864",
+            "field_name": "dense_vector",
+            "indexed_rows": "107",
+            "total_rows": "107",
+            "state": "Finished",
+            "index_state_fail_reason": "",
+            "pending_index_rows": "0",
+            "min_index_version": 2147483647,
+            "max_index_version": -2147483648,
+            "indexType": "IVF_FLAT",
+            "metricType": "COSINE",
+            "indexParameterPairs": [
+              {
+                "key": "index_type",
+                "value": "IVF_FLAT"
+              },
+              {
+                "key": "metric_type",
+                "value": "COSINE"
+              },
+              {
+                "key": "nlist",
+                "value": "1024"
+              }
+            ]
+          }
+        ],
+        "dimension": 1024,
+        "maxCapacity": -1,
+        "maxLength": -1
+      },
+      {
+        "type_params": [],
+        "index_params": [],
+        "fieldID": "102",
+        "name": "sparse_vector",
+        "is_primary_key": false,
+        "description": "",
+        "data_type": "SparseFloatVector",
+        "autoID": false,
+        "state": "FieldCreated",
+        "element_type": "None",
+        "default_value": null,
+        "is_dynamic": false,
+        "is_partition_key": false,
+        "is_clustering_key": false,
+        "nullable": false,
+        "is_function_output": false,
+        "dataType": 104,
+        "_placeholderType": 104,
+        "indexes": [
+          {
+            "params": [
+              {
+                "key": "index_type",
+                "value": "SPARSE_INVERTED_INDEX"
+              },
+              {
+                "key": "metric_type",
+                "value": "IP"
+              },
+              {
+                "key": "inverted_index_algo",
+                "value": "DAAT_MAXSCORE"
+              }
+            ],
+            "index_name": "sparse_vector",
+            "indexID": "466242765925360866",
+            "field_name": "sparse_vector",
+            "indexed_rows": "107",
+            "total_rows": "107",
+            "state": "Finished",
+            "index_state_fail_reason": "",
+            "pending_index_rows": "0",
+            "min_index_version": 2147483647,
+            "max_index_version": -2147483648,
+            "indexType": "SPARSE_INVERTED_INDEX",
+            "metricType": "IP",
+            "indexParameterPairs": [
+              {
+                "key": "index_type",
+                "value": "SPARSE_INVERTED_INDEX"
+              },
+              {
+                "key": "metric_type",
+                "value": "IP"
+              },
+              {
+                "key": "inverted_index_algo",
+                "value": "DAAT_MAXSCORE"
+              }
+            ]
+          }
+        ],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1
+      }
+    ],
+    "functionFields": [],
+    "dynamicFields": [
+      {
+        "name": "$meta",
+        "data_type": "JSON",
+        "type_params": [],
+        "indexes": [],
+        "description": "",
+        "index_params": [],
+        "dimension": -1,
+        "maxCapacity": -1,
+        "maxLength": -1,
+        "autoID": false,
+        "fieldID": "",
+        "state": "",
+        "nullable": false,
+        "default_value": null,
+        "dataType": 23,
+        "is_function_output": false,
+        "is_primary_key": false
+      }
+    ]
   },
-
-  "filterFields": [
-    "user_id",
-    "knowledge_base_id",
-    "file_id",
-    "document_id",
-    "chunk_type"
-  ],
-
-  "models": {
-    "dense": {
-      "name": "siglip-base-patch16-224",
-      "type": "siglip",
-      "dimension": 1024,
-      "fieldName": "siglip_dense_vector"
-    },
-    "sparse": {
-      "name": "tfidf",
-      "type": "tfidf",
-      "fieldName": "tfidf_sparse_vector"
+  "rowCount": 107,
+  "createdTime": 1779102304854,
+  "update_timestamp": 1779102304854,
+  "aliases": [],
+  "description": "",
+  "autoID": false,
+  "id": "466242765925360857",
+  "loadedPercentage": 100,
+  "consistency_level": "Strong",
+  "replicas": [
+    {
+      "partition_ids": [],
+      "shard_replicas": [
+        {
+          "node_ids": [
+            "1"
+          ],
+          "leaderID": "1",
+          "leader_addr": "172.18.0.5:21123",
+          "dm_channel_name": "by-dev-rootcoord-dml_4_466242765925360857v0"
+        }
+      ],
+      "node_ids": [
+        "1"
+      ],
+      "num_outbound_node": {},
+      "replicaID": "466242765930627077",
+      "collectionID": "466242765925360857",
+      "resource_group_name": "__default_resource_group"
     }
-  }
+  ],
+  "loaded": true,
+  "status": "loaded",
+  "properties": [],
+  "shards_num": 1,
+  "_schemaVersion": 1
 }

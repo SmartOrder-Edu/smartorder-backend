@@ -4,6 +4,8 @@ import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import com.smartorder.edu.learning.dto.LearningSpaceDTO;
 import com.smartorder.edu.learning.domain.vo.LearningSpaceVO;
+import com.smartorder.edu.learning.domain.vo.SpaceDashboardVO;
+import com.smartorder.edu.learning.service.ISpaceDashboardService;
 import com.smartorder.edu.learning.service.impl.LearningSpaceServiceImpl;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
@@ -27,6 +29,7 @@ import java.util.List;
 public class LearningSpaceController {
 
     private final LearningSpaceServiceImpl learningSpaceService;
+    private final ISpaceDashboardService spaceDashboardService;
 
     /**
      * 创建学习空间
@@ -105,6 +108,19 @@ public class LearningSpaceController {
     public Result<LearningSpaceVO> changeStatus(@PathVariable Long id, @RequestParam String status) {
         Long userId = getCurrentUserId();
         LearningSpaceVO vo = learningSpaceService.changeStatus(userId, id, status);
+        return Result.success(vo);
+    }
+
+    /**
+     * 获取学习空间仪表盘聚合数据
+     * @param id 空间ID
+     * @return 仪表盘聚合VO
+     */
+    @GetMapping("/{id}/dashboard")
+    @Operation(summary = "获取学习空间仪表盘", description = "聚合返回学习空间的所有仪表盘数据：任务、路径、资源、学习记录等")
+    public Result<SpaceDashboardVO> dashboard(@PathVariable Long id) {
+        Long userId = getCurrentUserId();
+        SpaceDashboardVO vo = spaceDashboardService.getDashboard(userId, id);
         return Result.success(vo);
     }
 

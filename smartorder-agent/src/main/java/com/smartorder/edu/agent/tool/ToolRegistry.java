@@ -1,16 +1,19 @@
 package com.smartorder.edu.agent.tool;
 
+import com.smartorder.edu.agent.prompt.PromptLoader;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 工具注册中心——基于 ConcurrentHashMap 的自注册模式
- * 所有实现 ToolHandler 的 Bean 会自动注册
+ * 所有实现 ToolHandler 的 Bean 会自动注册。
+ * 注册完成后将工具列表注入 PromptLoader，替换提示词中的动态占位符。
  */
 @Slf4j
 @Component
@@ -18,11 +21,12 @@ public class ToolRegistry {
 
     private final Map<String, ToolHandler> toolMap = new ConcurrentHashMap<>();
 
-    public ToolRegistry(List<ToolHandler> handlers) {
+    public ToolRegistry(List<ToolHandler> handlers, PromptLoader promptLoader) {
         for (ToolHandler handler : handlers) {
             register(handler);
         }
         log.info("[ToolRegistry] 已注册 {} 个工具: {}", toolMap.size(), toolMap.keySet());
+        promptLoader.injectToolList(handlers);
     }
 
     public void register(ToolHandler handler) {
@@ -50,5 +54,10 @@ public class ToolRegistry {
 
     public boolean contains(String name) {
         return toolMap.containsKey(name);
+    }
+
+    /** 返回所有已注册工具的名称列表（供提示词动态注入和校验错误信息使用） */
+    public Set<String> getRegisteredNames() {
+        return Set.copyOf(toolMap.keySet());
     }
 }

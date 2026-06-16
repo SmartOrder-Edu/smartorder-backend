@@ -58,6 +58,7 @@ public class ChatWebSocketServer {
     @OnOpen
     public void onOpen(Session session, @PathParam("token") String token) {
         try {
+
             // 1. 使用你的 JwtTokenUtils 解析前端传来的 Access Token
             // 注意：这里传入的是短 token 的 Secret
             Claims claims = JwtTokenUtils.getClaimsFromToken(token, JwtTokenUtils.ACCESS_TOKEN_SECRET);
