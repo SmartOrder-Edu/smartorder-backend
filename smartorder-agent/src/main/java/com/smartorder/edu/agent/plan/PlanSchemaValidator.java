@@ -62,6 +62,7 @@ public class PlanSchemaValidator {
 
     private static final Set<String> VALID_GATES = Set.of("NORMAL", "CLARIFICATION", "CONFIRMATION");
     private static final Set<String> VALID_RISK_LEVELS = Set.of("READ", "WRITE_DRAFT", "WRITE_CONFIRMED");
+    private static final Set<String> VALID_ANSWER_TYPES = Set.of("TEXT", "SINGLE_SELECT", "MULTI_SELECT", "NUMBER");
 
     /**
      * 校验并解析 ExecutionPlan JSON（PlannerAgent 输出）
@@ -117,6 +118,37 @@ public class PlanSchemaValidator {
                 throw new IllegalArgumentException("riskLevel 值无效: " + riskLevel + "，应为 READ/WRITE_DRAFT/WRITE_CONFIRMED");
             }
 
+            // 校验 CLARIFICATION 门的 clarificationSlots
+            if ("CLARIFICATION".equals(gate)) {
+                JSONArray clarSlots = step.getJSONArray("clarificationSlots");
+                if (clarSlots == null || clarSlots.isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "step " + stepId + " 的 gate=CLARIFICATION，必须包含 clarificationSlots 数组");
+                }
+                if (clarSlots.size() > 5) {
+                    throw new IllegalArgumentException(
+                            "step " + stepId + " 的 clarificationSlots 不能超过 5 个");
+                }
+                Set<String> slotKeys = new LinkedHashSet<>();
+                for (int k = 0; k < clarSlots.size(); k++) {
+                    JSONObject slot = clarSlots.getJSONObject(k);
+                    require(slot, "slotKey", "clarificationSlots[" + k + "].slotKey");
+                    require(slot, "question", "clarificationSlots[" + k + "].question");
+                    require(slot, "answerType", "clarificationSlots[" + k + "].answerType");
+                    String answerType = slot.getString("answerType");
+                    if (answerType != null && !VALID_ANSWER_TYPES.contains(answerType)) {
+                        throw new IllegalArgumentException(
+                                "clarificationSlots[" + k + "].answerType 无效: " + answerType
+                                        + "，应为 TEXT/SINGLE_SELECT/MULTI_SELECT/NUMBER");
+                    }
+                    String slotKey = slot.getString("slotKey");
+                    if (slotKeys.contains(slotKey)) {
+                        throw new IllegalArgumentException("clarificationSlots 中 slotKey 重复: " + slotKey);
+                    }
+                    slotKeys.add(slotKey);
+                }
+            }
+
             // 校验 requiredTools 中的工具名是否真实存在
             JSONArray requiredTools = step.getJSONArray("requiredTools");
             if (requiredTools != null) {
@@ -150,6 +182,15 @@ public class PlanSchemaValidator {
 
         // 解析为 ExecutionPlan 对象
         ExecutionPlan result = JSON.parseObject(cleanJson, ExecutionPlan.class);
+
+        // 后处理：为 CLARIFICATION 步骤同步 clarificationSlotsJson
+        for (ExecutionStep step : result.getSteps()) {
+            if ("CLARIFICATION".equals(step.getGate()) && step.getClarificationSlots() != null
+                    && !step.getClarificationSlots().isEmpty()) {
+                step.setClarificationSlotsJson(JSON.toJSONString(step.getClarificationSlots()));
+            }
+        }
+
         log.info("[SchemaValidator] ExecutionPlan校验通过: goal={}, steps={}", result.getUserGoal(), result.getSteps().size());
         return result;
     }

@@ -36,6 +36,26 @@
   ]
 }
 
+当 gate="CLARIFICATION" 时，必须额外包含 clarificationSlots 数组：
+{
+  "stepId": "step-1",
+  "description": "需要了解你的学习目标和当前水平",
+  "requiredTools": [],
+  "dependsOn": [],
+  "gate": "CLARIFICATION",
+  "clarificationSlots": [
+    {
+      "slotKey": "target_scope",
+      "question": "你的学习目标具体是什么？",
+      "answerType": "SINGLE_SELECT",
+      "options": [{"label": "高考备考", "value": "高考"}, {"label": "中考备考", "value": "中考"}, {"label": "日常提升", "value": "日常提升"}, {"label": "竞赛冲刺", "value": "竞赛"}],
+      "slotPriority": 1
+    }
+  ],
+  "riskLevel": "READ",
+  "expectedOutput": "用户的学习目标范围"
+}
+
 ## 规则
 1. stepId 必须从 step-1 开始递增编号
 2. dependsOn 中只能引用已存在的 stepId
@@ -59,6 +79,10 @@
 12. 若用户的目标模糊或画像信息不足以生成有效计划，应添加 CLARIFICATION 门步骤让用户补充信息，而不是硬编码画像采集流程。
 13. 如果某个步骤的工具可能失败（如网络搜索、知识库检索），在 description 中包含降级策略（如"如果搜索失败，基于已有知识回答"）
 14. 步骤的 description 和 expectedOutput 必须使用自然、易懂的语言，不要包含"JSON"、"工具调用"等技术术语。如果获取学生画像失败，降级策略应为"通过对话了解学生的学习目标和当前水平"，而非"画像JSON获取失败"
+15. CLARIFICATION 门步骤必须包含 clarificationSlots 数组，每个元素必须含：slotKey（语义标识，snake_case）、question（一句话问题）、answerType（TEXT | SINGLE_SELECT | MULTI_SELECT | NUMBER）、slotPriority（优先级数字，1 最高）。SELECT 类型必须提供 options 数组（格式 [{label, value}]）
+16. 每个 CLARIFICATION 步骤的 clarificationSlots 最多 5 个，按 slotPriority 排序
+17. GOAL_PLANNING 意图下的标准槽位优先级：target_scope(1) > current_level(2) > deadline_or_duration(3) > weekly_time_budget(4) > preference(5)
+18. 不要在一个 question 中包含多个子问题，每个 slotKey 只问一件事
 
 ## 典型场景示例
 
@@ -81,7 +105,10 @@
 
 ### 场景3: 用户模糊目标需要澄清
 - 先获取学生画像（如需要）
-- 根据画像或可用信息向用户提问澄清目标（CLARIFICATION 门）
+- 根据画像或可用信息向用户逐个提问澄清目标（CLARIFICATION 门 + clarificationSlots）
+  - 每个槽位只问一个明确问题（如先问目标范围，再问基础水平，再问截止时间）
+  - 使用 answerType=SINGLE_SELECT 配合 options 提供选项，降低用户输入负担
+  - 按 slotPriority 排序，最重要的先问
 - 澄清后生成学习规划
 - 等待用户审阅确认（CONFIRMATION 门）
 

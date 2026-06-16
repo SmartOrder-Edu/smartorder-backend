@@ -1,5 +1,6 @@
 package com.smartorder.edu.agent.controller;
 
+import com.smartorder.edu.agent.clarification.ClarificationService;
 import com.smartorder.edu.agent.mapper.AgentTraceEventMapper;
 import com.smartorder.edu.agent.model.dto.PlanConfirmRequest;
 import com.smartorder.edu.agent.model.entity.AgentPlanDraft;
@@ -42,6 +43,7 @@ public class AgentPlanController {
     private final PlanConfirmService planConfirmService;
     private final PlanDraftService planDraftService;
     private final PlanAndExecuteEngine planAndExecuteEngine;
+    private final ClarificationService clarificationService;
     private final AgentTraceEventMapper traceEventMapper;
     private final TraceEventDispatcher dispatcher;
     private final ExecutorService executor;
@@ -49,12 +51,14 @@ public class AgentPlanController {
     public AgentPlanController(PlanConfirmService planConfirmService,
                                PlanDraftService planDraftService,
                                PlanAndExecuteEngine planAndExecuteEngine,
+                               ClarificationService clarificationService,
                                AgentTraceEventMapper traceEventMapper,
                                TraceEventDispatcher dispatcher,
                                @org.springframework.beans.factory.annotation.Qualifier("agentPlanExecutor") ExecutorService executor) {
         this.planConfirmService = planConfirmService;
         this.planDraftService = planDraftService;
         this.planAndExecuteEngine = planAndExecuteEngine;
+        this.clarificationService = clarificationService;
         this.traceEventMapper = traceEventMapper;
         this.dispatcher = dispatcher;
         this.executor = executor;
@@ -147,6 +151,19 @@ public class AgentPlanController {
         emitter.onError(ex -> log.error("[PlanConfirm] SSE 错误: draftId={}", draftId, ex));
 
         return emitter;
+    }
+
+    /**
+     * 查询会话的澄清记录（历史回放用）
+     */
+    @GetMapping("/clarifications/{conversationId}")
+    @Operation(summary = "查询会话澄清记录",
+               description = "获取指定会话的全部澄清记录，用于历史回放时重建问答对。")
+    public List<com.smartorder.edu.agent.model.entity.AgentClarification> getClarifications(
+            @PathVariable String conversationId) {
+        Long userId = getCurrentUserId();
+        log.info("[Clarification] 查询会话澄清记录: userId={}, convId={}", userId, conversationId);
+        return clarificationService.getClarificationsForConversation(conversationId);
     }
 
     /**

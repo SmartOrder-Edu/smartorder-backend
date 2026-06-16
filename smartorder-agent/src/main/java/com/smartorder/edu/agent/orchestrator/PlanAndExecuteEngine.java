@@ -1,8 +1,10 @@
 package com.smartorder.edu.agent.orchestrator;
 
 import com.alibaba.fastjson.JSON;
+import com.smartorder.edu.agent.clarification.ClarificationService;
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
+import com.smartorder.edu.agent.model.dto.ClarificationPayload;
 import com.smartorder.edu.agent.model.dto.ExecutionPlan;
 import com.smartorder.edu.agent.model.dto.ExecutionStep;
 import com.smartorder.edu.agent.model.entity.AgentPlanDraft;
@@ -52,6 +54,7 @@ public class PlanAndExecuteEngine {
     private final LangChain4jToolAdapter toolAdapter;
     private final PlanSchemaValidator schemaValidator;
     private final PlanDraftService draftService;
+    private final ClarificationService clarificationService;
     private final TraceEventDispatcher dispatcher;
     private final ConversationMemoryService memoryService;
     private final SelfManagedReActEngine reActEngine;
@@ -479,23 +482,92 @@ public class PlanAndExecuteEngine {
         ExecutionPlan plan = JSON.parseObject(draft.getExecutionPlanJson(), ExecutionPlan.class);
 
         if ("PAUSED_CLARIFICATION".equals(plan.getStatus())) {
-            // 用户提供了澄清回复
             int pausedIndex = plan.getCurrentStepIndex();
             ExecutionStep pausedTask = plan.getSteps().get(pausedIndex);
-
-            // 将用户回复注入任务输出
-            String userResponse = request.getMessage();
             Map<String, String> stepOutputs = plan.getStepOutputs();
-            stepOutputs.put(pausedTask.getStepId(), "用户澄清: " + userResponse);
-            stepOutputs.put("__userClarification", "用户补充信息: " + userResponse);
+
+            // 检查是否为结构化澄清回答
+            boolean hasStructuredAnswer = request.getClarificationAnswerJson() != null
+                    && !request.getClarificationAnswerJson().isBlank();
+
+            if (hasStructuredAnswer) {
+                // 结构化回答路径：解析 ClarificationAnswer，逐 slot 提交
+                try {
+                    com.smartorder.edu.agent.model.dto.ClarificationAnswer clarAnswer =
+                            JSON.parseObject(request.getClarificationAnswerJson(),
+                                    com.smartorder.edu.agent.model.dto.ClarificationAnswer.class);
+
+                    ClarificationPayload nextClarification = clarificationService.submitAnswer(
+                            clarAnswer.getClarificationId(), clarAnswer.getAnswer());
+
+                    // 写入 stepOutputs 中的结构化 slot
+                    com.smartorder.edu.agent.model.entity.AgentClarification clarRecord =
+                            clarificationService.getClarificationsForDraft(draft.getDraftId()).stream()
+                                    .filter(c -> c.getClarificationId().equals(clarAnswer.getClarificationId()))
+                                    .findFirst().orElse(null);
+                    if (clarRecord != null) {
+                        stepOutputs.put("__clarification." + clarRecord.getSlotKey(), clarAnswer.getAnswer());
+                    }
+
+                    // 还有更多 PENDING 澄清？发射下一条，不恢复执行
+                    if (nextClarification != null) {
+                        plan.setActiveClarificationId(nextClarification.getClarificationId());
+                        plan.setClarificationQuestion(nextClarification.getQuestion());
+                        draftService.updateExecutionPlan(draft.getDraftId(), plan);
+
+                        // 发射下一条 PLAN_PAUSED
+                        Map<String, Object> pausePayload = new LinkedHashMap<>();
+                        pausePayload.put("reason", "CLARIFICATION");
+                        pausePayload.put("taskId", pausedTask.getStepId());
+                        pausePayload.put("question", nextClarification.getQuestion());
+                        Map<String, Object> clarificationMap = new LinkedHashMap<>();
+                        clarificationMap.put("clarificationId", nextClarification.getClarificationId());
+                        clarificationMap.put("slotKey", nextClarification.getSlotKey());
+                        clarificationMap.put("question", nextClarification.getQuestion());
+                        clarificationMap.put("answerType", nextClarification.getAnswerType());
+                        clarificationMap.put("options", nextClarification.getOptions() != null
+                                ? nextClarification.getOptions() : List.of());
+                        clarificationMap.put("slotPriority", nextClarification.getSlotPriority());
+                        pausePayload.put("clarification", clarificationMap);
+                        dispatcher.emit(emitter, context, AgentEventType.PLAN_PAUSED, pausePayload);
+
+                        // 保存确认语
+                        String ackMsg = "已收到你的回答，还有一个问题需要确认。";
+                        dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", ackMsg));
+                        memoryService.saveAssistantMessage(context.getConversationId(), context.getUserId(),
+                                ackMsg, null, context.getTraceId(), null);
+
+                        // Acknowledge 上一个 clarification
+                        clarificationService.acknowledge(clarAnswer.getClarificationId(), ackMsg);
+                        return;
+                    }
+
+                    // 全部澄清已回答，恢复执行
+                    clarificationService.acknowledge(clarAnswer.getClarificationId(), "已收到，继续执行计划");
+
+                } catch (Exception e) {
+                    log.warn("[PlanAndExecute] 结构化澄清回答解析失败，回退到自由文本: {}", e.getMessage());
+                    // 回退到自由文本路径
+                    String userResponse = request.getMessage();
+                    stepOutputs.put(pausedTask.getStepId(), "用户澄清: " + userResponse);
+                    stepOutputs.put("__userClarification", "用户补充信息: " + userResponse);
+                }
+            } else {
+                // 向后兼容：自由文本回答路径
+                String userResponse = request.getMessage();
+                stepOutputs.put(pausedTask.getStepId(), "用户澄清: " + userResponse);
+                stepOutputs.put("__userClarification", "用户补充信息: " + userResponse);
+            }
+
             plan.setStepOutputs(stepOutputs);
             pausedTask.setStatus("COMPLETED");
-            pausedTask.setResultSummary("用户回复: " + truncate(userResponse, 200));
+            pausedTask.setResultSummary("用户回复: " + truncate(request.getMessage(), 200));
             pausedTask.setGate("NORMAL"); // 清除门
 
             plan.setCurrentStepIndex(pausedIndex + 1);
             plan.setStatus("EXECUTING");
-            applyClarificationToRemainingSteps(plan, pausedIndex, userResponse);
+            plan.setActiveClarificationId(null);
+            applyClarificationToRemainingSteps(plan, pausedIndex, stepOutputs);
 
             draftService.updateExecutionPlan(draft.getDraftId(), plan);
 
@@ -542,8 +614,25 @@ public class PlanAndExecuteEngine {
                 request.getMessage(), planHint, attachmentSection);
     }
 
-    private void applyClarificationToRemainingSteps(ExecutionPlan plan, int pausedIndex, String userResponse) {
-        String clarificationSummary = truncate(userResponse, 300);
+    private void applyClarificationToRemainingSteps(ExecutionPlan plan, int pausedIndex,
+                                                     Map<String, String> stepOutputs) {
+        // 从 stepOutputs 中提取结构化澄清上下文
+        StringBuilder clarificationSummary = new StringBuilder();
+        Map<String, String> clarificationContext = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : stepOutputs.entrySet()) {
+            if (entry.getKey().startsWith("__clarification.")) {
+                String slotKey = entry.getKey().substring("__clarification.".length());
+                clarificationContext.put(slotKey, entry.getValue());
+                clarificationSummary.append(slotKey).append(": ").append(entry.getValue()).append("; ");
+            }
+        }
+
+        // 兼容旧的自由文本澄清
+        String legacyClarification = stepOutputs.get("__userClarification");
+        String summaryText = clarificationSummary.length() > 0
+                ? clarificationSummary.toString()
+                : (legacyClarification != null ? truncate(legacyClarification, 300) : "");
+
         for (int i = pausedIndex + 1; i < plan.getSteps().size(); i++) {
             ExecutionStep step = plan.getSteps().get(i);
             if ("COMPLETED".equals(step.getStatus())) {
@@ -559,9 +648,9 @@ public class PlanAndExecuteEngine {
             }
 
             if (description != null && !description.contains("用户补充信息")) {
-                description = description + "。请结合用户补充信息：" + clarificationSummary;
-            } else if (description != null && !description.contains(clarificationSummary)) {
-                description = description + "（用户补充信息：" + clarificationSummary + "）";
+                description = description + "。请结合用户补充信息：" + summaryText;
+            } else if (description != null && !description.contains(summaryText)) {
+                description = description + "（用户补充信息：" + summaryText + "）";
             }
 
             step.setDescription(description);
@@ -601,22 +690,47 @@ public class PlanAndExecuteEngine {
         plan.setConfirmationDraftId(draftId);
         draftService.updateExecutionPlan(draftId, plan);
 
+        // 创建结构化澄清记录（从 ExecutionStep 的 clarificationSlots 提取）
+        ClarificationPayload firstClarification = clarificationService.createClarifications(
+                task, draftId, context.getConversationId(), context.getTraceId(),
+                request != null ? request.getUserId() : context.getUserId());
+
+        // 设置当前活跃澄清 ID
+        if (firstClarification != null) {
+            plan.setActiveClarificationId(firstClarification.getClarificationId());
+            question = firstClarification.getQuestion(); // 使用结构化问题文本
+            plan.setClarificationQuestion(question);
+            draftService.updateExecutionPlan(draftId, plan);
+        }
+
         // 先发射 PLAN_CREATED，确保前端初始化 currentExecutionPlan，
         // 再发射 PLAN_PAUSED 更新状态为暂停
         dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
                 planCreatedPayload(draftId, plan, false, question));
 
-        // 发射暂停事件
-        dispatcher.emit(emitter, context, AgentEventType.PLAN_PAUSED, Map.of(
-                "reason", "CLARIFICATION",
-                "taskId", task.getStepId(),
-                "question", question
-        ));
+        // 发射暂停事件（增强版：包含结构化 clarification 信息）
+        Map<String, Object> pausePayload = new LinkedHashMap<>();
+        pausePayload.put("reason", "CLARIFICATION");
+        pausePayload.put("taskId", task.getStepId());
+        pausePayload.put("question", question); // 向后兼容
+        if (firstClarification != null) {
+            Map<String, Object> clarificationMap = new LinkedHashMap<>();
+            clarificationMap.put("clarificationId", firstClarification.getClarificationId());
+            clarificationMap.put("slotKey", firstClarification.getSlotKey());
+            clarificationMap.put("question", firstClarification.getQuestion());
+            clarificationMap.put("answerType", firstClarification.getAnswerType());
+            clarificationMap.put("options", firstClarification.getOptions() != null
+                    ? firstClarification.getOptions() : List.of());
+            clarificationMap.put("slotPriority", firstClarification.getSlotPriority());
+            pausePayload.put("clarification", clarificationMap);
+        }
+        dispatcher.emit(emitter, context, AgentEventType.PLAN_PAUSED, pausePayload);
 
-        // 澄清问题已通过 PLAN_PAUSED 事件传递，不再重复发射 TEXT_DELTA
+        // 保存澄清消息，metadataJson 存储结构化信息用于历史回放
+        String metadataJson = firstClarification != null ? JSON.toJSONString(firstClarification) : null;
         memoryService.saveAssistantMessage(context.getConversationId(),
                 request != null ? request.getUserId() : context.getUserId(),
-                question, null, context.getTraceId(), null);
+                question, null, context.getTraceId(), metadataJson);
         context.setAssistantMessageSaved(true);
     }
 
@@ -808,6 +922,16 @@ public class PlanAndExecuteEngine {
                     // 转为澄清门，暂停执行
                     task.setGate("CLARIFICATION");
                     task.setDescription(verification.getFeedback());
+                    // 为 verification CLARIFY 创建单条 TEXT 类型 slot
+                    task.setClarificationSlots(List.of(
+                            ExecutionStep.ClarificationSlot.builder()
+                                    .slotKey("verification_clarify")
+                                    .question(verification.getFeedback())
+                                    .answerType("TEXT")
+                                    .slotPriority(1)
+                                    .build()
+                    ));
+                    task.setClarificationSlotsJson(JSON.toJSONString(task.getClarificationSlots()));
                     task.setStatus("PAUSED");
                     handleClarificationGate(plan,
                             plan.getSteps().indexOf(task), context, emitter, null, draftId);
@@ -854,9 +978,67 @@ public class PlanAndExecuteEngine {
     private void pauseForProfileClarification(ExecutionPlan plan, ExecutionStep task,
                                               AgentRuntimeContext context, SseEmitter emitter,
                                               String draftId) {
-        String question = buildProfileClarificationQuestion(plan);
+        // 构建结构化澄清槽位（一次只问一个，按优先级排序）
+        String goal = plan.getUserGoal();
+        String goalPrefix = goal != null && !goal.isBlank()
+                ? "为了给「" + goal + "」制定更贴合的计划，" : "为了制定更贴合的计划，";
+
+        List<ExecutionStep.ClarificationSlot> slots = List.of(
+                ExecutionStep.ClarificationSlot.builder()
+                        .slotKey("target_scope")
+                        .question(goalPrefix + "你的学习目标具体是什么？")
+                        .answerType("SINGLE_SELECT")
+                        .options(List.of(
+                                ClarificationPayload.SelectOption.builder().label("高考备考").value("高考").build(),
+                                ClarificationPayload.SelectOption.builder().label("中考备考").value("中考").build(),
+                                ClarificationPayload.SelectOption.builder().label("日常提升").value("日常提升").build(),
+                                ClarificationPayload.SelectOption.builder().label("竞赛冲刺").value("竞赛").build(),
+                                ClarificationPayload.SelectOption.builder().label("课程学习").value("课程").build()
+                        ))
+                        .slotPriority(1)
+                        .build(),
+                ExecutionStep.ClarificationSlot.builder()
+                        .slotKey("current_level")
+                        .question(goalPrefix + "你现在在这个目标上的基础大概是什么水平？")
+                        .answerType("SINGLE_SELECT")
+                        .options(List.of(
+                                ClarificationPayload.SelectOption.builder().label("零基础").value("零基础").build(),
+                                ClarificationPayload.SelectOption.builder().label("学过但不熟").value("学过但不熟").build(),
+                                ClarificationPayload.SelectOption.builder().label("能做基础题").value("能做基础题").build(),
+                                ClarificationPayload.SelectOption.builder().label("有项目/竞赛经验").value("有项目/竞赛经验").build()
+                        ))
+                        .slotPriority(2)
+                        .build(),
+                ExecutionStep.ClarificationSlot.builder()
+                        .slotKey("deadline_or_duration")
+                        .question(goalPrefix + "你希望多久完成，或有没有截止时间？")
+                        .answerType("TEXT")
+                        .slotPriority(3)
+                        .build(),
+                ExecutionStep.ClarificationSlot.builder()
+                        .slotKey("weekly_time_budget")
+                        .question("每周大概能投入多少时间学习？")
+                        .answerType("TEXT")
+                        .slotPriority(4)
+                        .build(),
+                ExecutionStep.ClarificationSlot.builder()
+                        .slotKey("preference")
+                        .question("你偏好哪种学习方式？（可选）")
+                        .answerType("SINGLE_SELECT")
+                        .options(List.of(
+                                ClarificationPayload.SelectOption.builder().label("视频为主").value("视频").build(),
+                                ClarificationPayload.SelectOption.builder().label("书籍为主").value("书籍").build(),
+                                ClarificationPayload.SelectOption.builder().label("题目训练为主").value("题目训练").build(),
+                                ClarificationPayload.SelectOption.builder().label("项目实践为主").value("项目实践").build()
+                        ))
+                        .slotPriority(5)
+                        .build()
+        );
+
         task.setGate("CLARIFICATION");
-        task.setDescription(question);
+        task.setClarificationSlots(slots);
+        task.setClarificationSlotsJson(JSON.toJSONString(slots));
+        task.setDescription(slots.get(0).getQuestion()); // 第一个 slot 的问题作为步骤描述
         task.setStatus("PAUSED");
         task.setErrorMessage("学生画像不可用，等待用户补充关键信息");
         handleClarificationGate(plan, plan.getSteps().indexOf(task), context, emitter, null, draftId);
