@@ -465,10 +465,14 @@ public class PlanAndExecuteEngine {
         }
         draftService.updateExecutionPlan(draftId, plan);
 
-        String finalSummary = buildFinalSummary(plan);
-        dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", finalSummary));
+        // Emit execution summary as STATUS event (for trace panel), not as AI chat text
+        emitExecutionCompletedStatus(plan, context, emitter);
+
+        // Generate user-friendly completion message for the AI chat body
+        String userFriendlyMsg = buildUserFriendlyCompletionMessage(plan);
+        dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", userFriendlyMsg));
         memoryService.saveAssistantMessage(conversationId, userId,
-                finalSummary, null, context.getTraceId(), null);
+                userFriendlyMsg, null, context.getTraceId(), null);
         context.setAssistantMessageSaved(true);
 
         // SSE 关闭由 AgentRunSupervisor 统一负责，此处不再调用 dispatcher.complete()
@@ -629,7 +633,6 @@ public class PlanAndExecuteEngine {
             plan.setCurrentStepIndex(pausedIndex + 1);
             plan.setStatus("EXECUTING");
             plan.setActiveClarificationId(null);
-            applyClarificationToRemainingSteps(plan, pausedIndex, stepOutputs);
 
             draftService.updateExecutionPlan(draft.getDraftId(), plan);
 
@@ -807,7 +810,6 @@ public class PlanAndExecuteEngine {
         plan.setCurrentStepIndex(pausedIndex + 1);
         plan.setStatus("EXECUTING");
         plan.setActiveClarificationId(null);
-        applyClarificationToRemainingSteps(plan, pausedIndex, stepOutputs);
         draftService.updateExecutionPlan(draftId, plan);
 
         // 更新 runState 到 EXECUTING（resumeAfterClarification）
@@ -939,52 +941,11 @@ public class PlanAndExecuteEngine {
     @Deprecated
     private void applyClarificationToRemainingSteps(ExecutionPlan plan, int pausedIndex,
                                                      Map<String, String> stepOutputs) {
-        // 从 stepOutputs 中提取结构化澄清上下文
-        StringBuilder clarificationSummary = new StringBuilder();
-        Map<String, String> clarificationContext = new LinkedHashMap<>();
-        for (Map.Entry<String, String> entry : stepOutputs.entrySet()) {
-            if (entry.getKey().startsWith("__clarification.")) {
-                String slotKey = entry.getKey().substring("__clarification.".length());
-                clarificationContext.put(slotKey, entry.getValue());
-                clarificationSummary.append(slotKey).append(": ").append(entry.getValue()).append("; ");
-            }
-        }
-
-        // 兼容旧的自由文本澄清
-        String legacyClarification = stepOutputs.get("__userClarification");
-        String summaryText = clarificationSummary.length() > 0
-                ? clarificationSummary.toString()
-                : (legacyClarification != null ? truncate(legacyClarification, 300) : "");
-
-        for (int i = pausedIndex + 1; i < plan.getSteps().size(); i++) {
-            ExecutionStep step = plan.getSteps().get(i);
-            if ("COMPLETED".equals(step.getStatus())) {
-                continue;
-            }
-
-            String description = step.getDescription();
-            if (description != null && description.contains("学生画像")) {
-                description = description.replace("学生画像", "用户补充信息");
-            }
-            if (description != null && description.contains("学习档案")) {
-                description = description.replace("学习档案", "用户补充信息");
-            }
-
-            if (description != null && !description.contains("用户补充信息")) {
-                description = description + "。请结合用户补充信息：" + summaryText;
-            } else if (description != null && !description.contains(summaryText)) {
-                description = description + "（用户补充信息：" + summaryText + "）";
-            }
-
-            step.setDescription(description);
-
-            List<String> tools = step.getRequiredTools();
-            if (tools != null && tools.contains("getStudentProfile")) {
-                step.setRequiredTools(tools.stream()
-                        .filter(tool -> !"getStudentProfile".equals(tool))
-                        .toList());
-            }
-        }
+        // 此方法已废弃。澄清上下文现已通过 buildPlanContext() + buildTaskSystemMessage()
+        // 作为独立段落注入 system prompt，不再修改 task.description 原文。
+        // 保留空实现以确保编译兼容，外部调用已被移除。
+        log.debug("[PlanAndExecute] applyClarificationToRemainingSteps is deprecated and no-op. "
+                + "Clarification context is injected via PlanContext in buildTaskSystemMessage.");
     }
 
     private void handleClarificationGate(ExecutionPlan plan, int stepIndex,
@@ -1702,6 +1663,69 @@ public class PlanAndExecuteEngine {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * 发射执行完成状态事件到 trace 面板，不在 AI 对话正文中展示。
+     */
+    private void emitExecutionCompletedStatus(ExecutionPlan plan, AgentRuntimeContext context,
+                                              SseEmitter emitter) {
+        long completed = plan.getSteps().stream().filter(t -> "COMPLETED".equals(t.getStatus())).count();
+        long failed = plan.getSteps().stream().filter(t -> "FAILED".equals(t.getStatus())).count();
+
+        Map<String, Object> statusPayload = new LinkedHashMap<>();
+        statusPayload.put("type", "plan_completed");
+        statusPayload.put("planStatus", plan.getStatus());
+        statusPayload.put("totalTasks", plan.getSteps().size());
+        statusPayload.put("completedTasks", completed);
+        statusPayload.put("failedTasks", failed);
+
+        // 附加每个任务的摘要（用于 trace 面板展示）
+        List<Map<String, String>> taskSummaries = plan.getSteps().stream()
+                .map(task -> {
+                    Map<String, String> m = new LinkedHashMap<>();
+                    m.put("stepId", task.getStepId());
+                    m.put("status", task.getStatus());
+                    m.put("description", task.getDescription());
+                    if (task.getErrorMessage() != null) m.put("errorMessage", task.getErrorMessage());
+                    return m;
+                })
+                .toList();
+        statusPayload.put("taskSummaries", taskSummaries);
+
+        dispatcher.emit(emitter, context, AgentEventType.STATUS, statusPayload);
+    }
+
+    /**
+     * 生成面向用户友好的计划完成消息（替代 buildFinalSummary 作为 TEXT_DELTA 正文）。
+     */
+    private String buildUserFriendlyCompletionMessage(ExecutionPlan plan) {
+        long completed = plan.getSteps().stream().filter(t -> "COMPLETED".equals(t.getStatus())).count();
+        long failed = plan.getSteps().stream().filter(t -> "FAILED".equals(t.getStatus())).count();
+        long total = plan.getSteps().size();
+
+        if (failed == 0 && completed == total) {
+            return "学习计划已全部执行完成！你可以查看上述结果，或告诉我下一步想做什么。";
+        }
+        if (completed > 0 && failed > 0) {
+            long skipped = plan.getSteps().stream().filter(t -> "SKIPPED".equals(t.getStatus())).count();
+            StringBuilder sb = new StringBuilder();
+            sb.append("学习计划已执行完成。");
+            if (completed > 0) sb.append("成功 ").append(completed).append(" 个任务");
+            if (failed > 0) {
+                sb.append("，").append(failed).append(" 个任务未成功");
+            }
+            if (skipped > 0) {
+                sb.append("（其中 ").append(skipped).append(" 个已跳过）");
+            }
+            sb.append("。\n\n你可以让我重试失败的任务，或者查看详情后调整计划。");
+            return sb.toString();
+        }
+        if (completed == 0 && failed == total) {
+            return "很抱歉，学习计划中的所有任务都未能成功完成。建议你调整目标或提供更多信息后重试。";
+        }
+        // 兜底
+        return "学习计划执行结束。";
     }
 
     /**
