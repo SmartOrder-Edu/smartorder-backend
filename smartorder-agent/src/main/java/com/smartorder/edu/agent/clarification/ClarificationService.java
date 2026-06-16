@@ -98,6 +98,21 @@ public class ClarificationService {
      * @return 下一条 PENDING 的 ClarificationPayload，若全部已回答则返回 null
      */
     public ClarificationPayload submitAnswer(String clarificationId, String answer) {
+        return submitAnswer(clarificationId, answer, null, null);
+    }
+
+    /**
+     * 提交用户答案（带所有权校验）
+     *
+     * @param clarificationId 澄清记录 ID
+     * @param answer          用户回答
+     * @param expectedDraftId 期望的草稿 ID（非 null 时校验归属）
+     * @param expectedUserId  期望的用户 ID（非 null 时校验归属）
+     * @return 下一条 PENDING 的 ClarificationPayload，若全部已回答则返回 null
+     * @throws IllegalArgumentException 如果归属校验失败
+     */
+    public ClarificationPayload submitAnswer(String clarificationId, String answer,
+                                             String expectedDraftId, Long expectedUserId) {
         AgentClarification record = clarificationMapper.selectByClarificationId(clarificationId);
         if (record == null) {
             log.warn("[Clarification] 提交答案失败: clarificationId={} 不存在", clarificationId);
@@ -106,6 +121,19 @@ public class ClarificationService {
         if (!"PENDING".equals(record.getStatus())) {
             log.warn("[Clarification] 提交答案失败: clarificationId={} 状态非 PENDING, 当前={}", clarificationId, record.getStatus());
             return null;
+        }
+
+        // 所有权校验
+        if (expectedDraftId != null && !expectedDraftId.equals(record.getDraftId())) {
+            log.warn("[Clarification] 所有权校验失败: clarificationId={} 不属于 draftId={}, 实际 draftId={}",
+                    clarificationId, expectedDraftId, record.getDraftId());
+            throw new IllegalArgumentException("澄清记录不属于该草稿: clarificationId=" + clarificationId
+                    + ", expectedDraftId=" + expectedDraftId + ", actualDraftId=" + record.getDraftId());
+        }
+        if (expectedUserId != null && !expectedUserId.equals(record.getUserId())) {
+            log.warn("[Clarification] 用户校验失败: clarificationId={} 不属于 userId={}, 实际 userId={}",
+                    clarificationId, expectedUserId, record.getUserId());
+            throw new IllegalArgumentException("澄清记录不属于该用户: clarificationId=" + clarificationId);
         }
 
         record.setAnswer(answer);

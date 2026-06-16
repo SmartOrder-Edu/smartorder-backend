@@ -577,6 +577,14 @@ public class PlanAndExecuteEngine {
                         pausePayload.put("clarification", clarificationMap);
                         dispatcher.emit(emitter, context, AgentEventType.PLAN_PAUSED, pausePayload);
 
+                        // 发射 gate.answered 通知前端回答已被接受
+                        dispatcher.emit(emitter, context, AgentEventType.GATE_ANSWERED, Map.of(
+                                "clarificationId", clarAnswer.getClarificationId(),
+                                "answer", clarAnswer.getAnswer(),
+                                "nextClarificationId", nextClarification.getClarificationId(),
+                                "status", "MORE_PENDING"
+                        ));
+
                         // 保存确认语
                         String ackMsg = "已收到你的回答，还有一个问题需要确认。";
                         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", ackMsg));
@@ -590,6 +598,14 @@ public class PlanAndExecuteEngine {
 
                     // 全部澄清已回答，恢复执行
                     clarificationService.acknowledge(clarAnswer.getClarificationId(), "已收到，继续执行计划");
+
+                    // 发射 gate.answered 通知前端所有澄清已回答
+                    dispatcher.emit(emitter, context, AgentEventType.GATE_ANSWERED, Map.of(
+                            "clarificationId", clarAnswer.getClarificationId(),
+                            "answer", clarAnswer.getAnswer(),
+                            "nextClarificationId", null,
+                            "status", "ALL_ANSWERED"
+                    ));
 
                 } catch (Exception e) {
                     log.warn("[PlanAndExecute] 结构化澄清回答解析失败，回退到自由文本: {}", e.getMessage());
@@ -629,6 +645,19 @@ public class PlanAndExecuteEngine {
             executeExecutionPlanWithContext(draft.getDraftId(), context.getUserId(),
                     context, emitter);
 
+            // 重新读取最终计划状态，确保 done 事件含正确的 runStatus
+            AgentPlanDraft resumeFinalDraft = draftService.getByDraftId(draft.getDraftId());
+            if (resumeFinalDraft != null) {
+                try {
+                    ExecutionPlan resumeFinalPlan = JSON.parseObject(
+                            resumeFinalDraft.getExecutionPlanJson(), ExecutionPlan.class);
+                    context.setPlanRunStatus(resumeFinalPlan.getStatus());
+                    context.setPlanDraftId(draft.getDraftId());
+                } catch (Exception e) {
+                    log.warn("[PlanAndExecute] 读取最终计划状态失败: {}", e.getMessage());
+                }
+            }
+
         } else if ("PAUSED_CONFIRMATION".equals(plan.getStatus())) {
             // 用户通过聊天确认词确认（前端按钮确认走 /agent/plan/confirm）
             int pausedIndex = plan.getCurrentStepIndex();
@@ -663,6 +692,16 @@ public class PlanAndExecuteEngine {
             return;
         }
 
+        // 权限校验：草稿必须属于当前用户
+        if (!userId.equals(draft.getUserId())) {
+            log.warn("[ResumeClarification] 越权访问: userId={}, draft.userId={}, draftId={}",
+                    userId, draft.getUserId(), draftId);
+            AgentRuntimeContext errCtx = buildMinimalContext(traceId, conversationId, userId);
+            dispatcher.error(emitter, errCtx,
+                    new IllegalArgumentException("无权操作此草稿: draftId=" + draftId));
+            return;
+        }
+
         ExecutionPlan plan;
         try {
             plan = JSON.parseObject(draft.getExecutionPlanJson(), ExecutionPlan.class);
@@ -686,10 +725,13 @@ public class PlanAndExecuteEngine {
         ExecutionStep pausedTask = plan.getSteps().get(pausedIndex);
         Map<String, String> stepOutputs = new LinkedHashMap<>(plan.getStepOutputs());
 
-        // 提交结构化回答
+        // 保存用户回答消息到对话记录
+        memoryService.saveUserMessage(conversationId, userId, "【澄清回答】" + answer, null);
+
+        // 提交结构化回答（带所有权校验）
         ClarificationPayload nextClarification;
         try {
-            nextClarification = clarificationService.submitAnswer(clarificationId, answer);
+            nextClarification = clarificationService.submitAnswer(clarificationId, answer, draftId, userId);
         } catch (Exception e) {
             log.error("[ResumeClarification] 提交澄清回答失败: clarificationId={}", clarificationId, e);
             dispatcher.error(emitter, context, e);
@@ -704,6 +746,16 @@ public class PlanAndExecuteEngine {
         if (clarRecord != null) {
             stepOutputs.put("__clarification." + clarRecord.getSlotKey(), answer);
         }
+
+        // 发射 agent.gate.answered 事件，通知前端回答已被处理
+        Map<String, Object> gateAnsweredPayload = new LinkedHashMap<>();
+        gateAnsweredPayload.put("clarificationId", clarificationId);
+        gateAnsweredPayload.put("slotKey", clarRecord != null ? clarRecord.getSlotKey() : "");
+        gateAnsweredPayload.put("answer", answer);
+        gateAnsweredPayload.put("nextClarificationId",
+                nextClarification != null ? nextClarification.getClarificationId() : null);
+        gateAnsweredPayload.put("status", nextClarification != null ? "MORE_PENDING" : "ALL_ANSWERED");
+        dispatcher.emit(emitter, context, AgentEventType.GATE_ANSWERED, gateAnsweredPayload);
 
         // 还有更多 PENDING 澄清？发射下一条，不恢复执行
         if (nextClarification != null) {
