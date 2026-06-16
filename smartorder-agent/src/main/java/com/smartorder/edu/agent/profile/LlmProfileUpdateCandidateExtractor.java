@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON;
 import com.smartorder.edu.agent.tool.impl.UpdateStudentProfileTool.UpdateStudentProfileRequest;
 import dev.langchain4j.model.chat.ChatModel;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -15,6 +16,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class LlmProfileUpdateCandidateExtractor implements ProfileUpdateCandidateExtractor {
 
+    @Qualifier("chatLanguageModel")
     private final ChatModel chatModel;
 
     /** 通过LLM分析当前用户消息，提取学生画像候选更新 **/

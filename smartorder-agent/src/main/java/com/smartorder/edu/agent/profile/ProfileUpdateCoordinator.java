@@ -22,11 +22,14 @@ public class ProfileUpdateCoordinator {
             "我是", "我的专业", "我的年级", "我目前", "我现在",
             "我准备", "准备考研", "我计划", "我打算", "我的目标",
             "我不会", "我不理解", "我不懂", "我没学会", "我没有学会",
-            "没有怎么学会", "没怎么学", "基础不好", "基础薄弱",
-            "我总是", "我一直", "连续做错", "经常做错",
+            "没有怎么学会", "没怎么学", "基础不好", "基础薄弱", "基础差",
+            "没学会", "没学好", "没有学好", "学得不好", "学不明白", "学不懂", "听不懂",
+            "没搞明白", "搞不明白", "搞不懂",
+            "我总是", "我一直", "连续做错", "经常做错", "反复出错", "老是出错",
             "我喜欢", "我更喜欢", "我偏好", "我习惯",
             "我通常", "我经常", "每天", "学习效率",
-            "我紧张", "我焦虑", "我担心", "压力很大", "好难啊", "好难", "太难了", "太难", "我害怕"
+            "我紧张", "我焦虑", "我担心", "压力很大", "好难啊", "好难", "太难了", "太难", "我害怕",
+            "大一", "大二", "大三", "大四", "研一", "研二", "本科", "研究生"
     );
 
     private final Executor profileUpdateExecutor;
@@ -92,8 +95,17 @@ public class ProfileUpdateCoordinator {
         }
     }
 
-    /** 快速判断消息是否可能包含画像证据关键词 **/
+    /** 快速判断消息是否可能包含画像证据关键词（去除标点后比对） **/
     boolean mayContainProfileEvidence(String message) {
-        return PROFILE_EVIDENCE_SIGNALS.stream().anyMatch(message::contains);
+        String normalized = normalizeForMatch(message);
+        return PROFILE_EVIDENCE_SIGNALS.stream()
+                .anyMatch(signal -> normalized.contains(normalizeForMatch(signal)));
+    }
+
+    private static String normalizeForMatch(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replaceAll("[^\\u4e00-\\u9fa5a-zA-Z0-9]", "");
     }
 }

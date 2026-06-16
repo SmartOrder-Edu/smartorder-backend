@@ -2,7 +2,7 @@ package com.smartorder.edu.agent.orchestrator;
 
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
-
+import com.smartorder.edu.agent.profile.ProfileUpdateCoordinator;
 import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentRouteService;
@@ -41,6 +41,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
     private final TraceEventDispatcher dispatcher;
     private final ConversationMemoryService memoryService;
     private final AgentConversationAttachmentService attachmentService;
+    private final ProfileUpdateCoordinator profileUpdateCoordinator;
 
     private final AgentRunSupervisor runSupervisor;
 
@@ -163,6 +164,9 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                     default -> throw new IllegalStateException("不支持的运行模式: " + routeResult.getRunMode());
                 }
             });
+
+            // 5. 异步提交画像分析（不阻塞主响应）
+            profileUpdateCoordinator.submit(request.getUserId(), conversationId, context.getTraceId(), request.getMessage());
 
         } catch (Exception e) {
             // supervisor 外部异常（路由前等）——仍保证收敛
@@ -297,13 +301,17 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 default -> throw new IllegalStateException("不支持的运行模式: " + forcedResult.getRunMode());
             }
         });
+
+        // 异步提交画像分析
+        profileUpdateCoordinator.submit(
+                request.getUserId(), conversationId, context.getTraceId(), request.getMessage());
     }
 
     private IntentRouteResult buildForcedRouteResult(AgentRunMode mode) {
         boolean needsPlanning = mode == AgentRunMode.PLAN_AND_EXECUTE;
         List<String> tools = needsPlanning
                 ? List.of()
-                : List.of("getStudentProfile", "queryKnowledge", "queryTasks", "webSearch");
+                : List.of("getStudentProfile", "updateStudentProfile", "queryKnowledge", "queryTasks", "webSearch");
         return IntentRouteResult.builder()
                 .intentType(needsPlanning ? "目标规划（手动选择）" : "知识问答（手动选择）")
                 .intentEnum(needsPlanning ? IntentType.GOAL_PLANNING : IntentType.KNOWLEDGE_QA)

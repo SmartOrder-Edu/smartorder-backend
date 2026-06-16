@@ -47,37 +47,49 @@ public class UpdateStudentProfileTool implements ToolHandler {
     private static final double MIN_CONFIDENCE = 0.8;
 
     /**
-     * 各维度的证据信号词，用于校验用户消息中是否包含与该维度相关的明确自述
+     * 各维度的证据信号词，用于校验用户消息中是否包含与该维度相关的明确自述。
+     * 信号词覆盖同义表达（如"没学会"、"没学好"、"学得不好"均表示基础薄弱）。
      */
     private static final Map<String, List<String>> DIMENSION_EVIDENCE_SIGNALS = Map.of(
             "learning_background", List.of(
                     "我是", "我的专业", "我的年级", "我目前是", "我现在是", "我在读",
                     "我准备考研", "准备考研", "我计划考研", "我打算考研",
-                    "我的学历", "我的基础", "编程经验", "学过"
+                    "我的学历", "我的基础", "编程经验", "学过", "上过",
+                    "大一", "大二", "大三", "大四", "研一", "研二",
+                    "本科", "研究生", "博士", "专科", "自学者"
             ),
             "learning_goals", List.of(
                     "我的学习目标", "我的目标是", "我想学", "我计划", "我打算",
-                    "我要考", "我想掌握", "我希望", "截止时间", "每天学"
+                    "我要考", "我想掌握", "我希望", "截止时间", "每天学",
+                    "学会", "学到", "目标", "规划", "安排"
             ),
             "ability_profile", List.of(
                     "我擅长", "我不擅长", "我的能力", "我能", "我不能",
-                    "理解能力", "分析能力", "编程能力", "调试能力"
+                    "理解能力", "分析能力", "编程能力", "调试能力",
+                    "做得好", "做得不好", "强项", "弱项", "优势", "短板"
             ),
             "common_misconceptions", List.of(
                     "我不会", "我不理解", "我不懂", "我总是", "我一直", "搞不懂",
-                    "连续做错", "经常做错", "我的薄弱点", "易错", "反复错"
+                    "连续做错", "经常做错", "我的薄弱点", "易错", "反复错",
+                    "没学会", "没学好", "没有学会", "没有学好", "学得不好",
+                    "基础不好", "基础薄弱", "基础差", "没怎么学", "没有怎么学",
+                    "没搞明白", "搞不明白", "学不明白", "学不懂", "听不懂",
+                    "反复出错", "老是出错", "总是错", "经常错"
             ),
             "learning_preference", List.of(
                     "我喜欢", "我更喜欢", "我偏好", "对我来说更容易", "我习惯",
-                    "看视频", "看文档", "做练习", "听课", "讲解方式"
+                    "看视频", "看文档", "做练习", "听课", "讲解方式",
+                    "倾向于", "更适合", "更习惯", "喜欢的方式"
             ),
             "metacognitive_profile", List.of(
                     "我觉得", "我反思", "我总结", "我的学习方法", "我怎么学",
-                    "自我评估", "我的规划", "我的信心", "求助"
+                    "自我评估", "我的规划", "我的信心", "求助",
+                    "学习效率", "时间管理", "自律", "拖延"
             ),
             "subject_profiles", List.of(
                     "这门课", "这个科目", "这门学科", "高数", "线代", "概率",
-                    "数据结构", "操作系统", "计算机网络"
+                    "数据结构", "操作系统", "计算机网络", "离散数学",
+                    "编译原理", "数据库", "组成原理", "计算机组成"
             )
     );
 
@@ -150,8 +162,11 @@ public class UpdateStudentProfileTool implements ToolHandler {
                 return reject("维度「" + dimensionKey + "」的 evidence 不能为空");
             }
             evidence = evidence.trim();
-            if (!currentUserMessage.contains(evidence)) {
-                return reject("evidence 必须原样来自当前用户消息: " + evidence);
+            // 去除标点和空白后比对，兼容 LLM 提取时添加/去除标点的情况
+            String normalizedMessage = normalizeForMatch(currentUserMessage);
+            String normalizedEvidence = normalizeForMatch(evidence);
+            if (normalizedEvidence.isEmpty() || !normalizedMessage.contains(normalizedEvidence)) {
+                return reject("evidence 必须来自当前用户消息: " + evidence);
             }
 
             Double confidence = item.getConfidence();
@@ -197,7 +212,19 @@ public class UpdateStudentProfileTool implements ToolHandler {
 
     private boolean containsExplicitSignal(String dimensionKey, String evidence) {
         List<String> signals = DIMENSION_EVIDENCE_SIGNALS.getOrDefault(dimensionKey, List.of());
-        return signals.stream().anyMatch(evidence::contains);
+        String normalized = normalizeForMatch(evidence);
+        return signals.stream().anyMatch(signal -> normalized.contains(normalizeForMatch(signal)));
+    }
+
+    /**
+     * 去除中英文标点和空白，仅保留汉字、字母、数字，用于模糊比对。
+     */
+    private static String normalizeForMatch(String text) {
+        if (text == null) {
+            return "";
+        }
+        // 保留汉字(一-龥)、字母(a-zA-Z)、数字(0-9)，其余全部去除
+        return text.replaceAll("[^\\u4e00-\\u9fa5a-zA-Z0-9]", "");
     }
 
     private Map<String, Object> reject(String error) {
