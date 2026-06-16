@@ -767,6 +767,19 @@ public class PlanAndExecuteEngine {
 
         executeExecutionPlanWithContext(draftId, userId, context, emitter);
 
+        // 重新加载计划的最终状态，确保前端 done 事件中携带正确的 runStatus
+        AgentPlanDraft finalDraft = draftService.getByDraftId(draftId);
+        if (finalDraft != null) {
+            try {
+                ExecutionPlan finalPlan = JSON.parseObject(
+                        finalDraft.getExecutionPlanJson(), ExecutionPlan.class);
+                context.setPlanRunStatus(finalPlan.getStatus());
+                context.setPlanDraftId(draftId);
+            } catch (Exception e) {
+                log.warn("[ResumeClarification] 读取最终计划状态失败: {}", e.getMessage());
+            }
+        }
+
         // 不走 AgentRunSupervisor，需显式关闭 SSE
         dispatcher.complete(emitter, context);
     }
