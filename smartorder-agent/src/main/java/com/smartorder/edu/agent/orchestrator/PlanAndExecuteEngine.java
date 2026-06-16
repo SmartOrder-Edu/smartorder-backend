@@ -7,6 +7,7 @@ import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.model.dto.ClarificationPayload;
 import com.smartorder.edu.agent.model.dto.ExecutionPlan;
 import com.smartorder.edu.agent.model.dto.ExecutionStep;
+import com.smartorder.edu.agent.model.dto.PlanContext;
 import com.smartorder.edu.agent.model.entity.AgentPlanDraft;
 import com.smartorder.edu.agent.model.dto.VerificationResult;
 import com.smartorder.edu.agent.model.dto.VerificationResult.SuggestedAction;
