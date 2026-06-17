@@ -350,6 +350,7 @@ public class SelfManagedReActEngine {
                             .traceId(runtimeContext.getTraceId())
                             .mode(runtimeContext.getMode())
                             .runtimeContext(runtimeContext)
+                            .currentUserMessage(request.getMessage())
                             .emitter(emitter)
                             .agentName("MainReActAgent")
                             .confirmationGranted(confirmationGranted)
