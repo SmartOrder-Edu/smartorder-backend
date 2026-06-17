@@ -3,6 +3,7 @@ package com.smartorder.edu.agent.profile;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
 import com.smartorder.edu.agent.tool.impl.UpdateStudentProfileTool;
 import com.smartorder.edu.agent.tool.impl.UpdateStudentProfileTool.UpdateStudentProfileRequest;
+import dev.langchain4j.data.message.ChatMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -17,20 +18,6 @@ import java.util.concurrent.RejectedExecutionException;
 @Slf4j
 @Component
 public class ProfileUpdateCoordinator {
-
-    private static final List<String> PROFILE_EVIDENCE_SIGNALS = List.of(
-            "我是", "我的专业", "我的年级", "我目前", "我现在",
-            "我准备", "准备考研", "我计划", "我打算", "我的目标",
-            "我不会", "我不理解", "我不懂", "我没学会", "我没有学会",
-            "没有怎么学会", "没怎么学", "基础不好", "基础薄弱", "基础差",
-            "没学会", "没学好", "没有学好", "学得不好", "学不明白", "学不懂", "听不懂",
-            "没搞明白", "搞不明白", "搞不懂",
-            "我总是", "我一直", "连续做错", "经常做错", "反复出错", "老是出错",
-            "我喜欢", "我更喜欢", "我偏好", "我习惯",
-            "我通常", "我经常", "每天", "学习效率",
-            "我紧张", "我焦虑", "我担心", "压力很大", "好难啊", "好难", "太难了", "太难", "我害怕",
-            "大一", "大二", "大三", "大四", "研一", "研二", "本科", "研究生"
-    );
 
     private final Executor profileUpdateExecutor;
     private final ProfileUpdateCandidateExtractor candidateExtractor;
@@ -53,16 +40,21 @@ public class ProfileUpdateCoordinator {
             String conversationId,
             String traceId,
             String currentUserMessage,
-            String conversationHistory
+            List<ChatMessage> conversationHistory
     ) {
-        if (userId == null || userId <= 0 || currentUserMessage == null || currentUserMessage.isBlank()
-                || !mayContainProfileEvidence(currentUserMessage)) {
+        if (userId == null || userId <= 0 || currentUserMessage == null || currentUserMessage.isBlank()) {
+            log.info("[ProfileUpdate] 跳过画像分析(参数无效): userId={}, traceId={}", userId, traceId);
             return;
         }
 
         try {
             profileUpdateExecutor.execute(() ->
                     extractAndUpdate(userId, conversationId, traceId, currentUserMessage, conversationHistory));
+            log.info("[ProfileUpdate] 已提交后台任务: userId={}, conversationId={}, traceId={}, "
+                    + "historySize={}, msg={}",
+                    userId, conversationId, traceId,
+                    conversationHistory != null ? conversationHistory.size() : 0,
+                    truncate(currentUserMessage));
         } catch (RejectedExecutionException e) {
             log.warn("[ProfileUpdate] 后台队列已满，跳过本次画像分析: userId={}, traceId={}",
                     userId, traceId);
@@ -75,13 +67,22 @@ public class ProfileUpdateCoordinator {
             String conversationId,
             String traceId,
             String currentUserMessage,
-            String conversationHistory
+            List<ChatMessage> conversationHistory
     ) {
         try {
+            log.info("[ProfileUpdate] 后台任务开始执行: userId={}, traceId={}, msg={}",
+                    userId, traceId, truncate(currentUserMessage));
             UpdateStudentProfileRequest request = candidateExtractor.extract(currentUserMessage, conversationHistory);
             if (request == null || request.getDimensionUpdate() == null  || request.getDimensionUpdate().isEmpty()) {
+                log.info("[ProfileUpdate] LLM 未提取到画像更新: userId={}, traceId={}", userId, traceId);
                 return;
             }
+
+            log.info("[ProfileUpdate] LLM 提取到画像更新: userId={}, traceId={}, dimensionCount={}, dimensions={}",
+                    userId, traceId, request.getDimensionUpdate().size(),
+                    request.getDimensionUpdate().stream()
+                            .map(UpdateStudentProfileRequest.DimensionUpdate::getDimensionKey)
+                            .toList());
 
             ToolInvokeContext context = ToolInvokeContext.builder()
                     .userId(userId)
@@ -91,23 +92,15 @@ public class ProfileUpdateCoordinator {
                     .agentName("ProfileUpdateCoordinator")
                     .build();
             updateStudentProfileTool.execute(request, context);
+            log.info("[ProfileUpdate] 画像更新完成: userId={}, traceId={}", userId, traceId);
         } catch (Exception e) {
             log.warn("[ProfileUpdate] 异步画像分析失败，不影响主请求: userId={}, traceId={}, error={}",
-                    userId, traceId, e.getMessage());
+                    userId, traceId, e.getMessage(), e);
         }
     }
 
-    /** 快速判断消息是否可能包含画像证据关键词（去除标点后比对） **/
-    boolean mayContainProfileEvidence(String message) {
-        String normalized = normalizeForMatch(message);
-        return PROFILE_EVIDENCE_SIGNALS.stream()
-                .anyMatch(signal -> normalized.contains(normalizeForMatch(signal)));
-    }
-
-    private static String normalizeForMatch(String text) {
-        if (text == null) {
-            return "";
-        }
-        return text.replaceAll("[^\\u4e00-\\u9fa5a-zA-Z0-9]", "");
+    private static String truncate(String text) {
+        if (text == null) return "null";
+        return text.length() <= 50 ? text : text.substring(0, 50) + "...";
     }
 }

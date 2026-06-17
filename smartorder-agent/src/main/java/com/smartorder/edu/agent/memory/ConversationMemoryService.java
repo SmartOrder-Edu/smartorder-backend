@@ -209,6 +209,29 @@ public class ConversationMemoryService {
     }
 
     /**
+     * 获取最近 N 条对话消息的结构化列表（用于 LLM 调用）
+     * 跳过空内容消息，按时间正序排列（user/assistant 交替）。
+     *
+     * @param conversationId 会话 ID
+     * @param maxMessages    最大消息数
+     * @return LangChain4j ChatMessage 列表
+     */
+    public List<ChatMessage> getRecentChatMessages(String conversationId, int maxMessages) {
+        List<ConversationMessage> recentMessages = messageMapper.selectRecentMessages(conversationId, maxMessages);
+        List<ChatMessage> messages = new ArrayList<>();
+        // selectRecentMessages 按 create_time DESC 返回，需要反转顺序
+        for (int i = recentMessages.size() - 1; i >= 0; i--) {
+            ConversationMessage msg = recentMessages.get(i);
+            if (msg.getContent() == null || msg.getContent().isBlank()) continue;
+            ChatMessage chatMsg = toChatMessage(msg);
+            if (chatMsg != null) {
+                messages.add(chatMsg);
+            }
+        }
+        return messages;
+    }
+
+    /**
      * 从对话历史中提取用户最近表达的学习目标
      * 向上追溯最近的用户消息，排除简单确认词（如"好的"/"可以"等）
      *

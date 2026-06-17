@@ -3,6 +3,8 @@ package com.smartorder.edu.agent.profile;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
 import com.smartorder.edu.agent.tool.impl.UpdateStudentProfileTool;
 import com.smartorder.edu.agent.tool.impl.UpdateStudentProfileTool.UpdateStudentProfileRequest;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.UserMessage;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -43,6 +45,7 @@ class ProfileUpdateCoordinatorTest {
         ProfileUpdateCandidateExtractor extractor = mock(ProfileUpdateCandidateExtractor.class);
         UpdateStudentProfileRequest emptyRequest = new UpdateStudentProfileRequest();
         emptyRequest.setDimensionUpdate(List.of());
+        List<ChatMessage> history = List.of(UserMessage.from("some history"));
         when(extractor.extract(eq("我计划两个月内补数据结构"), any())).thenReturn(emptyRequest);
         UpdateStudentProfileTool tool = mock(UpdateStudentProfileTool.class);
         ProfileUpdateCoordinator coordinator = new ProfileUpdateCoordinator(
@@ -51,9 +54,9 @@ class ProfileUpdateCoordinatorTest {
                 tool
         );
 
-        coordinator.submit(1L, "conversation-1", "trace-1", "我计划两个月内补数据结构", "some history");
+        coordinator.submit(1L, "conversation-1", "trace-1", "我计划两个月内补数据结构", history);
 
-        verify(extractor).extract(eq("我计划两个月内补数据结构"), eq("some history"));
+        verify(extractor).extract(eq("我计划两个月内补数据结构"), eq(history));
         verify(tool, never()).execute(any(), any());
     }
 
@@ -69,7 +72,8 @@ class ProfileUpdateCoordinatorTest {
                 tool
         );
 
-        coordinator.submit(7L, "conversation-1", "trace-1", "我计划两个月内补数据结构", "some history");
+        coordinator.submit(7L, "conversation-1", "trace-1", "我计划两个月内补数据结构",
+                List.of(UserMessage.from("some history")));
 
         ArgumentCaptor<ToolInvokeContext> contextCaptor = ArgumentCaptor.forClass(ToolInvokeContext.class);
         verify(tool).execute(eq(request), contextCaptor.capture());

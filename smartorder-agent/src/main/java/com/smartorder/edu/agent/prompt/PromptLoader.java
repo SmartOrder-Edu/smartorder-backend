@@ -180,6 +180,10 @@ public class PromptLoader {
         return cache.get("clarification/max-rounds-fallback.md");
     }
 
+    public String getProfileClarification() {
+        return cache.get("clarification/profile-clarification.md");
+    }
+
     // ============ Public: 工具方法 ============
 
     /**

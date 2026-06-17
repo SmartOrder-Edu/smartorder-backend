@@ -2,9 +2,13 @@ package com.smartorder.edu.agent.profile;
 
 import com.alibaba.fastjson.JSON;
 import com.smartorder.edu.agent.prompt.PromptLoader;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.UserMessage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -27,13 +31,35 @@ public class ProfilePromptService {
 
     private final PromptLoader promptLoader;
 
-    public String buildRouterPrompt(String currentUserMessage, String conversationHistory) {
-        return promptLoader.getProfileDimensionRouterPrompt()
-                .replace("{{CONVERSATION_HISTORY}}", nullToEmpty(conversationHistory))
-                .replace("{{CURRENT_USER_MESSAGE}}", currentUserMessage);
+    /**
+     * 构建维度路由器的消息列表
+     * <p>
+     * SystemMessage: 路由器指令模板<br>
+     * conversationHistory: 最近 N 条对话消息(user/assistant 交替)<br>
+     * UserMessage: 当前用户消息
+     */
+    public List<ChatMessage> buildRouterMessages(String currentUserMessage, List<ChatMessage> conversationHistory) {
+        String routerPrompt = promptLoader.getProfileDimensionRouterPrompt();
+        List<ChatMessage> messages = new ArrayList<>();
+        if (routerPrompt != null && !routerPrompt.isBlank()) {
+            messages.add(SystemMessage.from(routerPrompt));
+        }
+        if (conversationHistory != null && !conversationHistory.isEmpty()) {
+            messages.addAll(conversationHistory);
+        }
+        messages.add(UserMessage.from(currentUserMessage));
+        return messages;
     }
 
-    public String buildExtractionPrompt(String currentUserMessage, String conversationHistory, List<ProfileDimensionDecision> decisions) {
+    /**
+     * 构建维度提取器的消息列表
+     * <p>
+     * SystemMessage: 提取器指令模板 + 已选维度 + 维度规则<br>
+     * conversationHistory: 最近 N 条对话消息<br>
+     * UserMessage: 当前用户消息
+     */
+    public List<ChatMessage> buildExtractionMessages(String currentUserMessage, List<ChatMessage> conversationHistory,
+                                                      List<ProfileDimensionDecision> decisions) {
         List<ProfileDimensionDecision> validDecisions = decisions == null
                 ? List.of()
                 : decisions.stream()
@@ -49,11 +75,17 @@ public class ProfilePromptService {
                 .map(this::loadDimensionRule)
                 .collect(Collectors.joining("\n\n---\n\n"));
 
-        return promptLoader.getProfileExtractionShellPrompt()
-                .replace("{{CONVERSATION_HISTORY}}", nullToEmpty(conversationHistory))
-                .replace("{{CURRENT_USER_MESSAGE}}", currentUserMessage)
+        String systemPrompt = promptLoader.getProfileExtractionShellPrompt()
                 .replace("{{SELECTED_DIMENSIONS_JSON}}", selectedDimensionsJson)
                 .replace("{{DIMENSION_RULES}}", dimensionRules);
+
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(SystemMessage.from(systemPrompt));
+        if (conversationHistory != null && !conversationHistory.isEmpty()) {
+            messages.addAll(conversationHistory);
+        }
+        messages.add(UserMessage.from(currentUserMessage));
+        return messages;
     }
 
     private String loadDimensionRule(String dimensionKey) {
@@ -62,10 +94,6 @@ public class ProfilePromptService {
             throw new IllegalArgumentException("Missing profile dimension prompt: " + dimensionKey);
         }
         return prompt;
-    }
-
-    private static String nullToEmpty(String value) {
-        return value == null || value.isBlank() ? "（无历史对话）" : value;
     }
 
     private String normalizeDimension(String dimensionKey) {

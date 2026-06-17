@@ -14,6 +14,7 @@ import com.smartorder.edu.agent.service.AttachmentNotReadyException;
 import com.smartorder.edu.agent.trace.AgentEventType;
 import com.smartorder.edu.agent.trace.AgentRuntimeContext;
 import com.smartorder.edu.agent.trace.TraceEventDispatcher;
+import dev.langchain4j.data.message.ChatMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -165,8 +166,18 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 }
             });
 
-            // 5. 异步提交画像分析（不阻塞主响应，携带最近 30 条对话历史）
-            String conversationHistory = memoryService.getRecentConversationText(conversationId, 30);
+            // 5. 异步提交画像分析（不阻塞主 SSE 响应）查最近 30 条消息
+            //    - getRecentChatMessages(30): 从 DB 查最近 30 条消息，转成 List<ChatMessage>
+            //      按 create_time 正序排列，跳过空内容 → LLM 原生多轮对话格式
+            //    - submit(): 校验参数后提交后台线程 → extractor.extract(currentUserMessage, history) →
+            //      router LLM → extraction LLM → updateStudentProfileTool.execute()
+            //      不再使用关键词预过滤——由 router LLM 自行判断是否包含画像信息
+            List<ChatMessage> conversationHistory = memoryService.getRecentChatMessages(conversationId, 30);
+            log.info("[AgentOrchestrator] 提交画像分析: userId={}, conversationId={}, traceId={}, "
+                    + "historySize={}, currentMsg={}",
+                    request.getUserId(), conversationId, context.getTraceId(),
+                    conversationHistory.size(),
+                    request.getMessage().substring(0, Math.min(50, request.getMessage().length())));
             profileUpdateCoordinator.submit(request.getUserId(), conversationId, context.getTraceId(),
                     request.getMessage(), conversationHistory);
 
@@ -304,17 +315,25 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
             }
         });
 
-        // 异步提交画像分析（携带最近 30 条对话历史）
-        String conversationHistory = memoryService.getRecentConversationText(conversationId, 30);
+        // 异步提交画像分析（不阻塞主 SSE 响应）
+        //   - getRecentChatMessages(30): 从 DB 查最近 30 条消息 → List<ChatMessage>
+        //   - submit(): 校验参数后提交后台线程 → extractor.extract() →
+        //     router LLM → extraction LLM → updateStudentProfileTool.execute()
+        //     不再使用关键词预过滤——由 router LLM 自行判断是否包含画像信息
+        List<ChatMessage> conversationHistory = memoryService.getRecentChatMessages(conversationId, 30);
+        log.info("[AgentOrchestrator:forcedMode] 提交画像分析: userId={}, conversationId={}, traceId={}, "
+                + "historySize={}, currentMsg={}",
+                request.getUserId(), conversationId, context.getTraceId(),
+                conversationHistory.size(),
+                request.getMessage().substring(0, Math.min(50, request.getMessage().length())));
         profileUpdateCoordinator.submit(request.getUserId(), conversationId, context.getTraceId(),
                 request.getMessage(), conversationHistory);
     }
 
     private IntentRouteResult buildForcedRouteResult(AgentRunMode mode) {
         boolean needsPlanning = mode == AgentRunMode.PLAN_AND_EXECUTE;
-        List<String> tools = needsPlanning
-                ? List.of()
-                : List.of("getStudentProfile", "updateStudentProfile", "queryKnowledge", "queryTasks", "webSearch");
+        List<String> tools = needsPlanning ? List.of()
+                : List.of("getStudentProfile", "queryKnowledge", "queryTasks", "webSearch");
         return IntentRouteResult.builder()
                 .intentType(needsPlanning ? "目标规划（手动选择）" : "知识问答（手动选择）")
                 .intentEnum(needsPlanning ? IntentType.GOAL_PLANNING : IntentType.KNOWLEDGE_QA)
