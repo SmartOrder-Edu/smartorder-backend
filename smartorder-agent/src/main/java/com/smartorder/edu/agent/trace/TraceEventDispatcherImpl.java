@@ -77,6 +77,9 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
             if (context.getActiveClarificationId() != null) {
                 donePayload.put("activeClarificationId", context.getActiveClarificationId());
             }
+            if (context.getClarificationPayload() != null) {
+                donePayload.put("clarificationPayload", context.getClarificationPayload());
+            }
             emitter.send(SseEmitter.event()
                     .name(AgentEventType.DONE.getEventName())
                     .data(JSON.toJSONString(donePayload)));

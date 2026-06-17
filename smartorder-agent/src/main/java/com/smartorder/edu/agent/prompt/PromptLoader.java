@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -29,6 +30,9 @@ public class PromptLoader {
     private final ResourceLoader resourceLoader;
 
     private final Map<String, String> cache = new ConcurrentHashMap<>();
+
+    /** 保存注入前的原始模板，供 per-request 动态注入使用 */
+    private final Map<String, String> rawCache = new ConcurrentHashMap<>();
 
     private static final String BASE_PATH = "classpath:prompts/";
 
@@ -54,11 +58,12 @@ public class PromptLoader {
                 .map(h -> "   " + h.name() + "：" + h.description())
                 .collect(Collectors.joining("\n"));
 
-        for (Map.Entry<String, String> entry : cache.entrySet()) {
-            String content = entry.getValue();
-            if (content.contains("{available_tools_list}") || content.contains("{available_tools_with_desc}")) {
-                content = content.replace("{available_tools_list}", toolNames);
-                content = content.replace("{available_tools_with_desc}", toolsWithDesc);
+        for (Map.Entry<String, String> entry : rawCache.entrySet()) {
+            String raw = entry.getValue();
+            if (raw.contains("{available_tools_list}") || raw.contains("{available_tools_with_desc}")) {
+                String content = raw
+                        .replace("{available_tools_list}", toolNames)
+                        .replace("{available_tools_with_desc}", toolsWithDesc);
                 cache.put(entry.getKey(), content);
                 log.info("[PromptLoader] 动态注入工具列表到: {} ({} 个工具)", entry.getKey(), handlers.size());
             }
@@ -168,6 +173,36 @@ public class PromptLoader {
     // ============ Public: 工具方法 ============
 
     /**
+     * 为当前请求构建仅包含指定工具描述的提示词。
+     * 从 rawCache 读取原始模板，只注入传入的工具名和描述。
+     *
+     * @param promptKey      提示词缓存键（如 "system/main-agent.md"）
+     * @param toolNameToDesc 工具名 → 工具描述 的映射
+     * @return 替换好工具列表和描述的提示词文本
+     */
+    public String buildPromptWithTools(String promptKey, Map<String, String> toolNameToDesc) {
+        String raw = rawCache.get(promptKey);
+        if (raw == null) {
+            throw new IllegalArgumentException("提示词不存在: " + promptKey);
+        }
+        if (!raw.contains("{available_tools_list}") && !raw.contains("{available_tools_with_desc}")) {
+            return raw; // 无占位符，直接返回原始内容
+        }
+
+        List<String> sortedNames = toolNameToDesc.keySet().stream().sorted().toList();
+        String toolNames = String.join(", ", sortedNames);
+        StringBuilder toolsWithDesc = new StringBuilder();
+        for (String name : sortedNames) {
+            toolsWithDesc.append("   ").append(name).append("：").append(toolNameToDesc.get(name)).append("\n");
+        }
+
+        String result = raw;
+        result = result.replace("{available_tools_list}", toolNames);
+        result = result.replace("{available_tools_with_desc}", toolsWithDesc.toString().stripTrailing());
+        return result;
+    }
+
+    /**
      * 使用 MessageFormat 替换模板中的 {0} {1} ... 占位符。
      */
     public static String format(String template, Object... args) {
@@ -208,6 +243,7 @@ public class PromptLoader {
             String content = resource.getContentAsString(StandardCharsets.UTF_8);
             // 统一换行符，去除末尾多余空行
             content = content.replace("\r\n", "\n").replace("\r", "\n").stripTrailing();
+            rawCache.put(path, content);  // 保存原始模板，供 per-request 动态注入
             cache.put(path, content);
             log.debug("[PromptLoader] 加载提示词: {} ({} chars)", path, content.length());
         } catch (IOException e) {

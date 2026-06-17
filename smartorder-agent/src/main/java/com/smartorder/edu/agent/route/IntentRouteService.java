@@ -99,7 +99,7 @@ public class IntentRouteService {
                 result.getIntentEnum() != null ? result.getIntentEnum() : IntentType.UNKNOWN,
                 result.getMissingSlots());
         result.setRunMode(AgentRunMode.REACT);
-        result.setRequiredTools(List.of());
+        result.setRequiredTools(List.of("askUser"));
         result.setSource(RoutingSource.CLARIFICATION);
         result.setReason(clarificationMsg);
         log.info("[IntentRoute] 进入澄清模式: {}", clarificationMsg);
@@ -177,7 +177,7 @@ public class IntentRouteService {
         // 2. 图表/格式化输出：例如 Mermaid 技术图，本质是单轮技术说明 + 指定输出格式
         if (containsAny(message, DIAGRAM_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.DIAGRAM_GENERATION, AgentRunMode.REACT,
-                    0.88, List.of(),
+                    0.88, List.of("askUser"),
                     "用户需要图表化技术说明，使用 REACT 直接回答");
         }
 
@@ -192,28 +192,28 @@ public class IntentRouteService {
         // 4. 习题答疑类
         if (containsAny(message, HELP_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.PROBLEM_HELP, AgentRunMode.REACT,
-                    0.85, List.of("getStudentProfile", "queryKnowledge", "queryTasks", "webSearch"),
+                    0.85, List.of("getStudentProfile", "queryKnowledge", "queryTasks", "webSearch", "askUser"),
                     "用户需要学习辅导");
         }
 
         // 5. 进度查询
         if (containsAny(message, PROGRESS_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.PROGRESS_REVIEW, AgentRunMode.REACT,
-                    0.85, List.of("queryLearningProgress", "getStudentProfile"),
+                    0.85, List.of("queryLearningProgress", "getStudentProfile", "askUser"),
                     "用户查询学习进度");
         }
 
         // 6. 任务管理
         if (containsAny(message, TASK_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.TASK_MANAGEMENT, AgentRunMode.REACT,
-                    0.85, List.of("queryTasks"),
+                    0.85, List.of("queryTasks", "askUser"),
                     "用户管理学习任务");
         }
 
         // 7. 简单知识问答（短消息 + 定义类关键词）
         if (message.length() <= 30 && containsAny(message, "什么是", "解释一下", "定义")) {
             return buildKeywordResult(IntentType.KNOWLEDGE_QA, AgentRunMode.REACT,
-                    0.80, List.of("ragRetrieve"),
+                    0.80, List.of("ragRetrieve", "askUser"),
                     "简单知识解释");
         }
 
@@ -308,10 +308,10 @@ public class IntentRouteService {
         }
 
         return switch (intent) {
-            case PROBLEM_HELP -> List.of("getStudentProfile", "queryKnowledge", "queryTasks", "webSearch");
-            case PROGRESS_REVIEW -> List.of("queryLearningProgress", "getStudentProfile");
-            case KNOWLEDGE_QA, DIAGRAM_GENERATION, UNKNOWN -> List.of("webSearch","ragRetrieve");
-            case TASK_MANAGEMENT -> List.of("queryTasks", "manageLearningTask");
+            case PROBLEM_HELP -> List.of("getStudentProfile", "queryKnowledge", "queryTasks", "webSearch", "askUser");
+            case PROGRESS_REVIEW -> List.of("queryLearningProgress", "getStudentProfile", "askUser");
+            case KNOWLEDGE_QA, DIAGRAM_GENERATION, UNKNOWN -> List.of("webSearch", "ragRetrieve", "askUser");
+            case TASK_MANAGEMENT -> List.of("queryTasks", "manageLearningTask", "askUser");
             default -> List.of(); // GOAL_PLANNING, PLAN_CONFIRMATION, RESOURCE_GENERATION → PLAN_AND_EXECUTE
         };
     }
@@ -322,7 +322,7 @@ public class IntentRouteService {
                 .intentEnum(IntentType.KNOWLEDGE_QA)
                 .complexity("简单")
                 .runMode(AgentRunMode.REACT)
-                .requiredTools(List.of("webSearch"))
+                .requiredTools(List.of("webSearch", "askUser"))
                 .confidence(0.5)
                 .source(RoutingSource.KEYWORD)
                 .reason("未命中规则，默认使用 REACT 模式")
