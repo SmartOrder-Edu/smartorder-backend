@@ -90,6 +90,7 @@ public class AgentPlanController {
         log.info("[PlanConfirm] 开始执行规划: userId={}, draftId={}", userId, draftId);
 
         executor.execute(() -> {
+            try {
             // 先按草稿类型路由（保持 EXECUTION_PLAN 链路不变）
             AgentPlanDraft draft = planDraftService.getByDraftId(draftId);
             if (draft == null) {
@@ -154,6 +155,11 @@ public class AgentPlanController {
                             "DRAFT_WRONG_STATUS", result.message());
                     return;
             }
+            } catch (Exception e) {
+                log.error("[PlanConfirm] 执行规划异常: userId={}, draftId={}", userId, draftId, e);
+                emitErrorAndClose(emitter, conversationId, userId, traceId,
+                        "PLAN_CONFIRM_FAILED", e.getMessage() != null ? e.getMessage() : "规划执行失败");
+            }
         });
 
         emitter.onTimeout(() -> {
@@ -195,9 +201,17 @@ public class AgentPlanController {
         log.info("[ClarificationAnswer] 提交澄清回答: userId={}, draftId={}, clarId={}", userId, draftId, clarificationId);
 
         executor.execute(() -> {
-            planAndExecuteEngine.resumeAfterClarification(
-                    draftId, clarificationId, request.getAnswer(), request.getDisplayAnswer(),
-                    userId, request.getConversationId(), emitter, traceId);
+            try {
+                planAndExecuteEngine.resumeAfterClarification(
+                        draftId, clarificationId, request.getAnswer(), request.getDisplayAnswer(),
+                        userId, request.getConversationId(), emitter, traceId);
+            } catch (Exception e) {
+                log.error("[ClarificationAnswer] 恢复执行异常: userId={}, draftId={}, clarId={}",
+                        userId, draftId, clarificationId, e);
+                emitErrorAndClose(emitter, request.getConversationId(), userId, traceId,
+                        "CLARIFICATION_RESUME_FAILED",
+                        e.getMessage() != null ? e.getMessage() : "澄清恢复执行失败");
+            }
         });
 
         emitter.onTimeout(() -> {
@@ -226,8 +240,15 @@ public class AgentPlanController {
         log.info("[ConfirmGate] 确认确认门: userId={}, draftId={}", userId, draftId);
 
         executor.execute(() -> {
-            planAndExecuteEngine.resumeAfterConfirmation(
-                    draftId, userId, conversationId, emitter, traceId);
+            try {
+                planAndExecuteEngine.resumeAfterConfirmation(
+                        draftId, userId, conversationId, emitter, traceId);
+            } catch (Exception e) {
+                log.error("[ConfirmGate] 恢复执行异常: userId={}, draftId={}", userId, draftId, e);
+                emitErrorAndClose(emitter, conversationId, userId, traceId,
+                        "CONFIRMATION_RESUME_FAILED",
+                        e.getMessage() != null ? e.getMessage() : "确认门恢复执行失败");
+            }
         });
 
         emitter.onTimeout(() -> {

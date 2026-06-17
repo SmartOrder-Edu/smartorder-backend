@@ -240,8 +240,8 @@ public class PlanAndExecuteEngine {
         AgentPlanDraft draft = draftService.getByDraftId(draftId);
         if (draft == null) {
             log.error("[PlanAndExecute] 草稿不存在: {}", draftId);
-            dispatcher.emit(emitter, AgentRuntimeContext.builder().traceId(traceId).build(),
-                    AgentEventType.ERROR, Map.of("message", "规划草稿不存在"));
+            dispatcher.error(emitter, buildMinimalContext(traceId, conversationId, userId),
+                    new IllegalArgumentException("规划草稿不存在"));
             return;
         }
 
@@ -254,6 +254,7 @@ public class PlanAndExecuteEngine {
                 .conversationId(conversationId)
                 .userId(userId)
                 .mode(AgentRunMode.PLAN_AND_EXECUTE)
+                .budget(ExecutionBudget.planDefault())
                 .sequence(draft.getResumeStepIndex() != null
                         ? new java.util.concurrent.atomic.AtomicInteger(draft.getResumeStepIndex() * 100)
                         : new java.util.concurrent.atomic.AtomicInteger(0))
@@ -265,6 +266,10 @@ public class PlanAndExecuteEngine {
 
         executeExecutionPlanInternal(draft, plan, context, emitter, draftId,
                 userId, conversationId, resumed);
+
+        // /agent/plan/confirm 不走 AgentRunSupervisor，需显式同步最终状态并关闭 SSE。
+        syncFinalPlanRunStatus(draftId, context, "[ExecutePlan]");
+        dispatcher.complete(emitter, context);
     }
 
     /**
@@ -293,8 +298,12 @@ public class PlanAndExecuteEngine {
                 .mode(AgentRunMode.PLAN_AND_EXECUTE)
                 .attachmentContext(parentContext.getAttachmentContext())
                 .allowedAttachmentFileIds(parentContext.getAllowedAttachmentFileIds())
-                .sequence(new java.util.concurrent.atomic.AtomicInteger(
-                        parentContext.getSequence() != null ? parentContext.getSequence().get() : 0))
+                .budget(parentContext.getBudget() != null
+                        ? parentContext.getBudget()
+                        : ExecutionBudget.planDefault())
+                .sequence(parentContext.getSequence() != null
+                        ? parentContext.getSequence()
+                        : new java.util.concurrent.atomic.AtomicInteger(0))
                 .build();
 
         if (resumed) {
@@ -650,17 +659,7 @@ public class PlanAndExecuteEngine {
                     context, emitter);
 
             // 重新读取最终计划状态，确保 done 事件含正确的 runStatus
-            AgentPlanDraft resumeFinalDraft = draftService.getByDraftId(draft.getDraftId());
-            if (resumeFinalDraft != null) {
-                try {
-                    ExecutionPlan resumeFinalPlan = JSON.parseObject(
-                            resumeFinalDraft.getExecutionPlanJson(), ExecutionPlan.class);
-                    context.setPlanRunStatus(resumeFinalPlan.getStatus());
-                    context.setPlanDraftId(draft.getDraftId());
-                } catch (Exception e) {
-                    log.warn("[PlanAndExecute] 读取最终计划状态失败: {}", e.getMessage());
-                }
-            }
+            syncFinalPlanRunStatus(draft.getDraftId(), context, "[PlanAndExecute]");
 
         } else if ("PAUSED_CONFIRMATION".equals(plan.getStatus())) {
             // 用户通过聊天确认词确认（前端按钮确认走 /agent/plan/confirm）
@@ -675,6 +674,9 @@ public class PlanAndExecuteEngine {
 
             executeExecutionPlanWithContext(draft.getDraftId(), context.getUserId(),
                     context, emitter);
+
+            // 重新读取最终计划状态，确保 done 事件含正确的 runStatus
+            syncFinalPlanRunStatus(draft.getDraftId(), context, "[PlanAndExecute]");
         }
     }
 
@@ -828,17 +830,7 @@ public class PlanAndExecuteEngine {
         executeExecutionPlanWithContext(draftId, userId, context, emitter);
 
         // 重新加载计划的最终状态，确保前端 done 事件中携带正确的 runStatus
-        AgentPlanDraft finalDraft = draftService.getByDraftId(draftId);
-        if (finalDraft != null) {
-            try {
-                ExecutionPlan finalPlan = JSON.parseObject(
-                        finalDraft.getExecutionPlanJson(), ExecutionPlan.class);
-                context.setPlanRunStatus(finalPlan.getStatus());
-                context.setPlanDraftId(draftId);
-            } catch (Exception e) {
-                log.warn("[ResumeClarification] 读取最终计划状态失败: {}", e.getMessage());
-            }
-        }
+        syncFinalPlanRunStatus(draftId, context, "[ResumeClarification]");
 
         // 不走 AgentRunSupervisor，需显式关闭 SSE
         dispatcher.complete(emitter, context);
@@ -891,8 +883,27 @@ public class PlanAndExecuteEngine {
 
         executeExecutionPlanWithContext(draftId, userId, context, emitter);
 
+        // 重新加载计划的最终状态，确保前端 done 事件中携带正确的 runStatus
+        syncFinalPlanRunStatus(draftId, context, "[ResumeConfirmation]");
+
         // 不走 AgentRunSupervisor，需显式关闭 SSE
         dispatcher.complete(emitter, context);
+    }
+
+    private void syncFinalPlanRunStatus(String draftId, AgentRuntimeContext context, String logPrefix) {
+        AgentPlanDraft finalDraft = draftService.getByDraftId(draftId);
+        if (finalDraft == null) {
+            return;
+        }
+        try {
+            ExecutionPlan finalPlan = JSON.parseObject(
+                    finalDraft.getExecutionPlanJson(), ExecutionPlan.class);
+            context.setPlanRunStatus(finalPlan.getStatus());
+            context.setPlanDraftId(draftId);
+            context.setActiveClarificationId(finalPlan.getActiveClarificationId());
+        } catch (Exception e) {
+            log.warn("{} 读取最终计划状态失败: {}", logPrefix, e.getMessage());
+        }
     }
 
     private AgentRuntimeContext buildMinimalContext(String traceId, String conversationId, Long userId) {
@@ -901,6 +912,7 @@ public class PlanAndExecuteEngine {
                 .conversationId(conversationId)
                 .userId(userId)
                 .mode(AgentRunMode.PLAN_AND_EXECUTE)
+                .budget(ExecutionBudget.planDefault())
                 .sequence(new AtomicInteger(0))
                 .build();
     }

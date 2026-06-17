@@ -58,8 +58,9 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
     @Override
     public void complete(SseEmitter emitter, AgentRuntimeContext context) {
         // 推送 TRACE_COMPLETED
-        emit(emitter, context, AgentEventType.TRACE_COMPLETED,
-                Map.of("conversationId", context.getConversationId()));
+        Map<String, Object> traceCompletedPayload = new LinkedHashMap<>();
+        traceCompletedPayload.put("conversationId", context.getConversationId());
+        emit(emitter, context, AgentEventType.TRACE_COMPLETED, traceCompletedPayload);
 
         if (emitter == null) return;
 
@@ -102,13 +103,13 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
         if (emitter == null) return;
 
         try {
+            Map<String, Object> donePayload = new LinkedHashMap<>();
+            donePayload.put("conversationId", context.getConversationId());
+            donePayload.put("traceId", context.getTraceId());
+            donePayload.put("error", errorMsg);
             emitter.send(SseEmitter.event()
                     .name(AgentEventType.DONE.getEventName())
-                    .data(JSON.toJSONString(Map.of(
-                            "conversationId", context.getConversationId(),
-                            "traceId", context.getTraceId(),
-                            "error", errorMsg
-                    ))));
+                    .data(JSON.toJSONString(donePayload)));
         } catch (IOException ex) {
             log.warn("[TraceDispatcher] error done 发送失败");
         }
