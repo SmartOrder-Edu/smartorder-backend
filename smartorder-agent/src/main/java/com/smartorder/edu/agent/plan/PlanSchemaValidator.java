@@ -180,6 +180,9 @@ public class PlanSchemaValidator {
         // 拓扑排序检测循环依赖
         checkNoCycles(steps);
 
+        // 业务语义校验：CONFIRMATION 门必须有下游依赖
+        checkConfirmationGatesHaveDependents(steps);
+
         // 解析为 ExecutionPlan 对象
         ExecutionPlan result = JSON.parseObject(cleanJson, ExecutionPlan.class);
 
@@ -238,6 +241,46 @@ public class PlanSchemaValidator {
 
         if (visited != steps.size()) {
             throw new IllegalArgumentException("ExecutionPlan 包含循环依赖，无法拓扑排序");
+        }
+    }
+
+    /**
+     * 业务语义校验：CONFIRMATION 门步骤必须至少有一个后续步骤依赖它。
+     * <p>
+     * 若 CONFIRMATION 是最后一步（无下游依赖），它只是一个冗余的 UI 暂停——
+     * 学习计划草稿的确认已由 createLearningPlan 工具触发（agent.learning_plan.created 事件），
+     * 无需再追加 CONFIRMATION 门。CONFIRMATION 门应只用于守护其后真实有副作用的工具执行。
+     */
+    private void checkConfirmationGatesHaveDependents(JSONArray steps) {
+        // 构建反向邻接：stepId -> 依赖它的 stepId 列表
+        Map<String, List<String>> dependents = new HashMap<>();
+        for (int i = 0; i < steps.size(); i++) {
+            String stepId = steps.getJSONObject(i).getString("stepId");
+            dependents.putIfAbsent(stepId, new ArrayList<>());
+        }
+        for (int i = 0; i < steps.size(); i++) {
+            JSONObject step = steps.getJSONObject(i);
+            String stepId = step.getString("stepId");
+            JSONArray dependsOn = step.getJSONArray("dependsOn");
+            if (dependsOn != null) {
+                for (int j = 0; j < dependsOn.size(); j++) {
+                    String dep = dependsOn.getString(j);
+                    dependents.get(dep).add(stepId);
+                }
+            }
+        }
+        // 校验每个 CONFIRMATION 门至少有一个下游依赖
+        for (int i = 0; i < steps.size(); i++) {
+            JSONObject step = steps.getJSONObject(i);
+            if ("CONFIRMATION".equals(step.getString("gate"))) {
+                String stepId = step.getString("stepId");
+                if (dependents.get(stepId).isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "CONFIRMATION 步骤 " + stepId + " 没有后续依赖步骤；"
+                                    + "学习计划草稿的确认已由 createLearningPlan 工具触发，无需追加 CONFIRMATION 门。"
+                                    + "如需守护后续真实写操作，请在该 CONFIRMATION 步骤之后追加依赖它的工具步骤。");
+                }
+            }
         }
     }
 

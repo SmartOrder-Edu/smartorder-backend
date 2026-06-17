@@ -23,15 +23,6 @@
       "gate": "NORMAL",
       "riskLevel": "WRITE_DRAFT",
       "expectedOutput": "学习计划草稿（含阶段、学习路径、知识图谱）"
-    },
-    {
-      "stepId": "step-3",
-      "description": "展示学习计划草稿，等待用户确认是否创建学习空间",
-      "requiredTools": [],
-      "dependsOn": ["step-2"],
-      "gate": "CONFIRMATION",
-      "riskLevel": "WRITE_CONFIRMED",
-      "expectedOutput": "用户确认结果"
     }
   ]
 }
@@ -66,30 +57,31 @@
 5. gate 决定执行前是否需要暂停：
    - NORMAL: 直接执行
    - CLARIFICATION: 需要先向用户提问，获得补充信息后继续
-   - CONFIRMATION: 需要用户确认后才执行（用于创建学习空间等有副作用的操作）
+   - CONFIRMATION: 需要用户确认后才执行后续有副作用的工具。CONFIRMATION 门必须守护其后至少一个真实工具步骤（即至少有一个后续步骤依赖它），不能作为计划的最后一步单独存在。
 6. riskLevel 决定工具权限：
    - READ: 只读操作
    - WRITE_DRAFT: 写草稿，无最终副作用
    - WRITE_CONFIRMED: 有副作用的写操作，必须经过确认门
-7. 步骤数量 1-10 个，避免过度拆分
-8. description 要清晰具体，能直接作为 ReAct 的用户消息
-9. 由你判断是否需要获取学生画像（getStudentProfile）。需要画像数据的场景（如制定学习计划、学习进度回顾）应在第一步获取画像；不需要的场景（如纯知识问答、已有空间内的任务管理）可以跳过。
-10. queryKnowledge 工具需要一个已存在的学习空间ID（spaceId），因此只能在已有学习空间的场景使用（如：在某个空间内查询知识、生成资料等）。新建学习规划时不要使用 queryKnowledge，应依赖 LLM 自身的学科知识体系进行规划。
-11. 新建学习规划时使用 createLearningPlan 工具（非 manageLearningPlan），该工具只保存草稿，不创建学习空间实体。
-12. 若用户的目标模糊或画像信息不足以生成有效计划，应添加 CLARIFICATION 门步骤让用户补充信息，而不是硬编码画像采集流程。
-13. 如果某个步骤的工具可能失败（如网络搜索、知识库检索），在 description 中包含降级策略（如"如果搜索失败，基于已有知识回答"）
-14. 步骤的 description 和 expectedOutput 必须使用自然、易懂的语言，不要包含"JSON"、"工具调用"等技术术语。如果获取学生画像失败，降级策略应为"通过对话了解学生的学习目标和当前水平"，而非"画像JSON获取失败"
-15. CLARIFICATION 门步骤必须包含 clarificationSlots 数组，每个元素必须含：slotKey（语义标识，snake_case）、question（一句话问题）、answerType（TEXT | SINGLE_SELECT | MULTI_SELECT | NUMBER）、slotPriority（优先级数字，1 最高）。SELECT 类型必须提供 options 数组（格式 [{label, value}]）
-16. 每个 CLARIFICATION 步骤的 clarificationSlots 最多 5 个，按 slotPriority 排序
-17. GOAL_PLANNING 意图下的标准槽位优先级：target_scope(1) > current_level(2) > deadline_or_duration(3) > weekly_time_budget(4) > preference(5)
-18. 不要在一个 question 中包含多个子问题，每个 slotKey 只问一件事
+7. **学习计划草稿的确认由 createLearningPlan 工具自身完成**：该工具执行后会保存 LEARNING_PLAN 草稿并通过 agent.learning_plan.created 事件触发前端展示「确认并创建学习空间」卡片，用户在该卡片上确认后后端才会创建学习空间。因此目标规划场景**不要**在 createLearningPlan 之后追加 CONFIRMATION 门步骤——那会造成双重确认。CONFIRMATION 门只用于「确认后继续执行某个真实 WRITE_CONFIRMED 工具」的通用 HITL（如资源生成场景）。
+8. 步骤数量 1-10 个，避免过度拆分
+9. description 要清晰具体，能直接作为 ReAct 的用户消息
+10. 由你判断是否需要获取学生画像（getStudentProfile）。需要画像数据的场景（如制定学习计划、学习进度回顾）应在第一步获取画像；不需要的场景（如纯知识问答、已有空间内的任务管理）可以跳过。
+11. queryKnowledge 工具需要一个已存在的学习空间ID（spaceId），因此只能在已有学习空间的场景使用（如：在某个空间内查询知识、生成资料等）。新建学习规划时不要使用 queryKnowledge，应依赖 LLM 自身的学科知识体系进行规划。
+12. 新建学习规划时使用 createLearningPlan 工具（非 manageLearningPlan），该工具只保存草稿，不创建学习空间实体。
+13. 若用户的目标模糊或画像信息不足以生成有效计划，应添加 CLARIFICATION 门步骤让用户补充信息，而不是硬编码画像采集流程。
+14. 如果某个步骤的工具可能失败（如网络搜索、知识库检索），在 description 中包含降级策略（如"如果搜索失败，基于已有知识回答"）
+15. 步骤的 description 和 expectedOutput 必须使用自然、易懂的语言，不要包含"JSON"、"工具调用"等技术术语。如果获取学生画像失败，降级策略应为"通过对话了解学生的学习目标和当前水平"，而非"画像JSON获取失败"
+16. CLARIFICATION 门步骤必须包含 clarificationSlots 数组，每个元素必须含：slotKey（语义标识，snake_case）、question（一句话问题）、answerType（TEXT | SINGLE_SELECT | MULTI_SELECT | NUMBER）、slotPriority（优先级数字，1 最高）。SELECT 类型必须提供 options 数组（格式 [{label, value}]）
+17. 每个 CLARIFICATION 步骤的 clarificationSlots 最多 5 个，按 slotPriority 排序
+18. GOAL_PLANNING 意图下的标准槽位优先级：target_scope(1) > current_level(2) > deadline_or_duration(3) > weekly_time_budget(4) > preference(5)
+19. 不要在一个 question 中包含多个子问题，每个 slotKey 只问一件事
 
 ## 典型场景示例
 
 ### 场景1: 用户要求制定学习计划（新规划，无现有空间）
 自行判断是否需要先获取画像，通常结构为：
-- 获取学生画像（如需要）→ 基于画像和学科知识生成学习计划草稿 → 等待用户确认
-- 使用 createLearningPlan 工具提交草稿。
+- 获取学生画像（如需要）→ 基于画像和学科知识生成学习计划草稿
+- 使用 createLearningPlan 工具提交草稿。工具执行后会自动触发前端「确认并创建学习空间」卡片，用户在该卡片上确认后后端才会创建学习空间。**不要**在 createLearningPlan 之后追加 CONFIRMATION 门步骤。
   注意：此时无现有学习空间，queryKnowledge 不可用（需要 spaceId），应依赖 LLM 自身的学科知识。
   工具参数必须完整：spaceName、goalDescription、type、goals（JSON 数组字符串）、
   startDate（YYYY-MM-DD）、targetEndDate（YYYY-MM-DD）、
@@ -109,8 +101,7 @@
   - 每个槽位只问一个明确问题（如先问目标范围，再问基础水平，再问截止时间）
   - 使用 answerType=SINGLE_SELECT 配合 options 提供选项，降低用户输入负担
   - 按 slotPriority 排序，最重要的先问
-- 澄清后生成学习规划
-- 等待用户审阅确认（CONFIRMATION 门）
+- 澄清后生成学习规划（使用 createLearningPlan 工具提交草稿，由工具自身触发用户审阅确认，无需追加 CONFIRMATION 门）
 
 ### 场景4: 学习进度回顾与建议
 自行判断是否需要先获取画像，通常结构为：
