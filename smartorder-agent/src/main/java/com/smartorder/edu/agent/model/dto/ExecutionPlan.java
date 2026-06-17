@@ -55,6 +55,9 @@ public class ExecutionPlan {
     /** PAUSED_CLARIFICATION 时填充的追问文本 */
     private String clarificationQuestion;
 
+    /** 当前活跃的澄清记录 ID（PAUSED_CLARIFICATION 时设置） */
+    private String activeClarificationId;
+
     /** PAUSED_CONFIRMATION 时填充的草稿 ID */
     private String confirmationDraftId;
 }

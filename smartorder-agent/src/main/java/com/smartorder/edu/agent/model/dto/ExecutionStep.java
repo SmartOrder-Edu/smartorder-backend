@@ -63,4 +63,37 @@ public class ExecutionStep {
     /** 重试次数（动态重规划时递增） */
     @Builder.Default
     private int retryCount = 0;
+
+    /**
+     * 澄清槽位元数据 JSON（Planner LLM 输出，仅 gate=CLARIFICATION 时有值）
+     * 格式: [{slotKey, question, answerType, options, slotPriority}]
+     */
+    private String clarificationSlotsJson;
+
+    /**
+     * 澄清槽位列表（解析后，仅 gate=CLARIFICATION 时有值）
+     * 由 PlanSchemaValidator 从 clarificationSlotsJson 解析填充
+     */
+    private List<ClarificationSlot> clarificationSlots;
+
+    /**
+     * 澄清槽位定义 —— 每个 slot 只问一件事
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class ClarificationSlot {
+        /** 槽位标识 (snake_case, 如 target_scope, current_level) */
+        private String slotKey;
+        /** 向用户提出的问题（一句话，不含多子问题） */
+        private String question;
+        /** 答案类型：TEXT | SINGLE_SELECT | MULTI_SELECT | NUMBER */
+        private String answerType;
+        /** 选项列表（仅 SELECT 类型需要），格式 [{label, value}] */
+        private List<ClarificationPayload.SelectOption> options;
+        /** 槽位优先级（数字越小越先问） */
+        @Builder.Default
+        private int slotPriority = 0;
+    }
 }

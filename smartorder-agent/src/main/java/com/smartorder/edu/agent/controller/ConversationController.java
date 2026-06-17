@@ -44,7 +44,7 @@ public class ConversationController {
 
         Long userId = getCurrentUserId();
 
-        if (size > 100) size = 100;
+        if (size > 500) size = 500;
         if (page < 1) page = 1;
         int offset = (page - 1) * size;
 

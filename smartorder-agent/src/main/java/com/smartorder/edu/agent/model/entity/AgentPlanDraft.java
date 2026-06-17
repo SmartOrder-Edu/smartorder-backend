@@ -25,6 +25,9 @@ public class AgentPlanDraft {
     /** ExecutionPlan JSON（当 planType=EXECUTION_PLAN 时有值） */
     private String executionPlanJson;
 
+    /** PlanContext JSON——结构化澄清上下文，替代 stepOutputs 文本拼接（nullable） */
+    private String planContextJson;
+
     /** 计划类型：EXECUTION_PLAN | LEARNING_PLAN */
     private String planType;
 

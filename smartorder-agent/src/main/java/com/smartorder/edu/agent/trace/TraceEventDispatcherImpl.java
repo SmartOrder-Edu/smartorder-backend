@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -62,14 +63,23 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
 
         if (emitter == null) return;
 
-        // 推送 DONE
+        // 推送 DONE — 包含计划运行状态，前端可据此判断是否暂停态
         try {
+            Map<String, Object> donePayload = new LinkedHashMap<>();
+            donePayload.put("conversationId", context.getConversationId());
+            donePayload.put("traceId", context.getTraceId());
+            if (context.getPlanRunStatus() != null) {
+                donePayload.put("runStatus", context.getPlanRunStatus());
+            }
+            if (context.getPlanDraftId() != null) {
+                donePayload.put("draftId", context.getPlanDraftId());
+            }
+            if (context.getActiveClarificationId() != null) {
+                donePayload.put("activeClarificationId", context.getActiveClarificationId());
+            }
             emitter.send(SseEmitter.event()
                     .name(AgentEventType.DONE.getEventName())
-                    .data(JSON.toJSONString(Map.of(
-                            "conversationId", context.getConversationId(),
-                            "traceId", context.getTraceId()
-                    ))));
+                    .data(JSON.toJSONString(donePayload)));
         } catch (IOException e) {
             log.warn("[TraceDispatcher] done 事件发送失败: traceId={}", context.getTraceId());
         }

@@ -2,13 +2,12 @@ package com.smartorder.edu.agent.orchestrator;
 
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
-import com.smartorder.edu.agent.plan.PlanExecuteEngine;
-import com.smartorder.edu.agent.profile.ProfileUpdateCoordinator;
 import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentRouteService;
 import com.smartorder.edu.agent.route.RouteContext;
 import com.smartorder.edu.agent.route.RoutingSource;
+import com.smartorder.edu.agent.service.AgentConversationAttachmentService;
 import com.smartorder.edu.agent.trace.TraceEventDispatcher;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
@@ -17,8 +16,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -27,22 +26,22 @@ import static org.mockito.Mockito.when;
 class AgentOrchestratorImplTest {
 
     @Test
-    void shouldSubmitProfileUpdateAfterSavingMessageAndBeforeRouting() {
+    void shouldSaveMessageBeforeRoutingAndExecutingReact() {
         IntentRouteService routeService = mock(IntentRouteService.class);
         SelfManagedReActEngine reActEngine = mock(SelfManagedReActEngine.class);
-        PlanExecuteEngine planExecuteEngine = mock(PlanExecuteEngine.class);
-        MultiAgentCoordinator multiAgentCoordinator = mock(MultiAgentCoordinator.class);
+        PlanAndExecuteEngine planAndExecuteEngine = mock(PlanAndExecuteEngine.class);
         TraceEventDispatcher dispatcher = mock(TraceEventDispatcher.class);
         ConversationMemoryService memoryService = mock(ConversationMemoryService.class);
-        ProfileUpdateCoordinator profileUpdateCoordinator = mock(ProfileUpdateCoordinator.class);
+        AgentConversationAttachmentService attachmentService = mock(AgentConversationAttachmentService.class);
+        AgentRunSupervisor runSupervisor = mock(AgentRunSupervisor.class);
         AgentOrchestratorImpl orchestrator = new AgentOrchestratorImpl(
                 routeService,
                 reActEngine,
-                planExecuteEngine,
-                multiAgentCoordinator,
+                planAndExecuteEngine,
                 dispatcher,
                 memoryService,
-                profileUpdateCoordinator
+                attachmentService,
+                runSupervisor
         );
         IntentRouteResult routeResult = IntentRouteResult.builder()
                 .intentType("知识问答")
@@ -55,24 +54,22 @@ class AgentOrchestratorImplTest {
                 .reason("test")
                 .build();
         when(routeService.route(any(RouteContext.class))).thenReturn(routeResult);
-        AgentChatRequest request = new AgentChatRequest(
-                7L,
-                "我准备考研，但是大二的时候没有怎么学会数据结构",
-                "conversation-1"
-        );
+        doAnswer(invocation -> {
+            Runnable runnable = invocation.getArgument(3);
+            runnable.run();
+            return null;
+        }).when(runSupervisor).supervisedRun(any(), any(), any(), any(Runnable.class));
+        AgentChatRequest request = new AgentChatRequest();
+        request.setUserId(7L);
+        request.setMessage("我准备考研，但是大二的时候没有怎么学会数据结构");
+        request.setConversationId("conversation-1");
         SseEmitter emitter = mock(SseEmitter.class);
 
         orchestrator.handle(request, emitter);
 
-        InOrder order = inOrder(memoryService, profileUpdateCoordinator, routeService);
+        InOrder order = inOrder(memoryService, routeService);
         order.verify(memoryService).saveUserMessage(
-                "conversation-1", 7L, "我准备考研，但是大二的时候没有怎么学会数据结构");
-        order.verify(profileUpdateCoordinator).submit(
-                eq(7L),
-                eq("conversation-1"),
-                anyString(),
-                eq("我准备考研，但是大二的时候没有怎么学会数据结构")
-        );
+                "conversation-1", 7L, "我准备考研，但是大二的时候没有怎么学会数据结构", null);
         order.verify(routeService).route(any(RouteContext.class));
         verify(reActEngine).execute(eq(request), eq(routeResult), any(), eq(emitter));
     }
