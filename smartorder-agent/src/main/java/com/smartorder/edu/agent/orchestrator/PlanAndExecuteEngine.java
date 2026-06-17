@@ -398,7 +398,7 @@ public class PlanAndExecuteEngine {
             }
 
             // NORMAL 任务：执行 → 验证 → 重试/重规划 循环
-            boolean taskCompleted = executeAndVerifyTask(task, stepOutputs, plan, draftId,
+            boolean taskCompleted = executeAndVerifyTask(task, stepOutputs, plan, planContext, draftId,
                     context, emitter, conversationId, userId, userConfirmed);
 
             if (!taskCompleted) {
@@ -625,6 +625,7 @@ public class PlanAndExecuteEngine {
                 stepOutputs.put("__userClarification", "用户补充信息: " + userResponse);
             }
 
+            stepOutputs.putIfAbsent(pausedTask.getStepId(), buildClarificationStepOutput(pausedTask, stepOutputs));
             plan.setStepOutputs(stepOutputs);
             pausedTask.setStatus("COMPLETED");
             pausedTask.setResultSummary("用户回复: " + truncate(request.getMessage(), 200));
@@ -803,6 +804,7 @@ public class PlanAndExecuteEngine {
         // 全部澄清已回答，恢复执行
         clarificationService.acknowledge(clarificationId, "已收到，继续执行计划");
 
+        stepOutputs.put(pausedTask.getStepId(), buildClarificationStepOutput(pausedTask, stepOutputs));
         plan.setStepOutputs(stepOutputs);
         pausedTask.setStatus("COMPLETED");
         pausedTask.setResultSummary("用户回复: " + truncate(answer, 200));
@@ -1051,7 +1053,8 @@ public class PlanAndExecuteEngine {
             if ("COMPLETED".equals(task.getStatus())) continue;
             if (!"NORMAL".equals(task.getGate())) continue;
 
-            executeAndVerifyTask(task, stepOutputs, plan, draftId, context, emitter,
+            PlanContext planContext = buildPlanContext(plan, context);
+            executeAndVerifyTask(task, stepOutputs, plan, planContext, draftId, context, emitter,
                     conversationId, userId, false);
 
             // 检查是否因 CLARIFY 而暂停，若是则退出
@@ -1197,7 +1200,7 @@ public class PlanAndExecuteEngine {
      * @return true 表示任务最终通过验证，false 表示需要外部重规划
      */
     private boolean executeAndVerifyTask(ExecutionStep task, Map<String, String> stepOutputs,
-                                          ExecutionPlan plan, String draftId,
+                                          ExecutionPlan plan, PlanContext planContext, String draftId,
                                           AgentRuntimeContext context, SseEmitter emitter,
                                           String conversationId, Long userId,
                                           boolean userConfirmed) {
@@ -1222,7 +1225,7 @@ public class PlanAndExecuteEngine {
                     ));
                 }
 
-                result = executeTaskViaReAct(task, stepOutputs, context, emitter, confirmationGranted);
+                result = executeTaskViaReAct(task, stepOutputs, planContext, context, emitter, confirmationGranted);
             } catch (Exception e) {
                 log.error("[PlanAndExecute] 任务执行异常: taskId={}", task.getStepId(), e);
                 task.setErrorMessage(e.getMessage());
@@ -1550,6 +1553,25 @@ public class PlanAndExecuteEngine {
             if (!stepOutputs.containsKey(dep)) return false;
         }
         return true;
+    }
+
+    private String buildClarificationStepOutput(ExecutionStep task, Map<String, String> stepOutputs) {
+        StringBuilder sb = new StringBuilder("用户已补充澄清信息");
+        if (task.getDescription() != null && !task.getDescription().isBlank()) {
+            sb.append("（").append(task.getDescription()).append("）");
+        }
+
+        List<String> answers = stepOutputs.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("__clarification."))
+                .map(entry -> entry.getKey().substring("__clarification.".length()) + ": " + entry.getValue())
+                .toList();
+
+        if (!answers.isEmpty()) {
+            sb.append("：").append(String.join("；", answers));
+        } else {
+            sb.append("。");
+        }
+        return sb.toString();
     }
 
     private int findFirstConfirmationIndex(ExecutionPlan plan) {
