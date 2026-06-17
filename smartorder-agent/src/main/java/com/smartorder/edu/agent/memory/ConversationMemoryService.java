@@ -189,6 +189,26 @@ public class ConversationMemoryService {
     }
 
     /**
+     * 获取最近 N 条对话消息的格式化文本（用于画像分析等异步任务）
+     * 跳过空内容消息，按时间正序排列。
+     *
+     * @param conversationId 会话 ID
+     * @param maxMessages 最大消息数
+     * @return 格式化的历史文本，如 "[user]: xxx\n\n[assistant]: yyy\n\n"
+     */
+    public String getRecentConversationText(String conversationId, int maxMessages) {
+        List<ConversationMessage> messages = messageMapper.selectRecentMessages(conversationId, maxMessages);
+        // selectRecentMessages 按 create_time DESC 返回，需要反转顺序
+        StringBuilder sb = new StringBuilder();
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            ConversationMessage msg = messages.get(i);
+            if (msg.getContent() == null || msg.getContent().isBlank()) continue;
+            sb.append("[").append(msg.getRole()).append("]: ").append(msg.getContent()).append("\n\n");
+        }
+        return sb.toString();
+    }
+
+    /**
      * 从对话历史中提取用户最近表达的学习目标
      * 向上追溯最近的用户消息，排除简单确认词（如"好的"/"可以"等）
      *

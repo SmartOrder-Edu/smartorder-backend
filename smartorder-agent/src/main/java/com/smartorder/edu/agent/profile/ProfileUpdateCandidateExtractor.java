@@ -7,6 +7,11 @@ import com.smartorder.edu.agent.tool.impl.UpdateStudentProfileTool.UpdateStudent
  */
 public interface ProfileUpdateCandidateExtractor {
 
-    /** 从当前用户消息中提取学生画像候选更新 **/
-    UpdateStudentProfileRequest extract(String currentUserMessage);
+    /**
+     * 从当前用户消息中提取学生画像候选更新
+     *
+     * @param currentUserMessage 当前用户消息
+     * @param conversationHistory 对话历史文本（供 LLM 参考上下文），可为空
+     */
+    UpdateStudentProfileRequest extract(String currentUserMessage, String conversationHistory);
 }

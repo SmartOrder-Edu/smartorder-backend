@@ -165,8 +165,10 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 }
             });
 
-            // 5. 异步提交画像分析（不阻塞主响应）
-            profileUpdateCoordinator.submit(request.getUserId(), conversationId, context.getTraceId(), request.getMessage());
+            // 5. 异步提交画像分析（不阻塞主响应，携带最近 30 条对话历史）
+            String conversationHistory = memoryService.getRecentConversationText(conversationId, 30);
+            profileUpdateCoordinator.submit(request.getUserId(), conversationId, context.getTraceId(),
+                    request.getMessage(), conversationHistory);
 
         } catch (Exception e) {
             // supervisor 外部异常（路由前等）——仍保证收敛
@@ -302,9 +304,10 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
             }
         });
 
-        // 异步提交画像分析
-        profileUpdateCoordinator.submit(
-                request.getUserId(), conversationId, context.getTraceId(), request.getMessage());
+        // 异步提交画像分析（携带最近 30 条对话历史）
+        String conversationHistory = memoryService.getRecentConversationText(conversationId, 30);
+        profileUpdateCoordinator.submit(request.getUserId(), conversationId, context.getTraceId(),
+                request.getMessage(), conversationHistory);
     }
 
     private IntentRouteResult buildForcedRouteResult(AgentRunMode mode) {

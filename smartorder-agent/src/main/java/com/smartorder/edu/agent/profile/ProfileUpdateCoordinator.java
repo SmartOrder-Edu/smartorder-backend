@@ -52,7 +52,8 @@ public class ProfileUpdateCoordinator {
             Long userId,
             String conversationId,
             String traceId,
-            String currentUserMessage
+            String currentUserMessage,
+            String conversationHistory
     ) {
         if (userId == null || userId <= 0 || currentUserMessage == null || currentUserMessage.isBlank()
                 || !mayContainProfileEvidence(currentUserMessage)) {
@@ -61,7 +62,7 @@ public class ProfileUpdateCoordinator {
 
         try {
             profileUpdateExecutor.execute(() ->
-                    extractAndUpdate(userId, conversationId, traceId, currentUserMessage));
+                    extractAndUpdate(userId, conversationId, traceId, currentUserMessage, conversationHistory));
         } catch (RejectedExecutionException e) {
             log.warn("[ProfileUpdate] 后台队列已满，跳过本次画像分析: userId={}, traceId={}",
                     userId, traceId);
@@ -73,10 +74,11 @@ public class ProfileUpdateCoordinator {
             Long userId,
             String conversationId,
             String traceId,
-            String currentUserMessage
+            String currentUserMessage,
+            String conversationHistory
     ) {
         try {
-            UpdateStudentProfileRequest request = candidateExtractor.extract(currentUserMessage);
+            UpdateStudentProfileRequest request = candidateExtractor.extract(currentUserMessage, conversationHistory);
             if (request == null || request.getDimensionUpdate() == null  || request.getDimensionUpdate().isEmpty()) {
                 return;
             }
