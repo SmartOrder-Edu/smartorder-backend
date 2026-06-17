@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS `agent_plan_draft` (
     `user_id`              BIGINT        NOT NULL                 COMMENT '用户ID',
     `plan_json`            JSON          DEFAULT NULL             COMMENT '学习计划草稿JSON（planType=LEARNING_PLAN 时有值）',
     `execution_plan_json`  TEXT          DEFAULT NULL             COMMENT 'ExecutionPlan JSON（planType=EXECUTION_PLAN 时有值）',
+    `clarification_context_json` JSON DEFAULT NULL               COMMENT '澄清上下文 (key=slotKey, value=answer), 如 {"target_scope":"高考","current_level":"零基础"}',
     `plan_type`            VARCHAR(20)   DEFAULT 'LEARNING_PLAN'  COMMENT 'EXECUTION_PLAN（Agent执行规划）| LEARNING_PLAN（学习计划草稿）',
     `resume_step_index`    INT           DEFAULT 0                COMMENT '断点恢复：当前执行到的步骤索引',
     `status`               VARCHAR(20)   NOT NULL DEFAULT 'PENDING' COMMENT '状态：PENDING待确认、CONFIRMED已确认、CANCELLED已取消、EXPIRED已过期',

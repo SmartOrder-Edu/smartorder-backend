@@ -33,6 +33,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -317,6 +318,32 @@ public class SelfManagedReActEngine {
                     seg.put("thinkingText", i == 0 ? currentThinkingBuilder.toString() : "");
                     currentThinkingBuilder.setLength(0);
 
+                    // askUser 工具拦截：LLM 需要向用户澄清，暂停 ReAct 循环
+                    if ("askUser".equals(toolRequest.name())) {
+                        Map<String, Object> clarificationPayload = parseAskUserArguments(
+                                toolRequest.arguments());
+                        runtimeContext.setClarificationPayload(clarificationPayload);
+
+                        // 发射 tool.started 事件（trace 面板可展示）
+                        dispatcher.emit(emitter, runtimeContext, AgentEventType.TOOL_STARTED, Map.of(
+                                "toolName", "askUser",
+                                "arguments", toolRequest.arguments()
+                        ));
+
+                        // 将剩余思考文本作为最后一个分段
+                        if (currentThinkingBuilder.length() > 0) {
+                            Map<String, Object> finalSeg = new HashMap<>();
+                            finalSeg.put("thinkingText", currentThinkingBuilder.toString());
+                            reasoningSegments.add(finalSeg);
+                            currentThinkingBuilder.setLength(0);
+                        }
+
+                        log.info("[ReAct] askUser 工具被调用，暂停循环: slotKey={}, answerType={}",
+                                clarificationPayload.get("slotKey"),
+                                clarificationPayload.get("answerType"));
+                        return null;
+                    }
+
                     ToolInvokeContext toolContext = ToolInvokeContext.builder()
                             .userId(request.getUserId())
                             .conversationId(runtimeContext.getConversationId())
@@ -506,6 +533,31 @@ public class SelfManagedReActEngine {
             boolean saveAssistantMessage,
             boolean saveToolMessages
     ) {
+    }
+
+    /**
+     * 解析 askUser 工具调用的参数，转为结构化 payload。
+     * LLM 传入的 arguments 是 JSON: {"question":"...","answerType":"SINGLE_SELECT","options":[{"label":"...","value":"..."}],"slotKey":"..."}
+     */
+    private Map<String, Object> parseAskUserArguments(String argumentsJson) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> args = JSON.parseObject(argumentsJson, Map.class);
+            payload.put("question", args.getOrDefault("question", "请提供更多信息"));
+            payload.put("answerType", args.getOrDefault("answerType", "TEXT"));
+            payload.put("slotKey", args.getOrDefault("slotKey", "general"));
+            // options 是 List<Map> 格式，直接透传
+            Object options = args.get("options");
+            payload.put("options", options != null ? options : List.of());
+        } catch (Exception e) {
+            log.warn("[ReAct] askUser 参数解析失败，使用兜底: {}", e.getMessage());
+            payload.put("question", "请提供更多信息以帮助我更好地理解你的需求");
+            payload.put("answerType", "TEXT");
+            payload.put("slotKey", "general");
+            payload.put("options", List.of());
+        }
+        return payload;
     }
 
     /**

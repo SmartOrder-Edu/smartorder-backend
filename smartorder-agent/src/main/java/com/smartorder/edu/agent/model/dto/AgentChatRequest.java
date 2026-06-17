@@ -35,4 +35,11 @@ public class AgentChatRequest {
      * 为 null 时走正常的意图路由。
      */
     private String forceMode;
+
+    /**
+     * 结构化澄清回答 JSON（可选），优先于 message 字段。
+     * 格式: {"clarificationId": "uuid", "answer": "用户回答"}
+     * 前端提交结构化澄清答案时设置此字段。
+     */
+    private String clarificationAnswerJson;
 }

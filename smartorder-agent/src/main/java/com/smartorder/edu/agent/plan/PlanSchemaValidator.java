@@ -62,6 +62,7 @@ public class PlanSchemaValidator {
 
     private static final Set<String> VALID_GATES = Set.of("NORMAL", "CLARIFICATION", "CONFIRMATION");
     private static final Set<String> VALID_RISK_LEVELS = Set.of("READ", "WRITE_DRAFT", "WRITE_CONFIRMED");
+    private static final Set<String> VALID_ANSWER_TYPES = Set.of("TEXT", "SINGLE_SELECT", "MULTI_SELECT", "NUMBER");
 
     /**
      * 校验并解析 ExecutionPlan JSON（PlannerAgent 输出）
@@ -117,6 +118,37 @@ public class PlanSchemaValidator {
                 throw new IllegalArgumentException("riskLevel 值无效: " + riskLevel + "，应为 READ/WRITE_DRAFT/WRITE_CONFIRMED");
             }
 
+            // 校验 CLARIFICATION 门的 clarificationSlots
+            if ("CLARIFICATION".equals(gate)) {
+                JSONArray clarSlots = step.getJSONArray("clarificationSlots");
+                if (clarSlots == null || clarSlots.isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "step " + stepId + " 的 gate=CLARIFICATION，必须包含 clarificationSlots 数组");
+                }
+                if (clarSlots.size() > 5) {
+                    throw new IllegalArgumentException(
+                            "step " + stepId + " 的 clarificationSlots 不能超过 5 个");
+                }
+                Set<String> slotKeys = new LinkedHashSet<>();
+                for (int k = 0; k < clarSlots.size(); k++) {
+                    JSONObject slot = clarSlots.getJSONObject(k);
+                    require(slot, "slotKey", "clarificationSlots[" + k + "].slotKey");
+                    require(slot, "question", "clarificationSlots[" + k + "].question");
+                    require(slot, "answerType", "clarificationSlots[" + k + "].answerType");
+                    String answerType = slot.getString("answerType");
+                    if (answerType != null && !VALID_ANSWER_TYPES.contains(answerType)) {
+                        throw new IllegalArgumentException(
+                                "clarificationSlots[" + k + "].answerType 无效: " + answerType
+                                        + "，应为 TEXT/SINGLE_SELECT/MULTI_SELECT/NUMBER");
+                    }
+                    String slotKey = slot.getString("slotKey");
+                    if (slotKeys.contains(slotKey)) {
+                        throw new IllegalArgumentException("clarificationSlots 中 slotKey 重复: " + slotKey);
+                    }
+                    slotKeys.add(slotKey);
+                }
+            }
+
             // 校验 requiredTools 中的工具名是否真实存在
             JSONArray requiredTools = step.getJSONArray("requiredTools");
             if (requiredTools != null) {
@@ -148,8 +180,20 @@ public class PlanSchemaValidator {
         // 拓扑排序检测循环依赖
         checkNoCycles(steps);
 
+        // 业务语义校验：CONFIRMATION 门必须有下游依赖
+        checkConfirmationGatesHaveDependents(steps);
+
         // 解析为 ExecutionPlan 对象
         ExecutionPlan result = JSON.parseObject(cleanJson, ExecutionPlan.class);
+
+        // 后处理：为 CLARIFICATION 步骤同步 clarificationSlotsJson
+        for (ExecutionStep step : result.getSteps()) {
+            if ("CLARIFICATION".equals(step.getGate()) && step.getClarificationSlots() != null
+                    && !step.getClarificationSlots().isEmpty()) {
+                step.setClarificationSlotsJson(JSON.toJSONString(step.getClarificationSlots()));
+            }
+        }
+
         log.info("[SchemaValidator] ExecutionPlan校验通过: goal={}, steps={}", result.getUserGoal(), result.getSteps().size());
         return result;
     }
@@ -197,6 +241,46 @@ public class PlanSchemaValidator {
 
         if (visited != steps.size()) {
             throw new IllegalArgumentException("ExecutionPlan 包含循环依赖，无法拓扑排序");
+        }
+    }
+
+    /**
+     * 业务语义校验：CONFIRMATION 门步骤必须至少有一个后续步骤依赖它。
+     * <p>
+     * 若 CONFIRMATION 是最后一步（无下游依赖），它只是一个冗余的 UI 暂停——
+     * 学习计划草稿的确认已由 createLearningPlan 工具触发（agent.learning_plan.created 事件），
+     * 无需再追加 CONFIRMATION 门。CONFIRMATION 门应只用于守护其后真实有副作用的工具执行。
+     */
+    private void checkConfirmationGatesHaveDependents(JSONArray steps) {
+        // 构建反向邻接：stepId -> 依赖它的 stepId 列表
+        Map<String, List<String>> dependents = new HashMap<>();
+        for (int i = 0; i < steps.size(); i++) {
+            String stepId = steps.getJSONObject(i).getString("stepId");
+            dependents.putIfAbsent(stepId, new ArrayList<>());
+        }
+        for (int i = 0; i < steps.size(); i++) {
+            JSONObject step = steps.getJSONObject(i);
+            String stepId = step.getString("stepId");
+            JSONArray dependsOn = step.getJSONArray("dependsOn");
+            if (dependsOn != null) {
+                for (int j = 0; j < dependsOn.size(); j++) {
+                    String dep = dependsOn.getString(j);
+                    dependents.get(dep).add(stepId);
+                }
+            }
+        }
+        // 校验每个 CONFIRMATION 门至少有一个下游依赖
+        for (int i = 0; i < steps.size(); i++) {
+            JSONObject step = steps.getJSONObject(i);
+            if ("CONFIRMATION".equals(step.getString("gate"))) {
+                String stepId = step.getString("stepId");
+                if (dependents.get(stepId).isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "CONFIRMATION 步骤 " + stepId + " 没有后续依赖步骤；"
+                                    + "学习计划草稿的确认已由 createLearningPlan 工具触发，无需追加 CONFIRMATION 门。"
+                                    + "如需守护后续真实写操作，请在该 CONFIRMATION 步骤之后追加依赖它的工具步骤。");
+                }
+            }
         }
     }
 
