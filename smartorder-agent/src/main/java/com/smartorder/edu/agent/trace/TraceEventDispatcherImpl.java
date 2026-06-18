@@ -43,7 +43,7 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
                 emitter.send(SseEmitter.event()
                         .name(eventType.getEventName())
                         .data(JSON.toJSONString(event)));
-            } catch (IOException e) {
+            } catch (IOException | IllegalStateException e) {
                 log.warn("[TraceDispatcher] SSE 发送失败: traceId={}, event={}", context.getTraceId(), eventType.getEventName());
                 context.setClientDisconnected(true);
             }
@@ -84,7 +84,7 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
             emitter.send(SseEmitter.event()
                     .name(AgentEventType.DONE.getEventName())
                     .data(JSON.toJSONString(donePayload)));
-        } catch (IOException e) {
+        } catch (IOException | IllegalStateException e) {
             log.warn("[TraceDispatcher] done 事件发送失败: traceId={}", context.getTraceId());
         }
 
@@ -110,9 +110,9 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
             emitter.send(SseEmitter.event()
                     .name(AgentEventType.DONE.getEventName())
                     .data(JSON.toJSONString(donePayload)));
-        } catch (IOException ex) {
+        } catch (IOException | IllegalStateException ex) {
             log.warn("[TraceDispatcher] error done 发送失败");
         }
-        emitter.completeWithError(e);
+        emitter.complete();
     }
 }

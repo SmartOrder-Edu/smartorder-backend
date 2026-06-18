@@ -44,6 +44,7 @@ public class CreateLearningPlanTool implements ToolHandler {
                 + "startDate、targetEndDate、phases（完整 JSON 数组，每阶段含 phaseIndex/phaseName/"
                 + "knowledgePoints/weeks/resources）、"
                 + "knowledgeGraph（完整 JSON 对象，nodes 含 name/description/category/importance，"
+                + "importance 必须为 1-5 整数，不要使用'高/中/低'等文本，"
                 + "edges 含 from/to/type）。"
                 + "此操作仅保存草稿，不创建学习空间，用户审阅后才确认创建。";
     }
@@ -165,7 +166,7 @@ public class CreateLearningPlanTool implements ToolHandler {
         @dev.langchain4j.model.output.structured.Description("学习阶段列表，完整 JSON 数组。每阶段含 phaseIndex(序号)/phaseName(阶段名称)/knowledgePoints(知识点列表,字符串数组)/weeks(周数,整数)/resources(资源列表,每项含 resourceType/title)")
         private String phases;
 
-        @dev.langchain4j.model.output.structured.Description("知识图谱 JSON 对象。含 nodes(节点数组,每个节点含 name/description/category/importance) 和 edges(边数组,每条含 from/to/type)。nodes 中的 name 必须唯一，edges 中的 from/to 必须对应 nodes 中的 name")
+        @dev.langchain4j.model.output.structured.Description("知识图谱 JSON 对象。含 nodes(节点数组,每个节点含 name/description/category/importance) 和 edges(边数组,每条含 from/to/type)。importance 必须为 1-5 整数，不要使用'高/中/低'等文本。nodes 中的 name 必须唯一，edges 中的 from/to 必须对应 nodes 中的 name")
         private String knowledgeGraph;
     }
 }
