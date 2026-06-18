@@ -450,6 +450,11 @@ public class PlanAndExecuteEngine {
                 }
             } else {
                 stepIndex++;
+                if (context.isLearningPlanAwaitingConfirmation()) {
+                    plan.setCurrentStepIndex(stepIndex);
+                    completeExecutionPlanAfterLearningPlanDraft(plan, draftId, context, emitter);
+                    return;
+                }
             }
 
             // 更新 DB
@@ -906,6 +911,26 @@ public class PlanAndExecuteEngine {
         }
     }
 
+    private void completeExecutionPlanAfterLearningPlanDraft(ExecutionPlan plan, String draftId,
+                                                             AgentRuntimeContext context,
+                                                             SseEmitter emitter) {
+        plan.setStatus("COMPLETED");
+        draftService.updateExecutionPlan(draftId, plan);
+        runStateService.transitionByDraftId(draftId, "COMPLETED");
+        context.setPlanRunStatus("COMPLETED");
+        context.setPlanDraftId(draftId);
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "learning_plan_waiting_confirmation");
+        payload.put("executionDraftId", draftId);
+        payload.put("learningPlanDraftId", context.getLearningPlanDraftId());
+        payload.put("message", "学习计划草稿已生成，等待用户审阅确认。");
+        dispatcher.emit(emitter, context, AgentEventType.STATUS, payload);
+
+        log.info("[PlanAndExecute] ExecutionPlan 已在学习计划草稿产出后结束: draftId={}, learningDraftId={}",
+                draftId, context.getLearningPlanDraftId());
+    }
+
     private AgentRuntimeContext buildMinimalContext(String traceId, String conversationId, Long userId) {
         return AgentRuntimeContext.builder()
                 .traceId(traceId)
@@ -1252,6 +1277,26 @@ public class PlanAndExecuteEngine {
                         task.getStepId(), context.getClarificationPayload().get("slotKey"));
                 handleAskUserClarification(task, plan, context, emitter, draftId);
                 return false;
+            }
+
+            // createLearningPlan 工具已经保存 LEARNING_PLAN 草稿并发出预览事件。
+            // 这是目标规划链路的正常暂停点，不再交给 LLM verifier 复核，避免误判后重复生成草稿。
+            if (context.isLearningPlanAwaitingConfirmation()) {
+                String learningPlanDraftId = context.getLearningPlanDraftId();
+                String summary = learningPlanDraftId != null && !learningPlanDraftId.isBlank()
+                        ? "学习计划草稿已生成，等待用户审阅确认。draftId=" + learningPlanDraftId
+                        : "学习计划草稿已生成，等待用户审阅确认。";
+                task.setStatus("COMPLETED");
+                task.setResultSummary(summary);
+                stepOutputs.put(task.getStepId(), summary);
+                if (learningPlanDraftId != null && !learningPlanDraftId.isBlank()) {
+                    stepOutputs.put("__learningPlanDraftId", learningPlanDraftId);
+                }
+                plan.setStepOutputs(stepOutputs);
+                dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_COMPLETED, stepToPayload(task));
+                log.info("[PlanAndExecute] 学习计划草稿已产出，跳过步骤验证: taskId={}, learningDraftId={}",
+                        task.getStepId(), learningPlanDraftId);
+                return true;
             }
 
             // 验证结果质量

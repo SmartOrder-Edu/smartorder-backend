@@ -121,6 +121,11 @@ public class CreateLearningPlanTool implements ToolHandler {
         String draftId = draftService.saveLearningPlanDraft(
                 context.getConversationId(), context.getTraceId(), userId, planJson);
 
+        if (context.getRuntimeContext() != null) {
+            context.getRuntimeContext().setLearningPlanDraftId(draftId);
+            context.getRuntimeContext().setLearningPlanAwaitingConfirmation(true);
+        }
+
         // 发射 agent.learning_plan.created 事件
         if (context.getRuntimeContext() != null && context.getEmitter() != null) {
             dispatcher.emit(context.getEmitter(), context.getRuntimeContext(),
