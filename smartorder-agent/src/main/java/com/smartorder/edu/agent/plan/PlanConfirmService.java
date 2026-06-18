@@ -171,7 +171,6 @@ public class PlanConfirmService {
             return spaceVO;
         } catch (Exception e) {
             log.error("[PlanConfirm] 执行失败: draftId={}", draftId, e);
-            dispatcher.error(emitter, context, e);
             throw e;
         }
     }
@@ -413,7 +412,7 @@ public class PlanConfirmService {
                 node.setKpUid(kpNameToUid.get(name));
                 node.setDescription(n.getString("description") != null ? n.getString("description") : "");
                 node.setCategory(n.getString("category") != null ? n.getString("category") : "concept");
-                node.setImportance(n.getInteger("importance") != null ? n.getInteger("importance") : 3);
+                node.setImportance(normalizeImportance(n.get("importance")));
                 nodes.add(node);
             }
             List<KnowledgeGraphNode> saved = kgService.batchInsertNodes(nodes);
@@ -494,5 +493,57 @@ public class PlanConfirmService {
         if (raw == null) return "doc";
         String t = raw.trim().toLowerCase();
         return ALLOWED_RESOURCE_TYPES.contains(t) ? t : "doc";
+    }
+
+    static int normalizeImportance(Object raw) {
+        if (raw == null) {
+            return 3;
+        }
+        if (raw instanceof Number number) {
+            return clampImportance(number.intValue());
+        }
+
+        String text = String.valueOf(raw).trim();
+        if (text.isEmpty()) {
+            return 3;
+        }
+
+        try {
+            return clampImportance((int) Math.round(Double.parseDouble(text)));
+        } catch (NumberFormatException ignored) {
+            String normalized = text.toLowerCase(Locale.ROOT);
+            if (normalized.contains("核心") || normalized.contains("极高")
+                    || normalized.contains("最高") || normalized.contains("very high")) {
+                return 5;
+            }
+            if (normalized.contains("高") || normalized.contains("重要")
+                    || normalized.contains("high")) {
+                return 4;
+            }
+            if (normalized.contains("中") || normalized.contains("一般")
+                    || normalized.contains("medium")) {
+                return 3;
+            }
+            if (normalized.contains("低") || normalized.contains("基础")
+                    || normalized.contains("low")) {
+                return 2;
+            }
+            if (normalized.contains("了解") || normalized.contains("可选")
+                    || normalized.contains("optional")) {
+                return 1;
+            }
+            log.warn("[PlanConfirm] importance 无法识别，使用默认值 3: raw={}", raw);
+            return 3;
+        }
+    }
+
+    private static int clampImportance(int value) {
+        if (value < 1) {
+            return 1;
+        }
+        if (value > 5) {
+            return 5;
+        }
+        return value;
     }
 }

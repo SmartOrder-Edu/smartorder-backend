@@ -1,6 +1,7 @@
 package com.smartorder.edu.agent.controller;
 
 import com.smartorder.edu.agent.clarification.ClarificationService;
+import com.smartorder.edu.agent.mapper.AgentPlanDraftMapper;
 import com.smartorder.edu.agent.mapper.AgentTraceEventMapper;
 import com.smartorder.edu.agent.model.dto.ExecutionPlan;
 import com.smartorder.edu.agent.model.dto.ExecutionStep;
@@ -57,6 +58,7 @@ public class AgentPlanController {
     private final TraceEventDispatcher dispatcher;
     private final ExecutorService executor;
     private final AgentRunStateService runStateService;
+    private final AgentPlanDraftMapper draftMapper;
 
     public AgentPlanController(PlanConfirmService planConfirmService,
                                PlanDraftService planDraftService,
@@ -65,7 +67,8 @@ public class AgentPlanController {
                                AgentTraceEventMapper traceEventMapper,
                                TraceEventDispatcher dispatcher,
                                @org.springframework.beans.factory.annotation.Qualifier("agentPlanExecutor") ExecutorService executor,
-                               AgentRunStateService runStateService) {
+                               AgentRunStateService runStateService,
+                               AgentPlanDraftMapper draftMapper) {
         this.planConfirmService = planConfirmService;
         this.planDraftService = planDraftService;
         this.planAndExecuteEngine = planAndExecuteEngine;
@@ -74,6 +77,7 @@ public class AgentPlanController {
         this.dispatcher = dispatcher;
         this.executor = executor;
         this.runStateService = runStateService;
+        this.draftMapper = draftMapper;
     }
 
     @PostMapping(value = "/plan/confirm", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -90,6 +94,7 @@ public class AgentPlanController {
         log.info("[PlanConfirm] 开始执行规划: userId={}, draftId={}", userId, draftId);
 
         executor.execute(() -> {
+            try {
             // 先按草稿类型路由（保持 EXECUTION_PLAN 链路不变）
             AgentPlanDraft draft = planDraftService.getByDraftId(draftId);
             if (draft == null) {
@@ -154,6 +159,11 @@ public class AgentPlanController {
                             "DRAFT_WRONG_STATUS", result.message());
                     return;
             }
+            } catch (Exception e) {
+                log.error("[PlanConfirm] 执行规划异常: userId={}, draftId={}", userId, draftId, e);
+                emitErrorAndClose(emitter, conversationId, userId, traceId,
+                        "PLAN_CONFIRM_FAILED", e.getMessage() != null ? e.getMessage() : "规划执行失败");
+            }
         });
 
         emitter.onTimeout(() -> {
@@ -195,9 +205,17 @@ public class AgentPlanController {
         log.info("[ClarificationAnswer] 提交澄清回答: userId={}, draftId={}, clarId={}", userId, draftId, clarificationId);
 
         executor.execute(() -> {
-            planAndExecuteEngine.resumeAfterClarification(
-                    draftId, clarificationId, request.getAnswer(), request.getDisplayAnswer(),
-                    userId, request.getConversationId(), emitter, traceId);
+            try {
+                planAndExecuteEngine.resumeAfterClarification(
+                        draftId, clarificationId, request.getAnswer(), request.getDisplayAnswer(),
+                        userId, request.getConversationId(), emitter, traceId);
+            } catch (Exception e) {
+                log.error("[ClarificationAnswer] 恢复执行异常: userId={}, draftId={}, clarId={}",
+                        userId, draftId, clarificationId, e);
+                emitErrorAndClose(emitter, request.getConversationId(), userId, traceId,
+                        "CLARIFICATION_RESUME_FAILED",
+                        e.getMessage() != null ? e.getMessage() : "澄清恢复执行失败");
+            }
         });
 
         emitter.onTimeout(() -> {
@@ -226,8 +244,15 @@ public class AgentPlanController {
         log.info("[ConfirmGate] 确认确认门: userId={}, draftId={}", userId, draftId);
 
         executor.execute(() -> {
-            planAndExecuteEngine.resumeAfterConfirmation(
-                    draftId, userId, conversationId, emitter, traceId);
+            try {
+                planAndExecuteEngine.resumeAfterConfirmation(
+                        draftId, userId, conversationId, emitter, traceId);
+            } catch (Exception e) {
+                log.error("[ConfirmGate] 恢复执行异常: userId={}, draftId={}", userId, draftId, e);
+                emitErrorAndClose(emitter, conversationId, userId, traceId,
+                        "CONFIRMATION_RESUME_FAILED",
+                        e.getMessage() != null ? e.getMessage() : "确认门恢复执行失败");
+            }
         });
 
         emitter.onTimeout(() -> {
@@ -260,7 +285,18 @@ public class AgentPlanController {
     public Result<ActiveRunVO> getActiveRun(@PathVariable String conversationId) {
         Long userId = getCurrentUserId();
         AgentPlanDraft draft = planDraftService.getActiveExecutionPlanDraft(conversationId);
+
+        // 无活跃 EXECUTION_PLAN 时，仍尝试查找已确认的 LEARNING_PLAN 中已创建的学习空间信息
         if (draft == null || !"EXECUTION_PLAN".equals(draft.getPlanType())) {
+            ActiveRunVO.SpaceCreatedVO spaceCreated = findSpaceCreatedForConversation(conversationId);
+            if (spaceCreated != null) {
+                ActiveRunVO vo = ActiveRunVO.builder()
+                        .planType("EXECUTION_PLAN")
+                        .status("COMPLETED")
+                        .spaceCreated(spaceCreated)
+                        .build();
+                return Result.success(vo);
+            }
             return Result.success(null);
         }
 
@@ -281,8 +317,19 @@ public class AgentPlanController {
             planStatus = runState.getStatus();
         }
 
-        // 只返回非终态的计划
+        // 对于终态计划，仍尝试查找关联的已创建学习空间信息
         if ("COMPLETED".equals(planStatus) || "FAILED".equals(planStatus) || "CANCELLED".equals(planStatus)) {
+            ActiveRunVO.SpaceCreatedVO spaceCreated = findSpaceCreatedForConversation(conversationId);
+            if (spaceCreated != null) {
+                // 构造最小 ActiveRunVO，仅携带 spaceCreated 供前端恢复 banner
+                ActiveRunVO vo = ActiveRunVO.builder()
+                        .draftId(draft.getDraftId())
+                        .planType("EXECUTION_PLAN")
+                        .status(planStatus)
+                        .spaceCreated(spaceCreated)
+                        .build();
+                return Result.success(vo);
+            }
             return Result.success(null);
         }
 
@@ -360,6 +407,8 @@ public class AgentPlanController {
                     .build();
         }
 
+        ActiveRunVO.SpaceCreatedVO spaceCreated = findSpaceCreatedForConversation(conversationId);
+
         ActiveRunVO vo = ActiveRunVO.builder()
                 .draftId(draft.getDraftId())
                 .planType("EXECUTION_PLAN")
@@ -367,6 +416,7 @@ public class AgentPlanController {
                 .taskList(taskListVO)
                 .pauseInfo(pauseInfoVO)
                 .activeClarificationId(activeClarificationId)
+                .spaceCreated(spaceCreated)
                 .build();
 
         return Result.success(vo);
@@ -475,6 +525,31 @@ public class AgentPlanController {
     private Long getCurrentUserId() {
         Claims claims = ThreadLocalUtils.get();
         return claims.get("userId", Long.class);
+    }
+
+    /**
+     * 查找会话中已确认的 LEARNING_PLAN 草稿对应的学习空间信息。
+     * 用于前端恢复 PlanChecklist 的"学习空间已创建"banner。
+     */
+    private ActiveRunVO.SpaceCreatedVO findSpaceCreatedForConversation(String conversationId) {
+        AgentPlanDraft learningPlanDraft = draftMapper.selectConfirmedLearningPlanDraft(conversationId);
+        if (learningPlanDraft == null || learningPlanDraft.getCreatedSpaceId() == null) {
+            return null;
+        }
+        String spaceName = "";
+        try {
+            if (learningPlanDraft.getPlanJson() != null) {
+                var planJson = com.alibaba.fastjson.JSON.parseObject(learningPlanDraft.getPlanJson());
+                spaceName = planJson.getString("spaceName");
+                if (spaceName == null) spaceName = "";
+            }
+        } catch (Exception e) {
+            log.debug("[ActiveRun] 解析 LEARNING_PLAN spaceName 失败（非关键）: {}", e.getMessage());
+        }
+        return ActiveRunVO.SpaceCreatedVO.builder()
+                .spaceId(learningPlanDraft.getCreatedSpaceId())
+                .spaceName(spaceName)
+                .build();
     }
 
     private AgentRuntimeContext buildContext(String traceId, String conversationId, Long userId) {

@@ -100,6 +100,18 @@ public class AgentRuntimeContext {
     private Map<String, Object> clarificationPayload;
 
     /**
+     * Plan-and-Execute 子任务调用 createLearningPlan 后产生的学习计划草稿 ID。
+     * 该草稿由用户在前端审阅确认，确认后才真正创建学习空间。
+     */
+    private String learningPlanDraftId;
+
+    /**
+     * 当前执行流是否已产出学习计划草稿并等待用户确认。
+     */
+    @Builder.Default
+    private boolean learningPlanAwaitingConfirmation = false;
+
+    /**
      * 获取下一个事件序号
      */
     public int nextSeq() {

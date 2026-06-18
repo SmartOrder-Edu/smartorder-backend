@@ -35,4 +35,12 @@ public interface AgentPlanDraftMapper extends BaseMapper<AgentPlanDraft> {
     @Update("UPDATE agent_plan_draft SET status = 'CONFIRMED', created_space_id = #{spaceId}, confirmed_at = NOW() " +
             "WHERE draft_id = #{draftId} AND status = 'PENDING'")
     int confirmAndBindSpace(@Param("draftId") String draftId, @Param("spaceId") Long spaceId);
+
+    /**
+     * 查询指定会话下已确认的 LEARNING_PLAN 草稿（含 createdSpaceId），用于恢复"学习空间已创建"banner。
+     */
+    @Select("SELECT * FROM agent_plan_draft WHERE conversation_id = #{conversationId} " +
+            "AND plan_type = 'LEARNING_PLAN' AND status = 'CONFIRMED' AND created_space_id IS NOT NULL " +
+            "ORDER BY create_time DESC LIMIT 1")
+    AgentPlanDraft selectConfirmedLearningPlanDraft(@Param("conversationId") String conversationId);
 }
