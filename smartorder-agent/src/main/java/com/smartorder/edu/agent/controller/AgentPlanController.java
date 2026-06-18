@@ -285,7 +285,18 @@ public class AgentPlanController {
     public Result<ActiveRunVO> getActiveRun(@PathVariable String conversationId) {
         Long userId = getCurrentUserId();
         AgentPlanDraft draft = planDraftService.getActiveExecutionPlanDraft(conversationId);
+
+        // 无活跃 EXECUTION_PLAN 时，仍尝试查找已确认的 LEARNING_PLAN 中已创建的学习空间信息
         if (draft == null || !"EXECUTION_PLAN".equals(draft.getPlanType())) {
+            ActiveRunVO.SpaceCreatedVO spaceCreated = findSpaceCreatedForConversation(conversationId);
+            if (spaceCreated != null) {
+                ActiveRunVO vo = ActiveRunVO.builder()
+                        .planType("EXECUTION_PLAN")
+                        .status("COMPLETED")
+                        .spaceCreated(spaceCreated)
+                        .build();
+                return Result.success(vo);
+            }
             return Result.success(null);
         }
 
