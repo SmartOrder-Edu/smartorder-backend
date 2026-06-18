@@ -19,7 +19,7 @@ class AgentExecutorConfigTest {
 
         ThreadPoolTaskExecutor taskExecutor =
                 assertInstanceOf(ThreadPoolTaskExecutor.class, executor);
-        assertEquals(1, taskExecutor.getMaxPoolSize());
+        assertEquals(16, taskExecutor.getMaxPoolSize());
         taskExecutor.shutdown();
     }
 

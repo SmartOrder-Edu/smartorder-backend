@@ -2,6 +2,7 @@ package com.smartorder.edu.agent.orchestrator;
 
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
+import com.smartorder.edu.agent.profile.ProfileUpdateCoordinator;
 import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentRouteService;
@@ -34,6 +35,7 @@ class AgentOrchestratorImplTest {
         ConversationMemoryService memoryService = mock(ConversationMemoryService.class);
         AgentConversationAttachmentService attachmentService = mock(AgentConversationAttachmentService.class);
         AgentRunSupervisor runSupervisor = mock(AgentRunSupervisor.class);
+        ProfileUpdateCoordinator profileUpdateCoordinator = mock(ProfileUpdateCoordinator.class);
         AgentOrchestratorImpl orchestrator = new AgentOrchestratorImpl(
                 routeService,
                 reActEngine,
@@ -41,6 +43,7 @@ class AgentOrchestratorImplTest {
                 dispatcher,
                 memoryService,
                 attachmentService,
+                profileUpdateCoordinator,
                 runSupervisor
         );
         IntentRouteResult routeResult = IntentRouteResult.builder()
