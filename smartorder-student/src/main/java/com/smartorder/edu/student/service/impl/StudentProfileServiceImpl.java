@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -351,6 +352,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         profile.setProfileVersion(currentVersion(profile) + 1);
         profile.setLastUpdateReason(limitReason(reason));
         profile.setProfileSummary(null);
+        profile.setUpdatedAt(LocalDateTime.now());
 
         if (minimumConfidence != null && (profile.getProfileConfidenceScore() == null
                 || profile.getProfileConfidenceScore().compareTo(minimumConfidence) < 0)) {
