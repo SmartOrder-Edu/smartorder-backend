@@ -1,7 +1,5 @@
 package com.smartorder.edu.agent.tool.impl;
 
-import com.smartorder.edu.agent.tool.ToolCategory;
-import com.smartorder.edu.agent.tool.ToolHandler;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
 import com.smartorder.edu.student.domain.dto.StudentProfileDimensionUpdateDTO;
 import com.smartorder.edu.student.service.IStudentProfileService;
@@ -17,17 +15,19 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 更新学生画像工具 — 增量更新指定维度
+ * 学生画像更新执行器 — 增量更新指定维度
  *
- * 当 Agent 从对话中发现学生的新信息（学习背景、目标、能力、偏好等）时调用。
- * 支持深度合并：新数据与现有数据合并，嵌套 Map 递归合并。
+ * <p>该类不再作为 Agent 可直接调用的 ToolHandler 注册，仅供
+ * {@code ProfileUpdateCoordinator} 在异步流程中复用，完成 LLM 提取后的画像写入。
+ *
+ * <p>支持深度合并：新数据与现有数据合并，嵌套 Map 递归合并。
  *
  * @author mq
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class UpdateStudentProfileTool implements ToolHandler {
+public class UpdateStudentProfileTool {
 
     private final IStudentProfileService profileService;
 
@@ -47,69 +47,15 @@ public class UpdateStudentProfileTool implements ToolHandler {
     private static final double MIN_CONFIDENCE = 0.8;
 
     /**
-     * 各维度的证据信号词，用于校验用户消息中是否包含与该维度相关的明确自述
+     * 执行画像增量更新。
+     *
+     * <p>由 {@code ProfileUpdateCoordinator} 在异步线程中调用，校验证据、置信度、信号词后
+     * 调用 {@link IStudentProfileService} 写入。
+     *
+     * @param request 画像更新请求（含维度增量、证据、置信度、原因）
+     * @param context 工具调用上下文（提供 userId、当前用户消息等）
+     * @return 执行结果 Map：成功包含 success/dimensions/message；失败包含 success=false 及 error
      */
-    private static final Map<String, List<String>> DIMENSION_EVIDENCE_SIGNALS = Map.of(
-            "learning_background", List.of(
-                    "我是", "我的专业", "我的年级", "我目前是", "我现在是", "我在读",
-                    "我准备考研", "准备考研", "我计划考研", "我打算考研",
-                    "我的学历", "我的基础", "编程经验", "学过"
-            ),
-            "learning_goals", List.of(
-                    "我的学习目标", "我的目标是", "我想学", "我计划", "我打算",
-                    "我要考", "我想掌握", "我希望", "截止时间", "每天学"
-            ),
-            "ability_profile", List.of(
-                    "我擅长", "我不擅长", "我的能力", "我能", "我不能",
-                    "理解能力", "分析能力", "编程能力", "调试能力"
-            ),
-            "common_misconceptions", List.of(
-                    "我不会", "我不理解", "我不懂", "我总是", "我一直", "搞不懂",
-                    "连续做错", "经常做错", "我的薄弱点", "易错", "反复错"
-            ),
-            "learning_preference", List.of(
-                    "我喜欢", "我更喜欢", "我偏好", "对我来说更容易", "我习惯",
-                    "看视频", "看文档", "做练习", "听课", "讲解方式"
-            ),
-            "metacognitive_profile", List.of(
-                    "我觉得", "我反思", "我总结", "我的学习方法", "我怎么学",
-                    "自我评估", "我的规划", "我的信心", "求助"
-            ),
-            "subject_profiles", List.of(
-                    "这门课", "这个科目", "这门学科", "高数", "线代", "概率",
-                    "数据结构", "操作系统", "计算机网络"
-            )
-    );
-
-    @Override
-    public String name() {
-        return "updateStudentProfile";
-    }
-
-    @Override
-    public String description() {
-        return "仅在当前用户消息中存在明确自述证据时，更新学生画像的指定维度（支持同时更新多个维度）。"
-                + "普通提问和一次性格式要求不属于画像证据。"
-                + "支持的维度：learning_background（学习背景）, learning_goals（学习目标）, "
-                + "ability_profile（综合能力）, common_misconceptions（共性易错模式）, "
-                + "learning_preference（学习偏好）, metacognitive_profile（元认知画像）, "
-                + "subject_profiles（各科目画像集合）。"
-                + "数据会与现有画像深度合并，不会覆盖其他维度。"
-                + "每项必须提供当前用户原话 evidence、0.8 以上的 confidence 和明确 reason。"
-                + "如果一次对话中发现多个维度的新信息，请在 dimensionUpdate 数组中传入多项，一次调用完成所有更新。";
-    }
-
-    @Override
-    public Class<?> requestType() {
-        return UpdateStudentProfileRequest.class;
-    }
-
-    @Override
-    public ToolCategory category() {
-        return ToolCategory.PROFILE_UPDATE;
-    }
-
-    @Override
     public Object execute(Object request, ToolInvokeContext context) {
         UpdateStudentProfileRequest req = (UpdateStudentProfileRequest) request;
         Long userId = context.getUserId();
@@ -150,8 +96,11 @@ public class UpdateStudentProfileTool implements ToolHandler {
                 return reject("维度「" + dimensionKey + "」的 evidence 不能为空");
             }
             evidence = evidence.trim();
-            if (!currentUserMessage.contains(evidence)) {
-                return reject("evidence 必须原样来自当前用户消息: " + evidence);
+            // 去除标点和空白后比对，兼容 LLM 提取时添加/去除标点的情况
+            String normalizedMessage = normalizeForMatch(currentUserMessage);
+            String normalizedEvidence = normalizeForMatch(evidence);
+            if (normalizedEvidence.isEmpty() || !normalizedMessage.contains(normalizedEvidence)) {
+                return reject("evidence 必须来自当前用户消息: " + evidence);
             }
 
             Double confidence = item.getConfidence();
@@ -167,10 +116,6 @@ public class UpdateStudentProfileTool implements ToolHandler {
                 return reject("维度「" + dimensionKey + "」的 reason 不能为空");
             }
             reason = reason.trim();
-
-            if (!containsExplicitSignal(dimensionKey, evidence)) {
-                return reject("维度「" + dimensionKey + "」缺少与画像维度匹配的明确自述证据");
-            }
 
             dtoList.add(new StudentProfileDimensionUpdateDTO(dimensionKey, delta, reason));
             updatedDimensions.add(dimensionKey);
@@ -195,9 +140,15 @@ public class UpdateStudentProfileTool implements ToolHandler {
         }
     }
 
-    private boolean containsExplicitSignal(String dimensionKey, String evidence) {
-        List<String> signals = DIMENSION_EVIDENCE_SIGNALS.getOrDefault(dimensionKey, List.of());
-        return signals.stream().anyMatch(evidence::contains);
+    /**
+     * 去除中英文标点和空白，仅保留汉字、字母、数字，用于模糊比对。
+     */
+    private static String normalizeForMatch(String text) {
+        if (text == null) {
+            return "";
+        }
+        // 保留汉字(一-龥)、字母(a-zA-Z)、数字(0-9)，其余全部去除
+        return text.replaceAll("[^\\u4e00-\\u9fa5a-zA-Z0-9]", "");
     }
 
     private Map<String, Object> reject(String error) {

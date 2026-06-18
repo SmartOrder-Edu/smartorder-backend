@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -76,6 +77,27 @@ public class AgentRuntimeContext {
      */
     @Builder.Default
     private boolean assistantMessageSaved = false;
+
+    /**
+     * 当前计划的运行状态（用于 done 事件携带，前端可据此判断是否暂停态）
+     */
+    private String planRunStatus;
+
+    /**
+     * 当前计划草稿 ID（用于 done 事件携带）
+     */
+    private String planDraftId;
+
+    /**
+     * 当前活跃的澄清 ID（暂停时设置）
+     */
+    private String activeClarificationId;
+
+    /**
+     * askUser 工具调用时写入的澄清参数（ReAct 引擎 → PlanAndExecuteEngine 传递）
+     * 包含: question, answerType, options(List<{label,value}>), slotKey
+     */
+    private Map<String, Object> clarificationPayload;
 
     /**
      * 获取下一个事件序号

@@ -107,6 +107,21 @@ public class PromptLoader {
         return cache.get("system/summarizer.md");
     }
 
+    public String getProfileDimensionRouterPrompt() {
+        return cache.get("profile/dimension-router.md");
+    }
+
+    public String getProfileExtractionShellPrompt() {
+        return cache.get("profile/extraction-shell.md");
+    }
+
+    public String getProfileDimensionPrompt(String dimensionKey) {
+        if (dimensionKey == null || dimensionKey.isBlank()) {
+            return null;
+        }
+        return cache.get("profile/dimensions/" + dimensionKey.replace("_", "-") + ".md");
+    }
+
     // ============ Public: 模板 Prompt（调用方自行 format） ============
 
     /** @return 模板字符串，占位符 {0}=资源类型名称, {1}=知识点 */
@@ -165,6 +180,10 @@ public class PromptLoader {
         return cache.get("clarification/max-rounds-fallback.md");
     }
 
+    public String getProfileClarification() {
+        return cache.get("clarification/profile-clarification.md");
+    }
+
     // ============ Public: 工具方法 ============
 
     /**
@@ -183,6 +202,15 @@ public class PromptLoader {
         load("system/planner-create.md");
         load("system/planner-replan.md");
         load("system/summarizer.md");
+        load("profile/dimension-router.md");
+        load("profile/extraction-shell.md");
+        load("profile/dimensions/learning-background.md");
+        load("profile/dimensions/learning-goals.md");
+        load("profile/dimensions/ability-profile.md");
+        load("profile/dimensions/common-misconceptions.md");
+        load("profile/dimensions/learning-preference.md");
+        load("profile/dimensions/metacognitive-profile.md");
+        load("profile/dimensions/subject-profiles.md");
         load("templates/resource-generation.md");
         load("templates/quiz-generation.md");
         load("templates/planner-input.md");

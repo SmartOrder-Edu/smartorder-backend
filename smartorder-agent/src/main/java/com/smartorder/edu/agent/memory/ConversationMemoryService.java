@@ -131,6 +131,17 @@ public class ConversationMemoryService {
         log.info("[MemoryService] 硬删除追踪事件: conversationId={}, count={}", traceCount);
     }
 
+    /**
+     * 获取会话摘要（供 Planner 等需要上下文的地方使用）
+     */
+    public String getSummaryText(String conversationId) {
+        ConversationSummary summary = summaryMapper.selectByConversationId(conversationId);
+        if (summary != null && summary.getSummaryText() != null && !summary.getSummaryText().isBlank()) {
+            return summary.getSummaryText();
+        }
+        return null;
+    }
+
     // ============ Private ============
 
     private void save(String conversationId, Long userId, String role, String content,
@@ -186,6 +197,49 @@ public class ConversationMemoryService {
             sb.append("[").append(msg.getRole()).append("]: ").append(msg.getContent()).append("\n\n");
         }
         return sb.toString();
+    }
+
+    /**
+     * 获取最近 N 条对话消息的格式化文本（用于画像分析等异步任务）
+     * 跳过空内容消息，按时间正序排列。
+     *
+     * @param conversationId 会话 ID
+     * @param maxMessages 最大消息数
+     * @return 格式化的历史文本，如 "[user]: xxx\n\n[assistant]: yyy\n\n"
+     */
+    public String getRecentConversationText(String conversationId, int maxMessages) {
+        List<ConversationMessage> messages = messageMapper.selectRecentMessages(conversationId, maxMessages);
+        // selectRecentMessages 按 create_time DESC 返回，需要反转顺序
+        StringBuilder sb = new StringBuilder();
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            ConversationMessage msg = messages.get(i);
+            if (msg.getContent() == null || msg.getContent().isBlank()) continue;
+            sb.append("[").append(msg.getRole()).append("]: ").append(msg.getContent()).append("\n\n");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 获取最近 N 条对话消息的结构化列表（用于 LLM 调用）
+     * 跳过空内容消息，按时间正序排列（user/assistant 交替）。
+     *
+     * @param conversationId 会话 ID
+     * @param maxMessages    最大消息数
+     * @return LangChain4j ChatMessage 列表
+     */
+    public List<ChatMessage> getRecentChatMessages(String conversationId, int maxMessages) {
+        List<ConversationMessage> recentMessages = messageMapper.selectRecentMessages(conversationId, maxMessages);
+        List<ChatMessage> messages = new ArrayList<>();
+        // selectRecentMessages 按 create_time DESC 返回，需要反转顺序
+        for (int i = recentMessages.size() - 1; i >= 0; i--) {
+            ConversationMessage msg = recentMessages.get(i);
+            if (msg.getContent() == null || msg.getContent().isBlank()) continue;
+            ChatMessage chatMsg = toChatMessage(msg);
+            if (chatMsg != null) {
+                messages.add(chatMsg);
+            }
+        }
+        return messages;
     }
 
     /**

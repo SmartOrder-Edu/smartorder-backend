@@ -1,10 +1,13 @@
 package com.smartorder.edu.agent.orchestrator;
 
 import com.alibaba.fastjson.JSON;
+import com.smartorder.edu.agent.clarification.ClarificationService;
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
+import com.smartorder.edu.agent.model.dto.ClarificationPayload;
 import com.smartorder.edu.agent.model.dto.ExecutionPlan;
 import com.smartorder.edu.agent.model.dto.ExecutionStep;
+import com.smartorder.edu.agent.model.dto.PlanContext;
 import com.smartorder.edu.agent.model.entity.AgentPlanDraft;
 import com.smartorder.edu.agent.model.dto.VerificationResult;
 import com.smartorder.edu.agent.model.dto.VerificationResult.SuggestedAction;
@@ -16,6 +19,7 @@ import com.smartorder.edu.agent.prompt.PromptLoader;
 import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentType;
+import com.smartorder.edu.agent.service.AgentRunStateService;
 import com.smartorder.edu.agent.tool.LangChain4jToolAdapter;
 import com.smartorder.edu.agent.tool.ToolRegistry;
 import com.smartorder.edu.agent.trace.AgentEventType;
@@ -29,6 +33,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
@@ -52,11 +57,13 @@ public class PlanAndExecuteEngine {
     private final LangChain4jToolAdapter toolAdapter;
     private final PlanSchemaValidator schemaValidator;
     private final PlanDraftService draftService;
+    private final ClarificationService clarificationService;
     private final TraceEventDispatcher dispatcher;
     private final ConversationMemoryService memoryService;
     private final SelfManagedReActEngine reActEngine;
     private final LLMStepVerifier stepVerifier;
     private final PromptLoader promptLoader;
+    private final AgentRunStateService runStateService;
 
     /** 单任务最大重试次数 */
     private static final int MAX_RETRIES_PER_TASK = 3;
@@ -152,6 +159,10 @@ public class PlanAndExecuteEngine {
                 plan.setConfirmationDraftId(draftId);
                 draftService.updateExecutionPlan(draftId, plan);
 
+                // 创建 runState 并转换到 EXECUTING
+                runStateService.createRunState(context.getConversationId(), draftId, request.getUserId());
+                runStateService.transitionByDraftId(draftId, "EXECUTING", context.getTraceId(), null, null, null);
+
                 // 先发送 plan.created 让前端立即展示 PlanChecklist，
                 // 避免前端在 NORMAL 任务执行期间（可能 30-60s）看不到计划结构
                 dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
@@ -170,6 +181,15 @@ public class PlanAndExecuteEngine {
             plan.setStatus("PAUSED_CONFIRMATION");
             plan.setConfirmationDraftId(draftId);
             draftService.updateExecutionPlan(draftId, plan);
+
+            // 创建 runState 并转换到 PAUSED_CONFIRMATION
+            runStateService.createRunState(context.getConversationId(), draftId, request.getUserId());
+            runStateService.transitionByDraftId(draftId, "PAUSED_CONFIRMATION",
+                    context.getTraceId(), "CONFIRMATION", plan.getSteps().get(0).getStepId(), null);
+
+            // 将暂停态信息写入 context，供 done 事件携带
+            context.setPlanRunStatus("PAUSED_CONFIRMATION");
+            context.setPlanDraftId(draftId);
 
             // 发射 PLAN_CREATED 事件
             dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
@@ -191,6 +211,11 @@ public class PlanAndExecuteEngine {
         plan.setStatus("PENDING_CONFIRM");
         plan.setConfirmationDraftId(draftId);
         draftService.updateExecutionPlan(draftId, plan);
+
+        // 创建 runState 并转换到 WAITING_CONFIRMATION
+        runStateService.createRunState(context.getConversationId(), draftId, request.getUserId());
+        runStateService.transitionByDraftId(draftId, "WAITING_CONFIRMATION",
+                context.getTraceId(), null, null, null);
 
         // 发射 PLAN_CREATED 事件（前端依赖此事件初始化 currentExecutionPlan）
         dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
@@ -297,6 +322,12 @@ public class PlanAndExecuteEngine {
         }
         plan.setStatus("EXECUTING");
 
+        // 更新 runState 到 EXECUTING
+        runStateService.transitionByDraftId(draftId, "EXECUTING", context.getTraceId(), null, null, null);
+
+        // 构建 PlanContext（结构化澄清上下文，随执行累积）
+        PlanContext planContext = buildPlanContext(plan, context);
+
         int totalReplans = 0;
         int stepIndex = plan.getCurrentStepIndex();
 
@@ -347,6 +378,14 @@ public class PlanAndExecuteEngine {
                 plan.setConfirmationDraftId(draftId);
                 draftService.updateExecutionPlan(draftId, plan);
 
+                // 更新 runState 到 PAUSED_CONFIRMATION
+                runStateService.transitionByDraftId(draftId, "PAUSED_CONFIRMATION",
+                        context.getTraceId(), "CONFIRMATION", task.getStepId(), null);
+
+                // 将暂停态信息写入 context，供 done 事件携带
+                context.setPlanRunStatus("PAUSED_CONFIRMATION");
+                context.setPlanDraftId(draftId);
+
                 dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
                         planCreatedPayload(draftId, plan, true, ""));
 
@@ -359,7 +398,7 @@ public class PlanAndExecuteEngine {
             }
 
             // NORMAL 任务：执行 → 验证 → 重试/重规划 循环
-            boolean taskCompleted = executeAndVerifyTask(task, stepOutputs, plan, draftId,
+            boolean taskCompleted = executeAndVerifyTask(task, stepOutputs, plan, planContext, draftId,
                     context, emitter, conversationId, userId, userConfirmed);
 
             if (!taskCompleted) {
@@ -416,17 +455,24 @@ public class PlanAndExecuteEngine {
                 .anyMatch(t -> "COMPLETED".equals(t.getStatus()));
         if (hasFailed && hasCompleted) {
             plan.setStatus("PARTIAL_COMPLETED");
+            runStateService.transitionByDraftId(draftId, "COMPLETED");
         } else if (hasFailed && !hasCompleted) {
             plan.setStatus("FAILED");
+            runStateService.transitionByDraftId(draftId, "FAILED");
         } else {
             plan.setStatus("COMPLETED");
+            runStateService.transitionByDraftId(draftId, "COMPLETED");
         }
         draftService.updateExecutionPlan(draftId, plan);
 
-        String finalSummary = buildFinalSummary(plan);
-        dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", finalSummary));
+        // Emit execution summary as STATUS event (for trace panel), not as AI chat text
+        emitExecutionCompletedStatus(plan, context, emitter);
+
+        // Generate user-friendly completion message for the AI chat body
+        String userFriendlyMsg = buildUserFriendlyCompletionMessage(plan);
+        dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", userFriendlyMsg));
         memoryService.saveAssistantMessage(conversationId, userId,
-                finalSummary, null, context.getTraceId(), null);
+                userFriendlyMsg, null, context.getTraceId(), null);
         context.setAssistantMessageSaved(true);
 
         // SSE 关闭由 AgentRunSupervisor 统一负责，此处不再调用 dispatcher.complete()
@@ -468,7 +514,9 @@ public class PlanAndExecuteEngine {
 
     /**
      * 恢复暂停的计划（澄清回复 / 确认词）
+     * @deprecated 请使用 {@link #resumeAfterClarification} 或 {@link #resumeAfterConfirmation} 代替
      */
+    @Deprecated
     public void resumePlan(AgentChatRequest request, AgentRuntimeContext context, SseEmitter emitter) {
         AgentPlanDraft draft = draftService.getActiveExecutionPlanDraft(context.getConversationId());
         if (draft == null) {
@@ -479,23 +527,113 @@ public class PlanAndExecuteEngine {
         ExecutionPlan plan = JSON.parseObject(draft.getExecutionPlanJson(), ExecutionPlan.class);
 
         if ("PAUSED_CLARIFICATION".equals(plan.getStatus())) {
-            // 用户提供了澄清回复
             int pausedIndex = plan.getCurrentStepIndex();
             ExecutionStep pausedTask = plan.getSteps().get(pausedIndex);
-
-            // 将用户回复注入任务输出
-            String userResponse = request.getMessage();
             Map<String, String> stepOutputs = plan.getStepOutputs();
-            stepOutputs.put(pausedTask.getStepId(), "用户澄清: " + userResponse);
-            stepOutputs.put("__userClarification", "用户补充信息: " + userResponse);
+
+            // 检查是否为结构化澄清回答
+            boolean hasStructuredAnswer = request.getClarificationAnswerJson() != null
+                    && !request.getClarificationAnswerJson().isBlank();
+
+            if (hasStructuredAnswer) {
+                // 结构化回答路径：解析 ClarificationAnswer，逐 slot 提交
+                try {
+                    com.smartorder.edu.agent.model.dto.ClarificationAnswer clarAnswer =
+                            JSON.parseObject(request.getClarificationAnswerJson(),
+                                    com.smartorder.edu.agent.model.dto.ClarificationAnswer.class);
+
+                    ClarificationPayload nextClarification = clarificationService.submitAnswer(
+                            clarAnswer.getClarificationId(), clarAnswer.getAnswer());
+
+                    // 写入 stepOutputs 中的结构化 slot
+                    com.smartorder.edu.agent.model.entity.AgentClarification clarRecord =
+                            clarificationService.getClarificationsForDraft(draft.getDraftId()).stream()
+                                    .filter(c -> c.getClarificationId().equals(clarAnswer.getClarificationId()))
+                                    .findFirst().orElse(null);
+                    if (clarRecord != null) {
+                        stepOutputs.put("__clarification." + clarRecord.getSlotKey(), clarAnswer.getAnswer());
+                    }
+
+                    // 还有更多 PENDING 澄清？发射下一条，不恢复执行
+                    if (nextClarification != null) {
+                        plan.setActiveClarificationId(nextClarification.getClarificationId());
+                        plan.setClarificationQuestion(nextClarification.getQuestion());
+                        draftService.updateExecutionPlan(draft.getDraftId(), plan);
+
+                        // 更新 context，done 事件将携带 PAUSED_CLARIFICATION
+                        context.setPlanRunStatus("PAUSED_CLARIFICATION");
+                        context.setPlanDraftId(draft.getDraftId());
+                        context.setActiveClarificationId(nextClarification.getClarificationId());
+
+                        // 发射下一条 PLAN_PAUSED
+                        Map<String, Object> pausePayload = new LinkedHashMap<>();
+                        pausePayload.put("reason", "CLARIFICATION");
+                        pausePayload.put("taskId", pausedTask.getStepId());
+                        pausePayload.put("question", nextClarification.getQuestion());
+                        Map<String, Object> clarificationMap = new LinkedHashMap<>();
+                        clarificationMap.put("clarificationId", nextClarification.getClarificationId());
+                        clarificationMap.put("slotKey", nextClarification.getSlotKey());
+                        clarificationMap.put("question", nextClarification.getQuestion());
+                        clarificationMap.put("answerType", nextClarification.getAnswerType());
+                        clarificationMap.put("options", nextClarification.getOptions() != null
+                                ? nextClarification.getOptions() : List.of());
+                        clarificationMap.put("slotPriority", nextClarification.getSlotPriority());
+                        pausePayload.put("clarification", clarificationMap);
+                        dispatcher.emit(emitter, context, AgentEventType.PLAN_PAUSED, pausePayload);
+
+                        // 发射 gate.answered 通知前端回答已被接受
+                        dispatcher.emit(emitter, context, AgentEventType.GATE_ANSWERED, Map.of(
+                                "clarificationId", clarAnswer.getClarificationId(),
+                                "answer", clarAnswer.getAnswer(),
+                                "nextClarificationId", nextClarification.getClarificationId(),
+                                "status", "MORE_PENDING"
+                        ));
+
+                        // 保存确认语
+                        String ackMsg = "已收到你的回答，还有一个问题需要确认。";
+                        dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", ackMsg));
+                        memoryService.saveAssistantMessage(context.getConversationId(), context.getUserId(),
+                                ackMsg, null, context.getTraceId(), null);
+
+                        // Acknowledge 上一个 clarification
+                        clarificationService.acknowledge(clarAnswer.getClarificationId(), ackMsg);
+                        return;
+                    }
+
+                    // 全部澄清已回答，恢复执行
+                    clarificationService.acknowledge(clarAnswer.getClarificationId(), "已收到，继续执行计划");
+
+                    // 发射 gate.answered 通知前端所有澄清已回答
+                    dispatcher.emit(emitter, context, AgentEventType.GATE_ANSWERED, Map.of(
+                            "clarificationId", clarAnswer.getClarificationId(),
+                            "answer", clarAnswer.getAnswer(),
+                            "nextClarificationId", null,
+                            "status", "ALL_ANSWERED"
+                    ));
+
+                } catch (Exception e) {
+                    log.warn("[PlanAndExecute] 结构化澄清回答解析失败，回退到自由文本: {}", e.getMessage());
+                    // 回退到自由文本路径
+                    String userResponse = request.getMessage();
+                    stepOutputs.put(pausedTask.getStepId(), "用户澄清: " + userResponse);
+                    stepOutputs.put("__userClarification", "用户补充信息: " + userResponse);
+                }
+            } else {
+                // 向后兼容：自由文本回答路径
+                String userResponse = request.getMessage();
+                stepOutputs.put(pausedTask.getStepId(), "用户澄清: " + userResponse);
+                stepOutputs.put("__userClarification", "用户补充信息: " + userResponse);
+            }
+
+            stepOutputs.putIfAbsent(pausedTask.getStepId(), buildClarificationStepOutput(pausedTask, stepOutputs));
             plan.setStepOutputs(stepOutputs);
             pausedTask.setStatus("COMPLETED");
-            pausedTask.setResultSummary("用户回复: " + truncate(userResponse, 200));
+            pausedTask.setResultSummary("用户回复: " + truncate(request.getMessage(), 200));
             pausedTask.setGate("NORMAL"); // 清除门
 
             plan.setCurrentStepIndex(pausedIndex + 1);
             plan.setStatus("EXECUTING");
-            applyClarificationToRemainingSteps(plan, pausedIndex, userResponse);
+            plan.setActiveClarificationId(null);
 
             draftService.updateExecutionPlan(draft.getDraftId(), plan);
 
@@ -510,6 +648,19 @@ public class PlanAndExecuteEngine {
 
             executeExecutionPlanWithContext(draft.getDraftId(), context.getUserId(),
                     context, emitter);
+
+            // 重新读取最终计划状态，确保 done 事件含正确的 runStatus
+            AgentPlanDraft resumeFinalDraft = draftService.getByDraftId(draft.getDraftId());
+            if (resumeFinalDraft != null) {
+                try {
+                    ExecutionPlan resumeFinalPlan = JSON.parseObject(
+                            resumeFinalDraft.getExecutionPlanJson(), ExecutionPlan.class);
+                    context.setPlanRunStatus(resumeFinalPlan.getStatus());
+                    context.setPlanDraftId(draft.getDraftId());
+                } catch (Exception e) {
+                    log.warn("[PlanAndExecute] 读取最终计划状态失败: {}", e.getMessage());
+                }
+            }
 
         } else if ("PAUSED_CONFIRMATION".equals(plan.getStatus())) {
             // 用户通过聊天确认词确认（前端按钮确认走 /agent/plan/confirm）
@@ -527,6 +678,233 @@ public class PlanAndExecuteEngine {
         }
     }
 
+    // ============ 显式 HITL API ============
+
+    /**
+     * 通过专用 API 提交澄清回答并恢复计划执行
+     * <p>
+     * 不走 /agent/chat/stream，直接绑定 draftId + clarificationId，后端无需推断意图。
+     */
+    public void resumeAfterClarification(String draftId, String clarificationId, String answer,
+                                          String displayAnswer,
+                                          Long userId, String conversationId,
+                                          SseEmitter emitter, String traceId) {
+        AgentPlanDraft draft = draftService.getByDraftId(draftId);
+        if (draft == null) {
+            log.warn("[ResumeClarification] 草稿不存在: draftId={}", draftId);
+            AgentRuntimeContext errCtx = buildMinimalContext(traceId, conversationId, userId);
+            dispatcher.error(emitter, errCtx, new IllegalArgumentException("草稿不存在: " + draftId));
+            return;
+        }
+
+        // 权限校验：草稿必须属于当前用户
+        if (!userId.equals(draft.getUserId())) {
+            log.warn("[ResumeClarification] 越权访问: userId={}, draft.userId={}, draftId={}",
+                    userId, draft.getUserId(), draftId);
+            AgentRuntimeContext errCtx = buildMinimalContext(traceId, conversationId, userId);
+            dispatcher.error(emitter, errCtx,
+                    new IllegalArgumentException("无权操作此草稿: draftId=" + draftId));
+            return;
+        }
+
+        ExecutionPlan plan;
+        try {
+            plan = JSON.parseObject(draft.getExecutionPlanJson(), ExecutionPlan.class);
+        } catch (Exception e) {
+            log.error("[ResumeClarification] 反序列化失败: draftId={}", draftId, e);
+            AgentRuntimeContext errCtx = buildMinimalContext(traceId, conversationId, userId);
+            dispatcher.error(emitter, errCtx, new IllegalStateException("计划数据解析失败"));
+            return;
+        }
+
+        if (!"PAUSED_CLARIFICATION".equals(plan.getStatus())) {
+            log.warn("[ResumeClarification] 计划非暂停澄清态: status={}", plan.getStatus());
+            AgentRuntimeContext errCtx = buildMinimalContext(traceId, conversationId, userId);
+            dispatcher.error(emitter, errCtx, new IllegalStateException("计划当前不在澄清暂停态: " + plan.getStatus()));
+            return;
+        }
+
+        AgentRuntimeContext context = buildMinimalContext(traceId, conversationId, userId);
+
+        int pausedIndex = plan.getCurrentStepIndex();
+        ExecutionStep pausedTask = plan.getSteps().get(pausedIndex);
+        Map<String, String> stepOutputs = new LinkedHashMap<>(plan.getStepOutputs());
+
+        // 保存用户回答消息到对话记录（用 displayAnswer 确保刷新后仍可读）
+        String savedText = displayAnswer != null && !displayAnswer.isBlank()
+                ? "【澄清回答】" + displayAnswer
+                : "【澄清回答】" + answer;
+        memoryService.saveUserMessage(conversationId, userId, savedText, null);
+
+        // 提交结构化回答（带所有权校验）
+        ClarificationPayload nextClarification;
+        try {
+            nextClarification = clarificationService.submitAnswer(clarificationId, answer, draftId, userId);
+        } catch (Exception e) {
+            log.error("[ResumeClarification] 提交澄清回答失败: clarificationId={}", clarificationId, e);
+            dispatcher.error(emitter, context, e);
+            return;
+        }
+
+        // 写入 stepOutputs
+        com.smartorder.edu.agent.model.entity.AgentClarification clarRecord =
+                clarificationService.getClarificationsForDraft(draftId).stream()
+                        .filter(c -> c.getClarificationId().equals(clarificationId))
+                        .findFirst().orElse(null);
+        if (clarRecord != null) {
+            stepOutputs.put("__clarification." + clarRecord.getSlotKey(), answer);
+        }
+
+        // 发射 agent.gate.answered 事件，通知前端回答已被处理
+        Map<String, Object> gateAnsweredPayload = new LinkedHashMap<>();
+        gateAnsweredPayload.put("clarificationId", clarificationId);
+        gateAnsweredPayload.put("slotKey", clarRecord != null ? clarRecord.getSlotKey() : "");
+        gateAnsweredPayload.put("answer", answer);
+        gateAnsweredPayload.put("nextClarificationId",
+                nextClarification != null ? nextClarification.getClarificationId() : null);
+        gateAnsweredPayload.put("status", nextClarification != null ? "MORE_PENDING" : "ALL_ANSWERED");
+        dispatcher.emit(emitter, context, AgentEventType.GATE_ANSWERED, gateAnsweredPayload);
+
+        // 还有更多 PENDING 澄清？发射下一条，不恢复执行
+        if (nextClarification != null) {
+            plan.setActiveClarificationId(nextClarification.getClarificationId());
+            plan.setClarificationQuestion(nextClarification.getQuestion());
+            plan.setStepOutputs(stepOutputs);
+            draftService.updateExecutionPlan(draftId, plan);
+
+            context.setPlanRunStatus("PAUSED_CLARIFICATION");
+            context.setPlanDraftId(draftId);
+            context.setActiveClarificationId(nextClarification.getClarificationId());
+
+            // 发射 PLAN_PAUSED（下一个问题）
+            Map<String, Object> pausePayload = new LinkedHashMap<>();
+            pausePayload.put("reason", "CLARIFICATION");
+            pausePayload.put("taskId", pausedTask.getStepId());
+            pausePayload.put("question", nextClarification.getQuestion());
+            Map<String, Object> clarificationMap = new LinkedHashMap<>();
+            clarificationMap.put("clarificationId", nextClarification.getClarificationId());
+            clarificationMap.put("slotKey", nextClarification.getSlotKey());
+            clarificationMap.put("question", nextClarification.getQuestion());
+            clarificationMap.put("answerType", nextClarification.getAnswerType());
+            clarificationMap.put("options", nextClarification.getOptions() != null
+                    ? nextClarification.getOptions() : List.of());
+            clarificationMap.put("slotPriority", nextClarification.getSlotPriority());
+            pausePayload.put("clarification", clarificationMap);
+            dispatcher.emit(emitter, context, AgentEventType.PLAN_PAUSED, pausePayload);
+
+            String ackMsg = "已收到你的回答，还有一个问题需要确认。";
+            dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", ackMsg));
+            memoryService.saveAssistantMessage(conversationId, userId, ackMsg, null, traceId, null);
+            clarificationService.acknowledge(clarificationId, ackMsg);
+
+            dispatcher.complete(emitter, context);
+            return;
+        }
+
+        // 全部澄清已回答，恢复执行
+        clarificationService.acknowledge(clarificationId, "已收到，继续执行计划");
+
+        stepOutputs.put(pausedTask.getStepId(), buildClarificationStepOutput(pausedTask, stepOutputs));
+        plan.setStepOutputs(stepOutputs);
+        pausedTask.setStatus("COMPLETED");
+        pausedTask.setResultSummary("用户回复: " + truncate(answer, 200));
+        pausedTask.setGate("NORMAL");
+        plan.setCurrentStepIndex(pausedIndex + 1);
+        plan.setStatus("EXECUTING");
+        plan.setActiveClarificationId(null);
+        draftService.updateExecutionPlan(draftId, plan);
+
+        // 更新 runState 到 EXECUTING（resumeAfterClarification）
+        runStateService.transitionByDraftId(draftId, "EXECUTING", traceId, null, null, null);
+
+        dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
+                planCreatedPayload(draftId, plan, false, ""));
+        dispatcher.emit(emitter, context, AgentEventType.PLAN_RESUMED, Map.of(
+                "reason", "CLARIFICATION",
+                "taskId", pausedTask.getStepId(),
+                "resumeFromIndex", plan.getCurrentStepIndex()
+        ));
+
+        executeExecutionPlanWithContext(draftId, userId, context, emitter);
+
+        // 重新加载计划的最终状态，确保前端 done 事件中携带正确的 runStatus
+        AgentPlanDraft finalDraft = draftService.getByDraftId(draftId);
+        if (finalDraft != null) {
+            try {
+                ExecutionPlan finalPlan = JSON.parseObject(
+                        finalDraft.getExecutionPlanJson(), ExecutionPlan.class);
+                context.setPlanRunStatus(finalPlan.getStatus());
+                context.setPlanDraftId(draftId);
+            } catch (Exception e) {
+                log.warn("[ResumeClarification] 读取最终计划状态失败: {}", e.getMessage());
+            }
+        }
+
+        // 不走 AgentRunSupervisor，需显式关闭 SSE
+        dispatcher.complete(emitter, context);
+    }
+
+    /**
+     * 通过专用 API 确认 CONFIRMATION 门并恢复计划执行
+     */
+    public void resumeAfterConfirmation(String draftId, Long userId, String conversationId,
+                                          SseEmitter emitter, String traceId) {
+        AgentPlanDraft draft = draftService.getByDraftId(draftId);
+        if (draft == null) {
+            log.warn("[ResumeConfirmation] 草稿不存在: draftId={}", draftId);
+            AgentRuntimeContext errCtx = buildMinimalContext(traceId, conversationId, userId);
+            dispatcher.error(emitter, errCtx, new IllegalArgumentException("草稿不存在: " + draftId));
+            return;
+        }
+
+        ExecutionPlan plan;
+        try {
+            plan = JSON.parseObject(draft.getExecutionPlanJson(), ExecutionPlan.class);
+        } catch (Exception e) {
+            log.error("[ResumeConfirmation] 反序列化失败: draftId={}", draftId, e);
+            AgentRuntimeContext errCtx = buildMinimalContext(traceId, conversationId, userId);
+            dispatcher.error(emitter, errCtx, new IllegalStateException("计划数据解析失败"));
+            return;
+        }
+
+        if (!"PAUSED_CONFIRMATION".equals(plan.getStatus()) && !"PENDING_CONFIRM".equals(plan.getStatus())) {
+            log.warn("[ResumeConfirmation] 计划非可确认态: status={}", plan.getStatus());
+            AgentRuntimeContext errCtx = buildMinimalContext(traceId, conversationId, userId);
+            dispatcher.error(emitter, errCtx, new IllegalStateException("计划当前不在确认暂停态: " + plan.getStatus()));
+            return;
+        }
+
+        AgentRuntimeContext context = buildMinimalContext(traceId, conversationId, userId);
+
+        if ("PAUSED_CONFIRMATION".equals(plan.getStatus())) {
+            int pausedIndex = plan.getCurrentStepIndex();
+            ExecutionStep pausedTask = plan.getSteps().get(pausedIndex);
+            resumeConfirmationGateIfNeeded(draftId, plan, pausedTask);
+            dispatcher.emit(emitter, context, AgentEventType.PLAN_RESUMED, Map.of(
+                    "reason", "CONFIRMATION",
+                    "taskId", pausedTask.getStepId()
+            ));
+        }
+
+        // 更新 runState 到 EXECUTING（resumeAfterConfirmation）
+        runStateService.transitionByDraftId(draftId, "EXECUTING", traceId, null, null, null);
+
+        executeExecutionPlanWithContext(draftId, userId, context, emitter);
+
+        // 不走 AgentRunSupervisor，需显式关闭 SSE
+        dispatcher.complete(emitter, context);
+    }
+
+    private AgentRuntimeContext buildMinimalContext(String traceId, String conversationId, Long userId) {
+        return AgentRuntimeContext.builder()
+                .traceId(traceId)
+                .conversationId(conversationId)
+                .userId(userId)
+                .mode(AgentRunMode.PLAN_AND_EXECUTE)
+                .sequence(new AtomicInteger(0))
+                .build();
+    }
+
     // ============ 私有方法 ============
 
     private String buildPlannerPrompt(AgentChatRequest request, IntentRouteResult routeResult,
@@ -536,43 +914,40 @@ public class PlanAndExecuteEngine {
             attachmentSection = "\n用户上传附件摘录：\n" + context.getAttachmentContext();
         }
 
+        // 会话摘要（如有）
+        String conversationSummary = "";
+        try {
+            String summary = memoryService.getSummaryText(context.getConversationId());
+            if (summary != null) {
+                conversationSummary = "\n历史对话摘要：\n" + summary;
+            }
+        } catch (Exception e) {
+            log.debug("[PlannerPrompt] 获取会话摘要失败（非关键）: {}", e.getMessage());
+        }
+
+        // 用户画像（如有——由 ProfileTool 在意图路由阶段获取）
+        String userProfileSection = "";
+        // 预留：可通过 context 扩展字段传递画像快照
+
         String planHint = routeResult.getPlanHint() != null ? routeResult.getPlanHint() : "general";
 
         return PromptLoader.format(promptLoader.getPlannerInputTemplate(),
-                request.getMessage(), planHint, attachmentSection);
+                request.getMessage(), planHint, attachmentSection,
+                conversationSummary, userProfileSection);
     }
 
-    private void applyClarificationToRemainingSteps(ExecutionPlan plan, int pausedIndex, String userResponse) {
-        String clarificationSummary = truncate(userResponse, 300);
-        for (int i = pausedIndex + 1; i < plan.getSteps().size(); i++) {
-            ExecutionStep step = plan.getSteps().get(i);
-            if ("COMPLETED".equals(step.getStatus())) {
-                continue;
-            }
-
-            String description = step.getDescription();
-            if (description != null && description.contains("学生画像")) {
-                description = description.replace("学生画像", "用户补充信息");
-            }
-            if (description != null && description.contains("学习档案")) {
-                description = description.replace("学习档案", "用户补充信息");
-            }
-
-            if (description != null && !description.contains("用户补充信息")) {
-                description = description + "。请结合用户补充信息：" + clarificationSummary;
-            } else if (description != null && !description.contains(clarificationSummary)) {
-                description = description + "（用户补充信息：" + clarificationSummary + "）";
-            }
-
-            step.setDescription(description);
-
-            List<String> tools = step.getRequiredTools();
-            if (tools != null && tools.contains("getStudentProfile")) {
-                step.setRequiredTools(tools.stream()
-                        .filter(tool -> !"getStudentProfile".equals(tool))
-                        .toList());
-            }
-        }
+    /**
+     * @deprecated 请使用 {@link #buildPlanContext} + {@link #buildTaskSystemMessage(ExecutionStep, PlanContext)} 代替。
+     * PlanContext 将澄清上下文作为独立段落注入 prompt，不修改 task.description 原文。
+     */
+    @Deprecated
+    private void applyClarificationToRemainingSteps(ExecutionPlan plan, int pausedIndex,
+                                                     Map<String, String> stepOutputs) {
+        // 此方法已废弃。澄清上下文现已通过 buildPlanContext() + buildTaskSystemMessage()
+        // 作为独立段落注入 system prompt，不再修改 task.description 原文。
+        // 保留空实现以确保编译兼容，外部调用已被移除。
+        log.debug("[PlanAndExecute] applyClarificationToRemainingSteps is deprecated and no-op. "
+                + "Clarification context is injected via PlanContext in buildTaskSystemMessage.");
     }
 
     private void handleClarificationGate(ExecutionPlan plan, int stepIndex,
@@ -593,7 +968,8 @@ public class PlanAndExecuteEngine {
         plan.setCurrentStepIndex(stepIndex);
 
         String draftId = existingDraftId;
-        if (draftId == null || draftId.isBlank()) {
+        boolean isNewDraft = (draftId == null || draftId.isBlank());
+        if (isNewDraft) {
             draftId = draftService.saveExecutionPlanDraft(
                     context.getConversationId(), context.getTraceId(),
                     request != null ? request.getUserId() : context.getUserId(), plan);
@@ -601,22 +977,60 @@ public class PlanAndExecuteEngine {
         plan.setConfirmationDraftId(draftId);
         draftService.updateExecutionPlan(draftId, plan);
 
+        // 创建/更新 runState
+        Long uid = request != null ? request.getUserId() : context.getUserId();
+        if (isNewDraft) {
+            runStateService.createRunState(context.getConversationId(), draftId, uid);
+        }
+        runStateService.transitionByDraftId(draftId, "PAUSED_CLARIFICATION",
+                context.getTraceId(), "CLARIFICATION", task.getStepId(), null);
+
+        // 创建结构化澄清记录（从 ExecutionStep 的 clarificationSlots 提取）
+        ClarificationPayload firstClarification = clarificationService.createClarifications(
+                task, draftId, context.getConversationId(), context.getTraceId(),
+                request != null ? request.getUserId() : context.getUserId());
+
+        // 设置当前活跃澄清 ID
+        if (firstClarification != null) {
+            plan.setActiveClarificationId(firstClarification.getClarificationId());
+            question = firstClarification.getQuestion(); // 使用结构化问题文本
+            plan.setClarificationQuestion(question);
+            draftService.updateExecutionPlan(draftId, plan);
+        }
+
+        // 将暂停态信息写入 context，供 done 事件携带
+        context.setPlanRunStatus("PAUSED_CLARIFICATION");
+        context.setPlanDraftId(draftId);
+        context.setActiveClarificationId(firstClarification != null ? firstClarification.getClarificationId() : null);
+
         // 先发射 PLAN_CREATED，确保前端初始化 currentExecutionPlan，
         // 再发射 PLAN_PAUSED 更新状态为暂停
         dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
                 planCreatedPayload(draftId, plan, false, question));
 
-        // 发射暂停事件
-        dispatcher.emit(emitter, context, AgentEventType.PLAN_PAUSED, Map.of(
-                "reason", "CLARIFICATION",
-                "taskId", task.getStepId(),
-                "question", question
-        ));
+        // 发射暂停事件（增强版：包含结构化 clarification 信息）
+        Map<String, Object> pausePayload = new LinkedHashMap<>();
+        pausePayload.put("reason", "CLARIFICATION");
+        pausePayload.put("taskId", task.getStepId());
+        pausePayload.put("question", question); // 向后兼容
+        if (firstClarification != null) {
+            Map<String, Object> clarificationMap = new LinkedHashMap<>();
+            clarificationMap.put("clarificationId", firstClarification.getClarificationId());
+            clarificationMap.put("slotKey", firstClarification.getSlotKey());
+            clarificationMap.put("question", firstClarification.getQuestion());
+            clarificationMap.put("answerType", firstClarification.getAnswerType());
+            clarificationMap.put("options", firstClarification.getOptions() != null
+                    ? firstClarification.getOptions() : List.of());
+            clarificationMap.put("slotPriority", firstClarification.getSlotPriority());
+            pausePayload.put("clarification", clarificationMap);
+        }
+        dispatcher.emit(emitter, context, AgentEventType.PLAN_PAUSED, pausePayload);
 
-        // 澄清问题已通过 PLAN_PAUSED 事件传递，不再重复发射 TEXT_DELTA
+        // 保存澄清消息，metadataJson 存储结构化信息用于历史回放
+        String metadataJson = firstClarification != null ? JSON.toJSONString(firstClarification) : null;
         memoryService.saveAssistantMessage(context.getConversationId(),
                 request != null ? request.getUserId() : context.getUserId(),
-                question, null, context.getTraceId(), null);
+                question, null, context.getTraceId(), metadataJson);
         context.setAssistantMessageSaved(true);
     }
 
@@ -639,7 +1053,8 @@ public class PlanAndExecuteEngine {
             if ("COMPLETED".equals(task.getStatus())) continue;
             if (!"NORMAL".equals(task.getGate())) continue;
 
-            executeAndVerifyTask(task, stepOutputs, plan, draftId, context, emitter,
+            PlanContext planContext = buildPlanContext(plan, context);
+            executeAndVerifyTask(task, stepOutputs, plan, planContext, draftId, context, emitter,
                     conversationId, userId, false);
 
             // 检查是否因 CLARIFY 而暂停，若是则退出
@@ -655,6 +1070,15 @@ public class PlanAndExecuteEngine {
         plan.setStatus("PAUSED_CONFIRMATION");
         plan.setConfirmationDraftId(draftId);
         draftService.updateExecutionPlan(draftId, plan);
+
+        // 更新 runState 到 PAUSED_CONFIRMATION
+        ExecutionStep gateTask = plan.getSteps().get(gateIndex);
+        runStateService.transitionByDraftId(draftId, "PAUSED_CONFIRMATION",
+                context.getTraceId(), "CONFIRMATION", gateTask.getStepId(), null);
+
+        // 将暂停态信息写入 context，供 done 事件携带
+        context.setPlanRunStatus("PAUSED_CONFIRMATION");
+        context.setPlanDraftId(draftId);
 
         dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
                 planCreatedPayload(draftId, plan, true, ""));
@@ -672,15 +1096,22 @@ public class PlanAndExecuteEngine {
     private String executeTaskViaReAct(ExecutionStep task, Map<String, String> previousOutputs,
                                         AgentRuntimeContext context, SseEmitter emitter,
                                         boolean confirmationGranted) {
-        // 1. 构建任务专属系统消息
-        String taskSystemMessage = buildTaskSystemMessage(task, previousOutputs);
+        return executeTaskViaReAct(task, previousOutputs, null, context, emitter, confirmationGranted);
+    }
+
+    private String executeTaskViaReAct(ExecutionStep task, Map<String, String> previousOutputs,
+                                        PlanContext planContext,
+                                        AgentRuntimeContext context, SseEmitter emitter,
+                                        boolean confirmationGranted) {
+        // 1. 构建任务专属系统消息（支持 PlanContext 结构化注入）
+        String taskSystemMessage = buildTaskSystemMessage(task, previousOutputs, planContext);
 
         // 2. 构建受限的 IntentRouteResult（只包含本任务需要的工具）
         IntentRouteResult taskRoute = IntentRouteResult.builder()
                 .intentType("task_execution")
                 .intentEnum(IntentType.TASK_MANAGEMENT)
                 .runMode(AgentRunMode.REACT)
-                .requiredTools(task.getRequiredTools())
+                .requiredTools(mergeWithAskUser(task.getRequiredTools()))
                 .confidence(1.0)
                 .build();
 
@@ -696,10 +1127,35 @@ public class PlanAndExecuteEngine {
     }
 
     private String buildTaskSystemMessage(ExecutionStep task, Map<String, String> previousOutputs) {
+        return buildTaskSystemMessage(task, previousOutputs, null);
+    }
+
+    /**
+     * 构建任务系统消息——支持 PlanContext 结构化注入
+     */
+    private String buildTaskSystemMessage(ExecutionStep task, Map<String, String> previousOutputs,
+                                           PlanContext planContext) {
         StringBuilder prevSb = new StringBuilder();
-        if (!previousOutputs.isEmpty()) {
+
+        // 1. PlanContext 澄清上下文（独立段落，不修改 task.description）
+        if (planContext != null && !planContext.getClarificationAnswers().isEmpty()) {
+            prevSb.append("\n用户补充信息：\n");
+            for (Map.Entry<String, String> entry : planContext.getClarificationAnswers().entrySet()) {
+                prevSb.append("- ").append(entry.getKey()).append(": ")
+                        .append(entry.getValue()).append("\n");
+            }
+        }
+
+        // 2. 前置步骤产出
+        Map<String, String> stepResults = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : previousOutputs.entrySet()) {
+            if (!entry.getKey().startsWith("__")) {
+                stepResults.put(entry.getKey(), entry.getValue());
+            }
+        }
+        if (!stepResults.isEmpty()) {
             prevSb.append("\n前置任务结果：\n");
-            for (Map.Entry<String, String> entry : previousOutputs.entrySet()) {
+            for (Map.Entry<String, String> entry : stepResults.entrySet()) {
                 prevSb.append("- ").append(entry.getKey()).append(": ")
                         .append(truncate(entry.getValue(), 300)).append("\n");
             }
@@ -712,6 +1168,30 @@ public class PlanAndExecuteEngine {
                 prevSb.toString());
     }
 
+    /**
+     * 从 stepOutputs 中构建 PlanContext（结构化澄清上下文）
+     */
+    private PlanContext buildPlanContext(ExecutionPlan plan, AgentRuntimeContext context) {
+        Map<String, String> clarificationAnswers = new LinkedHashMap<>();
+        Map<String, String> stepOutputs = new LinkedHashMap<>();
+
+        for (Map.Entry<String, String> entry : plan.getStepOutputs().entrySet()) {
+            if (entry.getKey().startsWith("__clarification.")) {
+                String slotKey = entry.getKey().substring("__clarification.".length());
+                clarificationAnswers.put(slotKey, entry.getValue());
+            } else if (!entry.getKey().startsWith("__")) {
+                stepOutputs.put(entry.getKey(), entry.getValue());
+            }
+        }
+
+        return PlanContext.builder()
+                .userGoal(plan.getUserGoal())
+                .attachmentSummary(context.getAttachmentContext())
+                .clarificationAnswers(clarificationAnswers)
+                .stepOutputs(stepOutputs)
+                .build();
+    }
+
     // ============ 验证与重规划 ============
 
     /**
@@ -720,7 +1200,7 @@ public class PlanAndExecuteEngine {
      * @return true 表示任务最终通过验证，false 表示需要外部重规划
      */
     private boolean executeAndVerifyTask(ExecutionStep task, Map<String, String> stepOutputs,
-                                          ExecutionPlan plan, String draftId,
+                                          ExecutionPlan plan, PlanContext planContext, String draftId,
                                           AgentRuntimeContext context, SseEmitter emitter,
                                           String conversationId, Long userId,
                                           boolean userConfirmed) {
@@ -745,7 +1225,7 @@ public class PlanAndExecuteEngine {
                     ));
                 }
 
-                result = executeTaskViaReAct(task, stepOutputs, context, emitter, confirmationGranted);
+                result = executeTaskViaReAct(task, stepOutputs, planContext, context, emitter, confirmationGranted);
             } catch (Exception e) {
                 log.error("[PlanAndExecute] 任务执行异常: taskId={}", task.getStepId(), e);
                 task.setErrorMessage(e.getMessage());
@@ -754,9 +1234,11 @@ public class PlanAndExecuteEngine {
                 return false;
             }
 
-            if (shouldPauseForProfileClarification(task, result)) {
-                log.info("[PlanAndExecute] 学生画像不可用，转入澄清门: taskId={}", task.getStepId());
-                pauseForProfileClarification(plan, task, context, emitter, draftId);
+            // askUser 工具被调用：LLM 需要向用户澄清信息
+            if (context.getClarificationPayload() != null) {
+                log.info("[PlanAndExecute] askUser 工具触发澄清门: taskId={}, slotKey={}",
+                        task.getStepId(), context.getClarificationPayload().get("slotKey"));
+                handleAskUserClarification(task, plan, context, emitter, draftId);
                 return false;
             }
 
@@ -808,6 +1290,16 @@ public class PlanAndExecuteEngine {
                     // 转为澄清门，暂停执行
                     task.setGate("CLARIFICATION");
                     task.setDescription(verification.getFeedback());
+                    // 为 verification CLARIFY 创建单条 TEXT 类型 slot
+                    task.setClarificationSlots(List.of(
+                            ExecutionStep.ClarificationSlot.builder()
+                                    .slotKey("verification_clarify")
+                                    .question(verification.getFeedback())
+                                    .answerType("TEXT")
+                                    .slotPriority(1)
+                                    .build()
+                    ));
+                    task.setClarificationSlotsJson(JSON.toJSONString(task.getClarificationSlots()));
                     task.setStatus("PAUSED");
                     handleClarificationGate(plan,
                             plan.getSteps().indexOf(task), context, emitter, null, draftId);
@@ -827,47 +1319,57 @@ public class PlanAndExecuteEngine {
         return false; // 重试耗尽
     }
 
-    private boolean shouldPauseForProfileClarification(ExecutionStep task, String result) {
-        if (task.getRequiredTools() == null || !task.getRequiredTools().contains("getStudentProfile")) {
-            return false;
-        }
-        if (result == null || result.isBlank()) {
-            return false;
-        }
+    /**
+     * 处理 askUser 工具触发的澄清门：将 AgentRuntimeContext.clarificationPayload
+     * 转换为 ExecutionStep.ClarificationSlot，直接修改传入的 plan 对象并暂停执行。
+     */
+    private void handleAskUserClarification(ExecutionStep task, ExecutionPlan plan,
+                                            AgentRuntimeContext context,
+                                            SseEmitter emitter, String draftId) {
+        Map<String, Object> cp = context.getClarificationPayload();
 
-        String normalized = result.toLowerCase(Locale.ROOT);
-        return normalized.contains("尚未完成画像建档")
-                || normalized.contains("暂无学习偏好")
-                || normalized.contains("暂无学习档案")
-                || normalized.contains("无法获取学生的学习档案")
-                || normalized.contains("暂时无法获取")
-                || normalized.contains("通过对话")
-                || normalized.contains("直接了解学生的学习目标和当前水平")
-                || normalized.contains("直接告诉我你的学习目标和当前水平")
-                || (normalized.contains("补充")
-                        && (normalized.contains("当前基础") || normalized.contains("当前水平"))
-                        && (normalized.contains("截止时间") || normalized.contains("可投入时间")))
-                || normalized.contains("profile unavailable")
-                || normalized.contains("no profile");
-    }
+        // 解析 options
+        List<ClarificationPayload.SelectOption> selectOptions = parseAskUserOptions(
+                cp.get("options"));
 
-    private void pauseForProfileClarification(ExecutionPlan plan, ExecutionStep task,
-                                              AgentRuntimeContext context, SseEmitter emitter,
-                                              String draftId) {
-        String question = buildProfileClarificationQuestion(plan);
+        task.setClarificationSlots(List.of(
+                ExecutionStep.ClarificationSlot.builder()
+                        .slotKey((String) cp.getOrDefault("slotKey", "general"))
+                        .question((String) cp.getOrDefault("question", "请提供更多信息"))
+                        .answerType((String) cp.getOrDefault("answerType", "TEXT"))
+                        .options(selectOptions)
+                        .slotPriority(1)
+                        .build()
+        ));
+        task.setClarificationSlotsJson(JSON.toJSONString(task.getClarificationSlots()));
         task.setGate("CLARIFICATION");
-        task.setDescription(question);
+        task.setDescription((String) cp.getOrDefault("question", "请提供更多信息"));
         task.setStatus("PAUSED");
-        task.setErrorMessage("学生画像不可用，等待用户补充关键信息");
-        handleClarificationGate(plan, plan.getSteps().indexOf(task), context, emitter, null, draftId);
+
+        // 清除 payload 防止重复处理
+        context.setClarificationPayload(null);
+
+        // 直接使用当前 plan 对象调用 handleClarificationGate，确保状态同步
+        int stepIndex = plan.getSteps().indexOf(task);
+        handleClarificationGate(plan, stepIndex, context, emitter, null, draftId);
     }
 
-    private String buildProfileClarificationQuestion(ExecutionPlan plan) {
-        String goal = plan.getUserGoal();
-        String prefix = goal != null && !goal.isBlank()
-                ? "我暂时拿不到你的学习档案。为了给「" + goal + "」制定更贴合的计划，"
-                : "我暂时拿不到你的学习档案。为了制定更贴合的计划，";
-        return prefix + "请补充这几项信息：当前基础或水平、目标/考试范围、截止时间、每周可投入时间，以及偏好的学习方式。";
+    /**
+     * 解析 askUser 工具传入的 options 参数。
+     * LLM 可能传入 List&lt;Map&gt; 或 List&lt;SelectOption&gt; 格式。
+     */
+    @SuppressWarnings("unchecked")
+    private List<ClarificationPayload.SelectOption> parseAskUserOptions(Object options) {
+        if (options == null) return List.of();
+        if (options instanceof List<?> list && !list.isEmpty()) {
+            try {
+                // 尝试直接解析为 SelectOption 列表
+                return JSON.parseArray(JSON.toJSONString(list), ClarificationPayload.SelectOption.class);
+            } catch (Exception e) {
+                log.debug("[PlanAndExecute] options 解析失败，返回空列表: {}", e.getMessage());
+            }
+        }
+        return List.of();
     }
 
     /**
@@ -1053,6 +1555,25 @@ public class PlanAndExecuteEngine {
         return true;
     }
 
+    private String buildClarificationStepOutput(ExecutionStep task, Map<String, String> stepOutputs) {
+        StringBuilder sb = new StringBuilder("用户已补充澄清信息");
+        if (task.getDescription() != null && !task.getDescription().isBlank()) {
+            sb.append("（").append(task.getDescription()).append("）");
+        }
+
+        List<String> answers = stepOutputs.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("__clarification."))
+                .map(entry -> entry.getKey().substring("__clarification.".length()) + ": " + entry.getValue())
+                .toList();
+
+        if (!answers.isEmpty()) {
+            sb.append("：").append(String.join("；", answers));
+        } else {
+            sb.append("。");
+        }
+        return sb.toString();
+    }
+
     private int findFirstConfirmationIndex(ExecutionPlan plan) {
         for (int i = 0; i < plan.getSteps().size(); i++) {
             if ("CONFIRMATION".equals(plan.getSteps().get(i).getGate())) {
@@ -1164,6 +1685,85 @@ public class PlanAndExecuteEngine {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * 发射执行完成状态事件到 trace 面板，不在 AI 对话正文中展示。
+     */
+    private void emitExecutionCompletedStatus(ExecutionPlan plan, AgentRuntimeContext context,
+                                              SseEmitter emitter) {
+        long completed = plan.getSteps().stream().filter(t -> "COMPLETED".equals(t.getStatus())).count();
+        long failed = plan.getSteps().stream().filter(t -> "FAILED".equals(t.getStatus())).count();
+
+        Map<String, Object> statusPayload = new LinkedHashMap<>();
+        statusPayload.put("type", "plan_completed");
+        statusPayload.put("planStatus", plan.getStatus());
+        statusPayload.put("totalTasks", plan.getSteps().size());
+        statusPayload.put("completedTasks", completed);
+        statusPayload.put("failedTasks", failed);
+
+        // 附加每个任务的摘要（用于 trace 面板展示）
+        List<Map<String, String>> taskSummaries = plan.getSteps().stream()
+                .map(task -> {
+                    Map<String, String> m = new LinkedHashMap<>();
+                    m.put("stepId", task.getStepId());
+                    m.put("status", task.getStatus());
+                    m.put("description", task.getDescription());
+                    if (task.getErrorMessage() != null) m.put("errorMessage", task.getErrorMessage());
+                    return m;
+                })
+                .toList();
+        statusPayload.put("taskSummaries", taskSummaries);
+
+        dispatcher.emit(emitter, context, AgentEventType.STATUS, statusPayload);
+    }
+
+    /**
+     * 生成面向用户友好的计划完成消息（替代 buildFinalSummary 作为 TEXT_DELTA 正文）。
+     */
+    private String buildUserFriendlyCompletionMessage(ExecutionPlan plan) {
+        long completed = plan.getSteps().stream().filter(t -> "COMPLETED".equals(t.getStatus())).count();
+        long failed = plan.getSteps().stream().filter(t -> "FAILED".equals(t.getStatus())).count();
+        long total = plan.getSteps().size();
+
+        if (failed == 0 && completed == total) {
+            return "学习计划已全部执行完成！你可以查看上述结果，或告诉我下一步想做什么。";
+        }
+        if (completed > 0 && failed > 0) {
+            long skipped = plan.getSteps().stream().filter(t -> "SKIPPED".equals(t.getStatus())).count();
+            StringBuilder sb = new StringBuilder();
+            sb.append("学习计划已执行完成。");
+            if (completed > 0) sb.append("成功 ").append(completed).append(" 个任务");
+            if (failed > 0) {
+                sb.append("，").append(failed).append(" 个任务未成功");
+            }
+            if (skipped > 0) {
+                sb.append("（其中 ").append(skipped).append(" 个已跳过）");
+            }
+            sb.append("。\n\n你可以让我重试失败的任务，或者查看详情后调整计划。");
+            return sb.toString();
+        }
+        if (completed == 0 && failed == total) {
+            return "很抱歉，学习计划中的所有任务都未能成功完成。建议你调整目标或提供更多信息后重试。";
+        }
+        // 兜底
+        return "学习计划执行结束。";
+    }
+
+    /**
+     * 确保 askUser 工具在所有 Plan-and-Execute 任务中可用。
+     * LLM 可在任何需要向用户澄清信息时调用此工具。
+     */
+    private List<String> mergeWithAskUser(List<String> taskTools) {
+        if (taskTools == null || taskTools.isEmpty()) {
+            return List.of("askUser");
+        }
+        if (taskTools.contains("askUser")) {
+            return taskTools;
+        }
+        List<String> merged = new java.util.ArrayList<>(taskTools);
+        merged.add("askUser");
+        return merged;
     }
 
     private String truncate(String text, int maxLen) {

@@ -61,6 +61,7 @@ public class ClarificationRouter {
             case "PENDING_PLAN_DRAFT" -> promptLoader.getPendingPlanDraftClarification();
             case "GOAL_DESCRIPTION" -> promptLoader.getGoalDescriptionClarification();
             case "RESOURCE_TOPIC" -> promptLoader.getResourceTopicClarification();
+            case "PROFILE_CLARIFICATION" -> promptLoader.getProfileClarification();
             default -> promptLoader.getDefaultClarification();
         };
     }

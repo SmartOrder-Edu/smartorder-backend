@@ -68,6 +68,20 @@ public class AgentConfiguration {
                 .build();
     }
 
+    @Bean
+    public ChatModel profileUpdateChatModel() {
+        return OpenAiChatModel.builder()
+                .httpClientBuilder(JdkLangChain4jHttpClientBuilder.withDefaults())
+                .apiKey(apiKey)
+                .baseUrl(baseUrl)
+                .modelName(modelName)
+//                .returnThinking(true)
+//                .sendThinking(true, "reasoning_content")
+                .responseFormat("json_object")
+                .timeout(Duration.ofSeconds(120))
+                .build();
+    }
+
     /**
      * 规划专用 ChatModel — 禁用 thinking，确保 PlannerAgent 返回纯 JSON。
      * <p>

@@ -36,6 +36,7 @@ public enum AgentEventType {
     EXECUTION_STEP_COMPLETED("agent.plan.task.completed", "执行步骤执行完成", true),
     EXECUTION_STEP_FAILED("agent.plan.task.failed", "执行步骤执行失败", true),
     PLAN_PAUSED("agent.plan.paused", "计划暂停（澄清/确认门）", true),
+    GATE_ANSWERED("agent.gate.answered", "门控问题已回答", true),
     PLAN_RESUMED("agent.plan.resumed", "计划从暂停点恢复", true),
 
     ERROR("agent.error", "错误事件", true),
