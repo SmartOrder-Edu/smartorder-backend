@@ -41,6 +41,21 @@ public class ActiveRunVO {
      */
     private String activeClarificationId;
 
+    /**
+     * 已创建的学习空间信息（当 EXECUTION_PLAN 执行完毕后关联的 LEARNING_PLAN 已确认时非空）。
+     * 前端据此恢复 PlanChecklist 的"学习空间已创建"banner。
+     */
+    private SpaceCreatedVO spaceCreated;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class SpaceCreatedVO {
+        private Long spaceId;
+        private String spaceName;
+    }
+
     @Data
     @Builder
     @NoArgsConstructor
