@@ -45,7 +45,6 @@ import java.util.StringJoiner;
 public class StudentProfileServiceImpl implements IStudentProfileService {
 
     private static final BigDecimal INITIAL_CONFIDENCE = new BigDecimal("30.00");
-    private static final int PROFILE_DIMENSION_COUNT = 7;
     private static final int MAX_REASON_LENGTH = 500;
     private static final String DEFAULT_UPDATE_REASON = "更新学生画像";
     private static final Set<String> SUPPORTED_DIMENSIONS = Set.of(
@@ -186,11 +185,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
             throw new BusinessException("画像初始化内容不能全部为空");
         }
 
-        StudentProfile profile = new StudentProfile();
-        profile.setUserId(userId);
-        profile.setProfileVersion(0);
-        profile.setProfileCompleteness(new BigDecimal("0.00"));
-        profile.setProfileConfidenceScore(new BigDecimal("0.00"));
+        StudentProfile profile = getOrCreateProfile(userId);
 
         if (background != null) {
             profile.setLearningBackground(mergeTyped(
@@ -374,7 +369,6 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         StudentProfile created = new StudentProfile();
         created.setUserId(userId);
         created.setProfileVersion(0);
-        created.setProfileCompleteness(new BigDecimal("0.00"));
         created.setProfileConfidenceScore(new BigDecimal("0.00"));
         return created;
     }
@@ -543,7 +537,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         });
     }
 
-    /** 持久化前的预处理：初始化默认值，精度处理，重算完整度 */
+    /** 持久化前的预处理：初始化默认值，精度处理 */
     private void prepareForPersistence(StudentProfile profile) {
         if (profile.getProfileConfidenceScore() == null) {
             profile.setProfileConfidenceScore(new BigDecimal("0.00"));
@@ -552,59 +546,6 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
                     profile.getProfileConfidenceScore().setScale(2, RoundingMode.HALF_UP)
             );
         }
-        recalculateCompleteness(profile);
-    }
-
-    /** 重新计算画像完整度，7个维度中已填写的数量占比 */
-    private void recalculateCompleteness(StudentProfile profile) {
-        int completed = 0;
-        completed += isMeaningful(profile.getLearningBackground()) ? 1 : 0;
-        completed += isMeaningful(profile.getLearningGoals()) ? 1 : 0;
-        completed += isMeaningful(profile.getAbilityProfile()) ? 1 : 0;
-        completed += isMeaningful(profile.getCommonMisconceptions()) ? 1 : 0;
-        completed += isMeaningful(profile.getLearningPreference()) ? 1 : 0;
-        completed += isMeaningful(profile.getMetacognitiveProfile()) ? 1 : 0;
-        completed += isMeaningful(profile.getSubjectProfiles()) ? 1 : 0;
-
-        BigDecimal completeness = BigDecimal.valueOf(completed)
-                .multiply(BigDecimal.valueOf(100))
-                .divide(BigDecimal.valueOf(PROFILE_DIMENSION_COUNT), 2, RoundingMode.HALF_UP);
-        profile.setProfileCompleteness(completeness);
-    }
-
-    /** 判断对象是否包含有意义的数据（非null且非空） */
-    private boolean isMeaningful(Object value) {
-        if (value == null) {
-            return false;
-        }
-        return hasMeaningfulValue(objectMapper.valueToTree(value));
-    }
-
-    /** 递归判断JSON节点是否包含有意义的值 */
-    private boolean hasMeaningfulValue(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return false;
-        }
-        if (node.isValueNode()) {
-            return !node.isTextual() || !node.textValue().isBlank();
-        }
-        if (node.isArray()) {
-            for (JsonNode child : node) {
-                if (hasMeaningfulValue(child)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        if (node.isObject()) {
-            var fieldNames = node.fieldNames();
-            while (fieldNames.hasNext()) {
-                if (hasMeaningfulValue(node.get(fieldNames.next()))) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     /** 执行数据库持久化，新增或更新 */

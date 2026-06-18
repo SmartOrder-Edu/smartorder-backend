@@ -56,7 +56,6 @@ class StudentProfileServiceImplTest {
         assertEquals(4, result.getProfileVersion());
         assertEquals("SOPHOMORE", result.getLearningBackground().getEducation().getGrade());
         assertEquals("软件工程", result.getLearningBackground().getEducation().getMajorName());
-        assertEquals(new BigDecimal("14.29"), result.getProfileCompleteness());
         verify(mapper).updateById(result);
     }
 
@@ -152,7 +151,6 @@ class StudentProfileServiceImplTest {
         assertEquals("COMPETITION", goal.getGoalType());
         assertEquals("参加程序设计竞赛", goal.getTitle());
         assertEquals(3, result.getProfileVersion());
-        assertEquals(new BigDecimal("28.57"), result.getProfileCompleteness());
         assertEquals(new BigDecimal("30.00"), result.getProfileConfidenceScore());
     }
 
@@ -164,7 +162,6 @@ class StudentProfileServiceImplTest {
         StudentProfile profile = new StudentProfile();
         profile.setUserId(userId);
         profile.setProfileVersion(0);
-        profile.setProfileCompleteness(new BigDecimal("0.00"));
         profile.setProfileConfidenceScore(new BigDecimal("0.00"));
         return profile;
     }
