@@ -58,4 +58,13 @@ public interface AgentPlanDraftMapper extends BaseMapper<AgentPlanDraft> {
             "AND plan_type = 'LEARNING_PLAN' AND status = 'CONFIRMED' AND created_space_id IS NOT NULL " +
             "ORDER BY create_time DESC LIMIT 1")
     AgentPlanDraft selectConfirmedLearningPlanDraft(@Param("conversationId") String conversationId);
+
+    /**
+     * 查询指定学习空间对应的已确认 LEARNING_PLAN 草稿，用于学习空间内展示原始 Agent 规划。
+     */
+    @Select("SELECT * FROM agent_plan_draft WHERE user_id = #{userId} AND created_space_id = #{spaceId} " +
+            "AND plan_type = 'LEARNING_PLAN' AND status = 'CONFIRMED' " +
+            "ORDER BY confirmed_at DESC, create_time DESC LIMIT 1")
+    AgentPlanDraft selectConfirmedLearningPlanDraftBySpaceId(@Param("userId") Long userId,
+                                                             @Param("spaceId") Long spaceId);
 }
