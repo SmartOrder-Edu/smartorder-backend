@@ -120,6 +120,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
             addAttachmentSearchToolIfNeeded(routeResult, context);
             addRagToolIfNeeded(routeResult, context);
             addCurrentTimeTool(routeResult);
+            addMindMapTool(routeResult);
 
             // 根据路由结果调整执行预算
             if (routeResult.getRunMode() == AgentRunMode.PLAN_AND_EXECUTE) {
@@ -276,6 +277,23 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         }
     }
 
+    /**
+     * 将 generateMindMap 工具常驻注入到所有 ReAct 路由结果中，
+     * 由 LLM 自主决定何时调用（用户请求整理章节/概念/知识体系结构时）。
+     * Plan-and-Execute 模式不注入（其工具由 PlannerAgent 动态决定）。
+     */
+    private void addMindMapTool(IntentRouteResult routeResult) {
+        if (routeResult.getRunMode() != AgentRunMode.REACT) {
+            return;
+        }
+        List<String> currentTools = routeResult.getRequiredTools() != null
+                ? new ArrayList<>(routeResult.getRequiredTools()) : new ArrayList<>();
+        if (!currentTools.contains("generateMindMap")) {
+            currentTools.add("generateMindMap");
+            routeResult.setRequiredTools(currentTools);
+        }
+    }
+
     // ============ 显式模式短路 ============
 
     /**
@@ -296,6 +314,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         addAttachmentSearchToolIfNeeded(forcedResult, context);
         addRagToolIfNeeded(forcedResult, context);
         addCurrentTimeTool(forcedResult);
+        addMindMapTool(forcedResult);
 
         // 根据模式调整预算
         if (forcedResult.getRunMode() == AgentRunMode.PLAN_AND_EXECUTE) {
