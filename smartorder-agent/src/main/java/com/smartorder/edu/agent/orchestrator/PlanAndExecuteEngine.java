@@ -99,7 +99,7 @@ public class PlanAndExecuteEngine {
         try {
             PlannerAgent plannerAgent = AiServices.builder(PlannerAgent.class)
                     .chatModel(planningChatModel)
-                    .systemMessageProvider(memoryId -> promptLoader.getPlannerCreatePrompt())
+                    .systemMessageProvider(memoryId -> promptLoader.injectCurrentTime(promptLoader.getPlannerCreatePrompt()))
                     .build();
             planRaw = plannerAgent.createExecutionPlan(prompt);
             log.info("[PlanAndExecute] PlannerAgent 原始响应 (前500字符): {}",
@@ -1152,7 +1152,7 @@ public class PlanAndExecuteEngine {
                 .intentType("task_execution")
                 .intentEnum(IntentType.TASK_MANAGEMENT)
                 .runMode(AgentRunMode.REACT)
-                .requiredTools(mergeWithAskUser(task.getRequiredTools()))
+                .requiredTools(addUniversalTools(task.getRequiredTools()))
                 .confidence(1.0)
                 .build();
 
@@ -1460,7 +1460,7 @@ public class PlanAndExecuteEngine {
             }
             PlannerAgent plannerAgent = AiServices.builder(PlannerAgent.class)
                     .chatModel(planningChatModel)
-                    .systemMessageProvider(memoryId -> promptLoader.getPlannerReplanPrompt())
+                    .systemMessageProvider(memoryId -> promptLoader.injectCurrentTime(promptLoader.getPlannerReplanPrompt()))
                     .build();
             String replanResponse = plannerAgent.replan(replanPrompt);
 
@@ -1819,18 +1819,20 @@ public class PlanAndExecuteEngine {
     }
 
     /**
-     * 确保 askUser 工具在所有 Plan-and-Execute 任务中可用。
-     * LLM 可在任何需要向用户澄清信息时调用此工具。
+     * 确保 askUser 和 getCurrentTime 工具在所有 Plan-and-Execute 任务中可用。
+     * askUser 用于向用户澄清信息，getCurrentTime 用于获取当前时间。
      */
-    private List<String> mergeWithAskUser(List<String> taskTools) {
+    private List<String> addUniversalTools(List<String> taskTools) {
         if (taskTools == null || taskTools.isEmpty()) {
-            return List.of("askUser");
-        }
-        if (taskTools.contains("askUser")) {
-            return taskTools;
+            return List.of("askUser", "getCurrentTime");
         }
         List<String> merged = new java.util.ArrayList<>(taskTools);
-        merged.add("askUser");
+        if (!merged.contains("askUser")) {
+            merged.add("askUser");
+        }
+        if (!merged.contains("getCurrentTime")) {
+            merged.add("getCurrentTime");
+        }
         return merged;
     }
 

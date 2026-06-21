@@ -119,6 +119,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
             context.setMode(routeResult.getRunMode());
             addAttachmentSearchToolIfNeeded(routeResult, context);
             addRagToolIfNeeded(routeResult, context);
+            addCurrentTimeTool(routeResult);
 
             // 根据路由结果调整执行预算
             if (routeResult.getRunMode() == AgentRunMode.PLAN_AND_EXECUTE) {
@@ -262,6 +263,19 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 context.getKnowledgeBaseIds(), context.getFileIds());
     }
 
+    /**
+     * 将 getCurrentTime 工具注入到所有路由结果中，确保 Agent 在所有模式下
+     * 都能感知当前时间。
+     */
+    private void addCurrentTimeTool(IntentRouteResult routeResult) {
+        List<String> currentTools = routeResult.getRequiredTools() != null
+                ? new ArrayList<>(routeResult.getRequiredTools()) : new ArrayList<>();
+        if (!currentTools.contains("getCurrentTime")) {
+            currentTools.add("getCurrentTime");
+            routeResult.setRequiredTools(currentTools);
+        }
+    }
+
     // ============ 显式模式短路 ============
 
     /**
@@ -281,6 +295,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         context.setMode(forcedResult.getRunMode());
         addAttachmentSearchToolIfNeeded(forcedResult, context);
         addRagToolIfNeeded(forcedResult, context);
+        addCurrentTimeTool(forcedResult);
 
         // 根据模式调整预算
         if (forcedResult.getRunMode() == AgentRunMode.PLAN_AND_EXECUTE) {
