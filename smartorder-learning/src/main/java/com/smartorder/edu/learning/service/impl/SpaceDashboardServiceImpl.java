@@ -60,7 +60,7 @@ public class SpaceDashboardServiceImpl implements ISpaceDashboardService {
 
         List<PathNodeVO> pathNodeVOs = nodes.stream()
                 .map(n -> toPathNodeVO(n, nodeTasksMap))
-                .toList();
+                .collect(Collectors.toCollection(ArrayList::new));
         dashboard.setPathNodes(pathNodeVOs);
 
         // Compute node statuses
