@@ -653,6 +653,8 @@ public class PlanAndExecuteEngine {
 
             dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
                     planCreatedPayload(draft.getDraftId(), plan, false, ""));
+            dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_COMPLETED,
+                    stepToPayload(pausedTask));
 
             dispatcher.emit(emitter, context, AgentEventType.PLAN_RESUMED, Map.of(
                     "reason", "CLARIFICATION",
@@ -826,6 +828,8 @@ public class PlanAndExecuteEngine {
 
         dispatcher.emit(emitter, context, AgentEventType.PLAN_CREATED,
                 planCreatedPayload(draftId, plan, false, ""));
+        dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_COMPLETED,
+                stepToPayload(pausedTask));
         dispatcher.emit(emitter, context, AgentEventType.PLAN_RESUMED, Map.of(
                 "reason", "CLARIFICATION",
                 "taskId", pausedTask.getStepId(),
@@ -1271,18 +1275,15 @@ public class PlanAndExecuteEngine {
                 return false;
             }
 
-            // askUser 工具被调用：LLM 需要向用户澄清信息
-            if (context.getClarificationPayload() != null) {
-                log.info("[PlanAndExecute] askUser 工具触发澄清门: taskId={}, slotKey={}",
-                        task.getStepId(), context.getClarificationPayload().get("slotKey"));
-                handleAskUserClarification(task, plan, context, emitter, draftId);
-                return false;
-            }
-
             // createLearningPlan 工具已经保存 LEARNING_PLAN 草稿并发出预览事件。
             // 这是目标规划链路的正常暂停点，不再交给 LLM verifier 复核，避免误判后重复生成草稿。
             if (context.isLearningPlanAwaitingConfirmation()) {
                 String learningPlanDraftId = context.getLearningPlanDraftId();
+                if (context.getClarificationPayload() != null) {
+                    log.info("[PlanAndExecute] 学习计划草稿已生成，忽略后续 askUser 确认: taskId={}, slotKey={}, learningDraftId={}",
+                            task.getStepId(), context.getClarificationPayload().get("slotKey"), learningPlanDraftId);
+                    context.setClarificationPayload(null);
+                }
                 String summary = learningPlanDraftId != null && !learningPlanDraftId.isBlank()
                         ? "学习计划草稿已生成，等待用户审阅确认。draftId=" + learningPlanDraftId
                         : "学习计划草稿已生成，等待用户审阅确认。";
@@ -1297,6 +1298,16 @@ public class PlanAndExecuteEngine {
                 log.info("[PlanAndExecute] 学习计划草稿已产出，跳过步骤验证: taskId={}, learningDraftId={}",
                         task.getStepId(), learningPlanDraftId);
                 return true;
+            }
+
+            // askUser 工具被调用：LLM 需要向用户澄清信息。
+            // 注意：必须放在 learningPlanAwaitingConfirmation 之后，避免 createLearningPlan
+            // 已生成确认卡片后，模型又用 askUser 追加一次“是否确认创建”的重复确认。
+            if (context.getClarificationPayload() != null) {
+                log.info("[PlanAndExecute] askUser 工具触发澄清门: taskId={}, slotKey={}",
+                        task.getStepId(), context.getClarificationPayload().get("slotKey"));
+                handleAskUserClarification(task, plan, context, emitter, draftId);
+                return false;
             }
 
             // 验证结果质量
