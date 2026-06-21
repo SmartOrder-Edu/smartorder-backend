@@ -29,6 +29,21 @@ public interface AgentPlanDraftMapper extends BaseMapper<AgentPlanDraft> {
     AgentPlanDraft selectActiveExecutionPlanDraft(@Param("conversationId") String conversationId);
 
     /**
+     * 查询指定会话最新的 EXECUTION_PLAN 草稿，包含完成态。
+     * 用于历史会话恢复会话级规划快照。
+     */
+    @Select("SELECT * FROM agent_plan_draft WHERE conversation_id = #{conversationId} " +
+            "AND plan_type = 'EXECUTION_PLAN' ORDER BY create_time DESC LIMIT 1")
+    AgentPlanDraft selectLatestExecutionPlanDraft(@Param("conversationId") String conversationId);
+
+    /**
+     * 查询指定会话最新的 LEARNING_PLAN 草稿，包含待确认和已确认态。
+     */
+    @Select("SELECT * FROM agent_plan_draft WHERE conversation_id = #{conversationId} " +
+            "AND plan_type = 'LEARNING_PLAN' ORDER BY create_time DESC LIMIT 1")
+    AgentPlanDraft selectLatestLearningPlanDraft(@Param("conversationId") String conversationId);
+
+    /**
      * 原子化标记草稿为已确认并绑定 spaceId。仅当当前 status='PENDING' 时才更新成功。
      * @return 受影响行数；0 表示并发抢先（应触发事务回滚）
      */

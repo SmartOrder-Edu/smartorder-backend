@@ -11,8 +11,12 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -218,7 +222,24 @@ public class PromptLoader {
         String result = raw;
         result = result.replace("{available_tools_list}", toolNames);
         result = result.replace("{available_tools_with_desc}", toolsWithDesc.toString().stripTrailing());
+        result = injectCurrentTime(result);
         return result;
+    }
+
+    /**
+     * 将提示词中的 {current_time} 占位符替换为当前时间（上海时区，中文格式）。
+     * 在每次请求时调用，确保时间是实时刷新的。
+     *
+     * @param prompt 可能含有 {current_time} 占位符的提示词文本
+     * @return 替换后的文本；若不包含占位符则原样返回
+     */
+    public String injectCurrentTime(String prompt) {
+        if (prompt == null || !prompt.contains("{current_time}")) {
+            return prompt;
+        }
+        String currentTime = ZonedDateTime.now(ZoneId.of("Asia/Shanghai"))
+                .format(DateTimeFormatter.ofPattern("yyyy年MM月dd日 HH:mm:ss (EEEE)", Locale.CHINESE));
+        return prompt.replace("{current_time}", currentTime);
     }
 
     /**
