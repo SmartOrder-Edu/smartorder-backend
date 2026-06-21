@@ -468,7 +468,8 @@ public class AgentPlanController {
         }
 
         PlanningSnapshotVO.LearningPlanDraftVO learningPlanDraftVO = null;
-        if (learningDraft != null && "PENDING".equals(learningDraft.getStatus())) {
+        if (learningDraft != null
+                && ("PENDING".equals(learningDraft.getStatus()) || spaceCreated != null)) {
             learningPlanDraftVO = toLearningPlanDraftVO(learningDraft);
         }
 
