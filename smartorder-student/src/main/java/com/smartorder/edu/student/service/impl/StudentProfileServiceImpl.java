@@ -23,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -558,6 +559,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         }
         log.info("保存学生画像: userId={}, id={}, version={}",
                 profile.getUserId(), profile.getId(), profile.getProfileVersion());
+        Proxy.newProxyInstance()
     }
 
     /** 校验用户ID有效性 */
