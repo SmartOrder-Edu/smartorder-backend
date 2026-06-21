@@ -490,6 +490,24 @@ public class AgentPlanController {
     }
 
     /**
+     * 获取指定学习空间对应的已确认学习计划草稿。
+     * <p>
+     * 学习空间详情页用它展示用户最初与 Agent 对话确认的完整规划，而不只展示物化后的路径节点。
+     */
+    @GetMapping("/learning-plans/by-space/{spaceId}")
+    @Operation(summary = "按学习空间查询已确认学习计划",
+               description = "返回创建该学习空间时确认的 LEARNING_PLAN 草稿，用于学习空间内展示原始 Agent 规划。")
+    public Result<PlanningSnapshotVO.LearningPlanDraftVO> getLearningPlanBySpace(
+            @PathVariable Long spaceId) {
+        Long userId = getCurrentUserId();
+        AgentPlanDraft draft = draftMapper.selectConfirmedLearningPlanDraftBySpaceId(userId, spaceId);
+        if (draft == null) {
+            return Result.success(null);
+        }
+        return Result.success(toLearningPlanDraftVO(draft));
+    }
+
+    /**
      * 获取 Run 的标准化 Timeline——用于前端历史回放，不再逐条拉 trace
      */
     @GetMapping("/runs/{runId}/timeline")
