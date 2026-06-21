@@ -1,5 +1,8 @@
 package com.smartorder.edu.agent.controller;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import com.smartorder.edu.agent.clarification.ClarificationService;
 import com.smartorder.edu.agent.mapper.AgentPlanDraftMapper;
 import com.smartorder.edu.agent.mapper.AgentTraceEventMapper;
@@ -10,6 +13,7 @@ import com.smartorder.edu.agent.model.entity.AgentClarification;
 import com.smartorder.edu.agent.model.entity.AgentPlanDraft;
 import com.smartorder.edu.agent.model.entity.AgentTraceEvent;
 import com.smartorder.edu.agent.model.vo.ActiveRunVO;
+import com.smartorder.edu.agent.model.vo.PlanningSnapshotVO;
 import com.smartorder.edu.agent.model.vo.TimelineEventVO;
 import com.smartorder.edu.agent.model.entity.AgentRunState;
 import com.smartorder.edu.agent.orchestrator.PlanAndExecuteEngine;
@@ -423,6 +427,68 @@ public class AgentPlanController {
     }
 
     /**
+     * 获取会话级目标规划快照。
+     * <p>
+     * 与 active-run 不同，该接口会返回最新 EXECUTION_PLAN 的终态快照，
+     * 以及最新 LEARNING_PLAN 草稿/已创建学习空间信息，供前端渲染唯一执行面板和历史恢复。
+     */
+    @GetMapping("/conversations/{conversationId}/planning-snapshot")
+    @Operation(summary = "获取会话目标规划快照",
+               description = "返回会话最新执行计划、暂停信息、待确认学习计划草稿和已创建学习空间信息。")
+    public Result<PlanningSnapshotVO> getPlanningSnapshot(@PathVariable String conversationId) {
+        Long userId = getCurrentUserId();
+        AgentPlanDraft executionDraft = draftMapper.selectLatestExecutionPlanDraft(conversationId);
+        AgentPlanDraft learningDraft = draftMapper.selectLatestLearningPlanDraft(conversationId);
+        ActiveRunVO.SpaceCreatedVO spaceCreated = findSpaceCreatedForConversation(conversationId);
+
+        if (executionDraft == null && learningDraft == null && spaceCreated == null) {
+            return Result.success(null);
+        }
+
+        ExecutionPlan plan = null;
+        if (executionDraft != null && executionDraft.getExecutionPlanJson() != null) {
+            try {
+                plan = JSON.parseObject(executionDraft.getExecutionPlanJson(), ExecutionPlan.class);
+            } catch (Exception e) {
+                log.warn("[PlanningSnapshot] 反序列化 ExecutionPlan 失败: draftId={}",
+                        executionDraft.getDraftId(), e);
+            }
+        }
+
+        AgentRunState runState = executionDraft != null
+                ? runStateService.getByDraftId(executionDraft.getDraftId())
+                : null;
+        String status = resolveSnapshotStatus(plan, runState, executionDraft, spaceCreated);
+
+        ActiveRunVO.TaskListVO taskListVO = null;
+        ActiveRunVO.PauseInfoVO pauseInfoVO = null;
+        if (plan != null) {
+            taskListVO = buildTaskListVO(plan, status);
+            pauseInfoVO = buildPauseInfoVO(status, plan, executionDraft.getDraftId());
+        }
+
+        PlanningSnapshotVO.LearningPlanDraftVO learningPlanDraftVO = null;
+        if (learningDraft != null && "PENDING".equals(learningDraft.getStatus())) {
+            learningPlanDraftVO = toLearningPlanDraftVO(learningDraft);
+        }
+
+        PlanningSnapshotVO vo = PlanningSnapshotVO.builder()
+                .conversationId(conversationId)
+                .runId(runState != null ? runState.getRunId() : null)
+                .executionDraftId(executionDraft != null ? executionDraft.getDraftId() : null)
+                .learningPlanDraftId(learningDraft != null ? learningDraft.getDraftId() : null)
+                .planType("EXECUTION_PLAN")
+                .status(status)
+                .taskList(taskListVO)
+                .pauseInfo(pauseInfoVO)
+                .learningPlanDraft(learningPlanDraftVO)
+                .spaceCreated(spaceCreated)
+                .build();
+
+        return Result.success(vo);
+    }
+
+    /**
      * 获取 Run 的标准化 Timeline——用于前端历史回放，不再逐条拉 trace
      */
     @GetMapping("/runs/{runId}/timeline")
@@ -504,6 +570,185 @@ public class AgentPlanController {
             case "agent.trace.completed" -> "RUN_COMPLETED";
             default -> eventType;
         };
+    }
+
+    private String resolveSnapshotStatus(ExecutionPlan plan, AgentRunState runState,
+                                         AgentPlanDraft executionDraft,
+                                         ActiveRunVO.SpaceCreatedVO spaceCreated) {
+        if (runState != null && runState.getStatus() != null) {
+            return runState.getStatus();
+        }
+        if (plan != null && plan.getStatus() != null) {
+            return plan.getStatus();
+        }
+        if (spaceCreated != null) {
+            return "COMPLETED";
+        }
+        if (executionDraft != null && "CONFIRMED".equals(executionDraft.getStatus())) {
+            return "COMPLETED";
+        }
+        return "EXECUTING";
+    }
+
+    private ActiveRunVO.TaskListVO buildTaskListVO(ExecutionPlan plan, String status) {
+        ActiveRunVO.TaskListVO taskListVO = ActiveRunVO.TaskListVO.builder()
+                .userGoal(plan.getUserGoal())
+                .planId(plan.getPlanId())
+                .status(status)
+                .currentTaskIndex(plan.getCurrentStepIndex())
+                .taskOutputs(plan.getStepOutputs())
+                .createdAt(plan.getCreatedAt())
+                .clarificationQuestion(plan.getClarificationQuestion())
+                .confirmationDraftId(plan.getConfirmationDraftId())
+                .build();
+
+        if (plan.getSteps() != null) {
+            taskListVO.setTasks(plan.getSteps().stream()
+                    .map(this::toTaskItemVO)
+                    .toList());
+        }
+        return taskListVO;
+    }
+
+    private ActiveRunVO.PauseInfoVO buildPauseInfoVO(String planStatus, ExecutionPlan plan, String draftId) {
+        if (!"PAUSED_CLARIFICATION".equals(planStatus) && !"PAUSED_CONFIRMATION".equals(planStatus)) {
+            return null;
+        }
+
+        int pausedIndex = plan.getCurrentStepIndex();
+        String pausedTaskId = plan.getSteps() != null && pausedIndex < plan.getSteps().size()
+                ? plan.getSteps().get(pausedIndex).getStepId()
+                : null;
+
+        if ("PAUSED_CONFIRMATION".equals(planStatus)) {
+            return ActiveRunVO.PauseInfoVO.builder()
+                    .reason("CONFIRMATION")
+                    .taskId(pausedTaskId)
+                    .question(null)
+                    .build();
+        }
+
+        AgentClarification nextPending = clarificationService.getClarificationsForDraft(draftId).stream()
+                .filter(c -> "PENDING".equals(c.getStatus()))
+                .sorted((a, b) -> Integer.compare(a.getSlotPriority(), b.getSlotPriority()))
+                .findFirst()
+                .orElse(null);
+
+        ActiveRunVO.ClarificationInfoVO clarInfo = null;
+        if (nextPending != null) {
+            clarInfo = ActiveRunVO.ClarificationInfoVO.builder()
+                    .clarificationId(nextPending.getClarificationId())
+                    .slotKey(nextPending.getSlotKey())
+                    .question(nextPending.getQuestion())
+                    .answerType(nextPending.getAnswerType())
+                    .slotPriority(nextPending.getSlotPriority())
+                    .build();
+            if (nextPending.getOptionsJson() != null) {
+                try {
+                    List<Map> opts = JSON.parseArray(nextPending.getOptionsJson(), Map.class);
+                    clarInfo.setOptions(opts.stream().map(m -> Map.of(
+                            "label", String.valueOf(m.getOrDefault("label", "")),
+                            "value", String.valueOf(m.getOrDefault("value", ""))
+                    )).toList());
+                } catch (Exception ignored) {
+                    // options 解析失败时保留文本题形态
+                }
+            }
+        }
+
+        return ActiveRunVO.PauseInfoVO.builder()
+                .reason("CLARIFICATION")
+                .taskId(pausedTaskId)
+                .question(plan.getClarificationQuestion())
+                .clarification(clarInfo)
+                .build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private PlanningSnapshotVO.LearningPlanDraftVO toLearningPlanDraftVO(AgentPlanDraft draft) {
+        if (draft == null || draft.getPlanJson() == null) {
+            return null;
+        }
+        JSONObject planJson = JSON.parseObject(draft.getPlanJson());
+        return PlanningSnapshotVO.LearningPlanDraftVO.builder()
+                .draftId(draft.getDraftId())
+                .spaceName(planJson.getString("spaceName"))
+                .type(planJson.getString("type"))
+                .description(planJson.getString("description"))
+                .goals(toStringList(planJson.get("goals")))
+                .startDate(planJson.getString("startDate"))
+                .targetEndDate(planJson.getString("targetEndDate"))
+                .phases(toMapList(planJson.get("phases")))
+                .knowledgeGraph(toMap(planJson.get("knowledgeGraph")))
+                .build();
+    }
+
+    private List<String> toStringList(Object value) {
+        if (value == null) return List.of();
+        if (value instanceof JSONArray array) {
+            return array.stream().map(String::valueOf).toList();
+        }
+        if (value instanceof List<?> list) {
+            return list.stream().map(String::valueOf).toList();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return JSON.parseArray(text, String.class);
+            } catch (Exception ignored) {
+                return List.of(text);
+            }
+        }
+        return List.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> toMapList(Object value) {
+        if (value == null) return List.of();
+        if (value instanceof JSONArray || value instanceof List<?>) {
+            List<Map> rawList = JSON.parseArray(JSON.toJSONString(value), Map.class);
+            return rawList.stream()
+                    .map(this::copyRawMap)
+                    .toList();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                List<Map> rawList = JSON.parseArray(text, Map.class);
+                return rawList.stream()
+                        .map(this::copyRawMap)
+                        .toList();
+            } catch (Exception ignored) {
+                return List.of();
+            }
+        }
+        return List.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> copyRawMap(Map raw) {
+        return new LinkedHashMap<>((Map<String, Object>) raw);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> toMap(Object value) {
+        if (value == null) return emptyKnowledgeGraph();
+        if (value instanceof JSONObject || value instanceof Map<?, ?>) {
+            return new LinkedHashMap<>((Map<String, Object>) JSON.parseObject(JSON.toJSONString(value), Map.class));
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return new LinkedHashMap<>((Map<String, Object>) JSON.parseObject(text, Map.class));
+            } catch (Exception ignored) {
+                return emptyKnowledgeGraph();
+            }
+        }
+        return emptyKnowledgeGraph();
+    }
+
+    private Map<String, Object> emptyKnowledgeGraph() {
+        Map<String, Object> graph = new LinkedHashMap<>();
+        graph.put("nodes", List.of());
+        graph.put("edges", List.of());
+        return graph;
     }
 
     private ActiveRunVO.TaskItemVO toTaskItemVO(ExecutionStep step) {
