@@ -43,7 +43,7 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
                 emitter.send(SseEmitter.event()
                         .name(eventType.getEventName())
                         .data(JSON.toJSONString(event)));
-            } catch (IOException e) {
+            } catch (IOException | IllegalStateException e) {
                 log.warn("[TraceDispatcher] SSE 发送失败: traceId={}, event={}", context.getTraceId(), eventType.getEventName());
                 context.setClientDisconnected(true);
             }
@@ -58,8 +58,9 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
     @Override
     public void complete(SseEmitter emitter, AgentRuntimeContext context) {
         // 推送 TRACE_COMPLETED
-        emit(emitter, context, AgentEventType.TRACE_COMPLETED,
-                Map.of("conversationId", context.getConversationId()));
+        Map<String, Object> traceCompletedPayload = new LinkedHashMap<>();
+        traceCompletedPayload.put("conversationId", context.getConversationId());
+        emit(emitter, context, AgentEventType.TRACE_COMPLETED, traceCompletedPayload);
 
         if (emitter == null) return;
 
@@ -77,10 +78,13 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
             if (context.getActiveClarificationId() != null) {
                 donePayload.put("activeClarificationId", context.getActiveClarificationId());
             }
+            if (context.getClarificationPayload() != null) {
+                donePayload.put("clarificationPayload", context.getClarificationPayload());
+            }
             emitter.send(SseEmitter.event()
                     .name(AgentEventType.DONE.getEventName())
                     .data(JSON.toJSONString(donePayload)));
-        } catch (IOException e) {
+        } catch (IOException | IllegalStateException e) {
             log.warn("[TraceDispatcher] done 事件发送失败: traceId={}", context.getTraceId());
         }
 
@@ -99,16 +103,16 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
         if (emitter == null) return;
 
         try {
+            Map<String, Object> donePayload = new LinkedHashMap<>();
+            donePayload.put("conversationId", context.getConversationId());
+            donePayload.put("traceId", context.getTraceId());
+            donePayload.put("error", errorMsg);
             emitter.send(SseEmitter.event()
                     .name(AgentEventType.DONE.getEventName())
-                    .data(JSON.toJSONString(Map.of(
-                            "conversationId", context.getConversationId(),
-                            "traceId", context.getTraceId(),
-                            "error", errorMsg
-                    ))));
-        } catch (IOException ex) {
+                    .data(JSON.toJSONString(donePayload)));
+        } catch (IOException | IllegalStateException ex) {
             log.warn("[TraceDispatcher] error done 发送失败");
         }
-        emitter.completeWithError(e);
+        emitter.complete();
     }
 }

@@ -26,6 +26,8 @@ public enum AgentEventType {
     PLAN_CONFIRMED("agent.plan.confirmed", "规划已确认", true),
     LEARNING_PLAN_CREATED("agent.learning_plan.created", "学习计划草稿已创建", true),
 
+    MINDMAP_CREATED("agent.mindmap.created", "思维导图已生成", true),
+
     PHASE_CHANGE("agent.phase.change", "阶段切换", true),
     STATUS("agent.status", "状态提示", true),
 

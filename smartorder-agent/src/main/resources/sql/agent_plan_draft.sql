@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS `agent_plan_draft` (
     `plan_type`            VARCHAR(20)   DEFAULT 'LEARNING_PLAN'  COMMENT 'EXECUTION_PLAN（Agent执行规划）| LEARNING_PLAN（学习计划草稿）',
     `resume_step_index`    INT           DEFAULT 0                COMMENT '断点恢复：当前执行到的步骤索引',
     `status`               VARCHAR(20)   NOT NULL DEFAULT 'PENDING' COMMENT '状态：PENDING待确认、CONFIRMED已确认、CANCELLED已取消、EXPIRED已过期',
+    `created_space_id`     BIGINT        DEFAULT NULL             COMMENT 'LEARNING_PLAN 确认后创建的学习空间ID',
+    `confirmed_at`         DATETIME      DEFAULT NULL             COMMENT '草稿确认时间',
     `expire_time`          DATETIME      DEFAULT NULL             COMMENT '过期时间',
     `create_time`          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time`          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
