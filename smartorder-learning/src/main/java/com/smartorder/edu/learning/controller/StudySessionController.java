@@ -1,0 +1,59 @@
+package com.smartorder.edu.learning.controller;
+
+import com.smartorder.edu.common.model.vo.Result;
+import com.smartorder.edu.common.util.ThreadLocalUtils;
+import com.smartorder.edu.learning.domain.vo.StudyEventReceiptVO;
+import com.smartorder.edu.learning.domain.vo.StudySessionVO;
+import com.smartorder.edu.learning.dto.StudyEventDTO;
+import com.smartorder.edu.learning.dto.StudySessionStartDTO;
+import com.smartorder.edu.learning.service.IStudySessionService;
+import io.jsonwebtoken.Claims;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@Slf4j
+@RequiredArgsConstructor
+@RestController
+@RequestMapping("/study-sessions")
+@Tag(name = "学习会话", description = "Agent 驱动学习会话接口")
+public class StudySessionController {
+
+    private final IStudySessionService studySessionService;
+
+    @PostMapping
+    @Operation(summary = "创建或启动学习会话", description = "返回脚本步骤、当前场景和可播放 Timeline")
+    public Result<StudySessionVO> start(@RequestBody StudySessionStartDTO dto) {
+        Long userId = getCurrentUserId();
+        return Result.success(studySessionService.startSession(userId, dto));
+    }
+
+    @GetMapping("/{sessionId}")
+    @Operation(summary = "获取学习会话状态", description = "返回指定学习会话的当前状态和备课包数据")
+    public Result<StudySessionVO> detail(@PathVariable String sessionId) {
+        Long userId = getCurrentUserId();
+        return Result.success(studySessionService.getSession(userId, sessionId));
+    }
+
+    @PostMapping("/{sessionId}/events")
+    @Operation(summary = "上报学习事件", description = "记录学生在学习会话中的播放、答题、反馈和步骤行为")
+    public Result<StudyEventReceiptVO> reportEvent(
+            @PathVariable String sessionId,
+            @RequestBody StudyEventDTO dto
+    ) {
+        Long userId = getCurrentUserId();
+        return Result.success(studySessionService.recordEvent(userId, sessionId, dto));
+    }
+
+    private Long getCurrentUserId() {
+        Claims claims = ThreadLocalUtils.get();
+        return claims.get("userId", Long.class);
+    }
+}
