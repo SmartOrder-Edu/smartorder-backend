@@ -1,5 +1,11 @@
 package com.smartorder.edu.learning.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.smartorder.edu.learning.domain.entity.StudyEvent;
+import com.smartorder.edu.learning.domain.entity.StudySession;
+import com.smartorder.edu.learning.domain.entity.StudyTeachingAction;
 import com.smartorder.edu.learning.domain.vo.StudyMasteryVO;
 import com.smartorder.edu.learning.domain.vo.StudyEventReceiptVO;
 import com.smartorder.edu.learning.domain.vo.StudySceneVO;
@@ -10,10 +16,15 @@ import com.smartorder.edu.learning.domain.vo.StudyTimelineCueVO;
 import com.smartorder.edu.learning.domain.vo.StudyTimelineVO;
 import com.smartorder.edu.learning.dto.StudyEventDTO;
 import com.smartorder.edu.learning.dto.StudySessionStartDTO;
+import com.smartorder.edu.learning.mapper.StudyEventMapper;
+import com.smartorder.edu.learning.mapper.StudySessionMapper;
+import com.smartorder.edu.learning.mapper.StudyTeachingActionMapper;
 import com.smartorder.edu.learning.service.IStudySessionService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -22,9 +33,15 @@ import java.util.UUID;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class StudySessionServiceImpl implements IStudySessionService {
 
     private static final long DEFAULT_SEGMENT_MS = 3500L;
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+
+    private final StudySessionMapper studySessionMapper;
+    private final StudyEventMapper studyEventMapper;
+    private final StudyTeachingActionMapper studyTeachingActionMapper;
 
     @Override
     public StudySessionVO startSession(Long userId, StudySessionStartDTO dto) {
@@ -33,6 +50,7 @@ public class StudySessionServiceImpl implements IStudySessionService {
         String mode = normalizeMode(dto.getMode());
 
         StudySessionVO session = buildMockSession(userId, taskId, spaceId, mode);
+        persistSession(session, dto);
         log.info("[StudySession] mock session started: userId={}, taskId={}, sessionId={}",
                 userId, taskId, session.getSessionId());
         return session;
@@ -69,7 +87,88 @@ public class StudySessionServiceImpl implements IStudySessionService {
         receipt.setStatus("accepted");
         receipt.setAcceptedAtMs(acceptedAtMs);
         receipt.setActions(buildTeachingActions(dto));
+        persistEvent(userId, sessionId, dto, receipt);
         return receipt;
+    }
+
+    private void persistSession(StudySessionVO session, StudySessionStartDTO dto) {
+        try {
+            StudySession entity = new StudySession();
+            entity.setSessionId(session.getSessionId());
+            entity.setLessonBundleId(session.getLessonBundleId());
+            entity.setUserId(session.getUserId());
+            entity.setTaskId(session.getTaskId());
+            entity.setSpaceId(session.getSpaceId());
+            entity.setMode(session.getMode());
+            entity.setStatus(session.getStatus());
+            entity.setCurrentStepId(session.getCurrentStepId());
+            entity.setScriptSnapshot(toJson(session.getScriptSteps()));
+            entity.setCurrentSceneSnapshot(toJson(session.getCurrentScene()));
+            entity.setCurrentTimelineSnapshot(toJson(session.getCurrentTimeline()));
+            entity.setMasterySnapshot(toJson(session.getMastery()));
+            entity.setMetadata(toJson(new LinkedHashMap<>(Map.of(
+                    "entrySource", normalizeId(dto.getEntrySource(), "unknown"),
+                    "requestedStepId", normalizeId(dto.getStepId(), "")
+            ))));
+            entity.setStartedAt(LocalDateTime.now());
+            entity.setIsDeleted(0);
+
+            StudySession existed = studySessionMapper.selectOne(new QueryWrapper<StudySession>()
+                    .eq("session_id", session.getSessionId())
+                    .eq("is_deleted", 0)
+                    .last("LIMIT 1"));
+            if (existed == null) {
+                studySessionMapper.insert(entity);
+            } else {
+                entity.setId(existed.getId());
+                studySessionMapper.updateById(entity);
+            }
+        } catch (Exception e) {
+            log.warn("[StudySession] persist skipped: sessionId={}, reason={}",
+                    session.getSessionId(), e.getMessage());
+        }
+    }
+
+    private void persistEvent(Long userId, String sessionId, StudyEventDTO dto, StudyEventReceiptVO receipt) {
+        try {
+            StudyEvent event = new StudyEvent();
+            event.setEventId(receipt.getEventId());
+            event.setSessionId(sessionId);
+            event.setUserId(userId);
+            event.setEventType(receipt.getEventType());
+            event.setTargetType(dto.getTargetType());
+            event.setTargetId(dto.getTargetId());
+            event.setCurrentStepId(dto.getCurrentStepId());
+            event.setCurrentTimelineId(dto.getCurrentTimelineId());
+            event.setTimelineTimeMs(dto.getTimelineTimeMs());
+            event.setClientTimeMs(dto.getClientTimeMs());
+            event.setPayload(toJson(dto.getPayload()));
+            event.setStatus(receipt.getStatus());
+            event.setAcceptedAt(LocalDateTime.now());
+            event.setIsDeleted(0);
+            studyEventMapper.insert(event);
+            persistActions(userId, sessionId, receipt);
+        } catch (Exception e) {
+            log.warn("[StudyEvent] persist skipped: eventId={}, sessionId={}, reason={}",
+                    receipt.getEventId(), sessionId, e.getMessage());
+        }
+    }
+
+    private void persistActions(Long userId, String sessionId, StudyEventReceiptVO receipt) {
+        for (StudyTeachingActionVO action : receipt.getActions()) {
+            StudyTeachingAction entity = new StudyTeachingAction();
+            entity.setActionId(action.getActionId());
+            entity.setEventId(receipt.getEventId());
+            entity.setSessionId(sessionId);
+            entity.setUserId(userId);
+            entity.setActionType(action.getActionType());
+            entity.setSceneType(action.getSceneType());
+            entity.setReason(action.getReason());
+            entity.setPayload(toJson(action.getPayload()));
+            entity.setStatus("pending");
+            entity.setIsDeleted(0);
+            studyTeachingActionMapper.insert(entity);
+        }
     }
 
     private List<StudyTeachingActionVO> buildTeachingActions(StudyEventDTO dto) {
@@ -145,6 +244,18 @@ public class StudySessionServiceImpl implements IStudySessionService {
             return fallback;
         }
         return String.valueOf(value);
+    }
+
+    private String toJson(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException e) {
+            log.warn("[StudySession] json serialize failed: {}", e.getMessage());
+            return null;
+        }
     }
 
     private StudySessionVO buildMockSession(Long userId, String taskId, String spaceId, String mode) {

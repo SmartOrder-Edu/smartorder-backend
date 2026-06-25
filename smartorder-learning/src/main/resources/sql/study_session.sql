@@ -1,0 +1,27 @@
+-- 学习会话表
+CREATE TABLE IF NOT EXISTS `study_session` (
+    `id`                        BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `session_id`                VARCHAR(80)  NOT NULL                COMMENT '会话业务ID',
+    `lesson_bundle_id`          VARCHAR(80)  DEFAULT NULL            COMMENT '课程包/脚本包ID',
+    `user_id`                   BIGINT       NOT NULL                COMMENT '用户ID',
+    `task_id`                   VARCHAR(80)  NOT NULL                COMMENT '任务ID，兼容 mock 与真实任务',
+    `space_id`                  VARCHAR(80)  DEFAULT NULL            COMMENT '学习空间ID，兼容 mock 与真实空间',
+    `mode`                      VARCHAR(30)  NOT NULL DEFAULT 'learn' COMMENT '学习模式：learn/assessment/breakthrough',
+    `status`                    VARCHAR(30)  NOT NULL DEFAULT 'active' COMMENT '状态：active/completed/cancelled/expired',
+    `current_step_id`           VARCHAR(120) DEFAULT NULL            COMMENT '当前脚本步骤ID',
+    `script_snapshot`           JSON         DEFAULT NULL            COMMENT '脚本步骤快照',
+    `current_scene_snapshot`    JSON         DEFAULT NULL            COMMENT '当前场景快照',
+    `current_timeline_snapshot` JSON         DEFAULT NULL            COMMENT '当前时间轴快照',
+    `mastery_snapshot`          JSON         DEFAULT NULL            COMMENT '掌握度快照',
+    `metadata`                  JSON         DEFAULT NULL            COMMENT '扩展元数据',
+    `started_at`                DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '开始时间',
+    `ended_at`                  DATETIME     DEFAULT NULL            COMMENT '结束时间',
+    `is_deleted`                TINYINT      NOT NULL DEFAULT 0      COMMENT '逻辑删除',
+    `create_time`               DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`               DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_session_id` (`session_id`),
+    KEY `idx_user_id_status` (`user_id`, `status`),
+    KEY `idx_task_id` (`task_id`),
+    KEY `idx_space_id` (`space_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='学习会话表';

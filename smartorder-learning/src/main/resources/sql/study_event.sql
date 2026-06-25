@@ -1,0 +1,25 @@
+-- 学习事件表
+CREATE TABLE IF NOT EXISTS `study_event` (
+    `id`                  BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `event_id`            VARCHAR(80)  NOT NULL                COMMENT '事件业务ID',
+    `session_id`          VARCHAR(80)  NOT NULL                COMMENT '会话业务ID',
+    `user_id`             BIGINT       NOT NULL                COMMENT '用户ID',
+    `event_type`          VARCHAR(60)  NOT NULL                COMMENT '事件类型',
+    `target_type`         VARCHAR(60)  DEFAULT NULL            COMMENT '事件目标类型',
+    `target_id`           VARCHAR(120) DEFAULT NULL            COMMENT '事件目标ID',
+    `current_step_id`     VARCHAR(120) DEFAULT NULL            COMMENT '当前步骤ID',
+    `current_timeline_id` VARCHAR(120) DEFAULT NULL            COMMENT '当前时间轴ID',
+    `timeline_time_ms`    BIGINT       DEFAULT NULL            COMMENT '时间轴播放位置',
+    `client_time_ms`      BIGINT       DEFAULT NULL            COMMENT '客户端时间戳',
+    `payload`             JSON         DEFAULT NULL            COMMENT '事件扩展载荷',
+    `status`              VARCHAR(30)  NOT NULL DEFAULT 'accepted' COMMENT '处理状态',
+    `accepted_at`         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '服务端接收时间',
+    `is_deleted`          TINYINT      NOT NULL DEFAULT 0      COMMENT '逻辑删除',
+    `create_time`         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_event_id` (`event_id`),
+    KEY `idx_session_id_create_time` (`session_id`, `create_time`),
+    KEY `idx_user_id_event_type` (`user_id`, `event_type`),
+    KEY `idx_current_step_id` (`current_step_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='学习事件表';
