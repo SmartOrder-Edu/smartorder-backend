@@ -21,7 +21,7 @@ public class LessonScriptBuilder {
 
     public StudySessionVO build(LessonScriptContext context) {
         String templateCode = resolveTemplateCode(context);
-        List<StudyScriptStepVO> nodes = buildNodes(context.getTaskId(), templateCode);
+        List<StudyScriptStepVO> nodes = buildNodes(context, templateCode);
         int currentIndex = resolveStartIndex(nodes, context.getRequestedStepId());
         nodes.get(currentIndex).setStatus("in_progress");
 
@@ -48,54 +48,89 @@ public class LessonScriptBuilder {
     }
 
     private String resolveTemplateCode(LessonScriptContext context) {
-        return switch (context.getMode()) {
-            case "assessment" -> "math_diagnostic_v1";
-            case "breakthrough" -> "math_breakthrough_v1";
-            default -> "math_concept_default_v1";
-        };
+        if ("breakthrough".equals(context.getMode())) {
+            return "math_breakthrough_v1";
+        }
+        if ("assessment".equals(context.getMode()) || "exam".equals(context.getTaskType())) {
+            return "math_diagnostic_v1";
+        }
+        if ("review".equals(context.getTaskType())) {
+            return "adaptive_review_v1";
+        }
+        if ("practice".equals(context.getTaskType()) || "practice".equals(context.getPathNodeType())) {
+            return "guided_practice_v1";
+        }
+        return "math_concept_default_v1";
     }
 
-    private List<StudyScriptStepVO> buildNodes(String taskId, String templateCode) {
+    private List<StudyScriptStepVO> buildNodes(LessonScriptContext context, String templateCode) {
         return switch (templateCode) {
-            case "math_diagnostic_v1" -> diagnosticNodes(taskId, templateCode);
-            case "math_breakthrough_v1" -> breakthroughNodes(taskId, templateCode);
-            default -> defaultConceptNodes(taskId, templateCode);
+            case "math_diagnostic_v1" -> diagnosticNodes(context, templateCode);
+            case "math_breakthrough_v1" -> breakthroughNodes(context, templateCode);
+            case "adaptive_review_v1" -> reviewNodes(context, templateCode);
+            case "guided_practice_v1" -> practiceNodes(context, templateCode);
+            default -> defaultConceptNodes(context, templateCode);
         };
     }
 
-    private List<StudyScriptStepVO> defaultConceptNodes(String taskId, String templateCode) {
+    private List<StudyScriptStepVO> defaultConceptNodes(LessonScriptContext context, String templateCode) {
+        String taskId = context.getTaskId();
+        String topic = topic(context);
+        String description = shortDescription(context, "极限定义 · 函数可导性");
         List<StudyScriptStepVO> nodes = new ArrayList<>();
-        nodes.add(node(taskId, "s1", "review", "concept_review", "回顾前置概念", "极限定义 · 函数可导性", 8, "concept", 1, templateCode));
-        nodes.add(node(taskId, "s2", "example", "worked_example", "看一个动态例子", "0/0 型不定式如何化简", 10, "example", 2, templateCode));
-        nodes.add(node(taskId, "s3", "practice", "guided_practice", "跟做一道题", "sin x / x 求极限", 10, "practice", 3, templateCode));
-        nodes.add(node(taskId, "s4", "assessment", "diagnostic_quiz", "系统判断掌握情况", "一道易错题检验", 8, "assessment", 4, templateCode));
-        nodes.add(node(taskId, "s5", "advanced", "extension", "进入提高题 / 补基础", "根据掌握情况自适应", 12, "derivation", 5, templateCode));
-        nodes.add(node(taskId, "s6", "summary", "summary", "本次总结与画像更新", "Agent 整理本次学习记录", 5, "summary", 6, templateCode));
+        nodes.add(node(context, "s1", "review", "concept_review", "回顾：" + topic, description, duration(context, 8), "concept", 1, templateCode));
+        nodes.add(node(context, "s2", "example", "worked_example", "例题演示：" + topic, "用一个动态例子拆解核心方法", 10, "example", 2, templateCode));
+        nodes.add(node(context, "s3", "practice", "guided_practice", "跟做：" + topic, "边做边判断关键步骤", 10, "practice", 3, templateCode));
+        nodes.add(node(context, "s4", "assessment", "diagnostic_quiz", "诊断：" + topic, "用一道易错题判断掌握情况", 8, "assessment", 4, templateCode));
+        nodes.add(node(context, "s5", "advanced", "extension", "拓展：" + topic, "根据掌握情况进入提高或补基础", 12, "derivation", 5, templateCode));
+        nodes.add(node(context, "s6", "summary", "summary", "总结：" + topic, "Agent 整理本次学习记录", 5, "summary", 6, templateCode));
         return nodes;
     }
 
-    private List<StudyScriptStepVO> diagnosticNodes(String taskId, String templateCode) {
+    private List<StudyScriptStepVO> diagnosticNodes(LessonScriptContext context, String templateCode) {
+        String topic = topic(context);
         List<StudyScriptStepVO> nodes = new ArrayList<>();
-        nodes.add(node(taskId, "d1", "diagnostic", "diagnostic_quiz", "先做掌握诊断", "用一道易错题判断是否需要讲解", 6, "assessment", 1, templateCode));
-        nodes.add(node(taskId, "d2", "targeted_review", "targeted_review", "只补薄弱点", "围绕适用条件做最短讲解", 8, "concept", 2, templateCode));
-        nodes.add(node(taskId, "d3", "summary", "summary", "诊断结果与下一步", "更新画像并给出学习建议", 4, "summary", 3, templateCode));
+        nodes.add(node(context, "d1", "diagnostic", "diagnostic_quiz", "诊断：" + topic, "先判断是否需要完整讲解", 6, "assessment", 1, templateCode));
+        nodes.add(node(context, "d2", "targeted_review", "targeted_review", "定向补弱：" + topic, "只讲诊断暴露出的薄弱点", 8, "concept", 2, templateCode));
+        nodes.add(node(context, "d3", "summary", "summary", "诊断结果与下一步", "更新画像并给出学习建议", 4, "summary", 3, templateCode));
         return nodes;
     }
 
-    private List<StudyScriptStepVO> breakthroughNodes(String taskId, String templateCode) {
+    private List<StudyScriptStepVO> breakthroughNodes(LessonScriptContext context, String templateCode) {
+        String topic = topic(context);
         List<StudyScriptStepVO> nodes = new ArrayList<>();
-        nodes.add(node(taskId, "b1", "diagnose_gap", "diagnostic_quiz", "定位卡点", "先判断是判型问题还是求导问题", 6, "assessment", 1, templateCode));
-        nodes.add(node(taskId, "b2", "rebuild_foundation", "concept_review", "重建前置概念", "回到去心邻域和导数极限", 10, "concept", 2, templateCode));
-        nodes.add(node(taskId, "b3", "guided_practice", "guided_practice", "跟做专项题", "只练洛必达适用条件", 12, "practice", 3, templateCode));
-        nodes.add(node(taskId, "b4", "summary", "summary", "专项突破总结", "记录薄弱项和复习计划", 5, "summary", 4, templateCode));
+        nodes.add(node(context, "b1", "diagnose_gap", "diagnostic_quiz", "定位卡点：" + topic, "先判断主要薄弱点", 6, "assessment", 1, templateCode));
+        nodes.add(node(context, "b2", "rebuild_foundation", "concept_review", "重建基础：" + topic, shortDescription(context, "回到最小前置概念"), 10, "concept", 2, templateCode));
+        nodes.add(node(context, "b3", "guided_practice", "guided_practice", "专项跟做：" + topic, "只练当前薄弱项", 12, "practice", 3, templateCode));
+        nodes.add(node(context, "b4", "summary", "summary", "专项突破总结", "记录薄弱项和复习计划", 5, "summary", 4, templateCode));
         return nodes;
     }
 
-    private StudyScriptStepVO node(String taskId, String suffix, String phase, String nodeType, String title,
+    private List<StudyScriptStepVO> reviewNodes(LessonScriptContext context, String templateCode) {
+        String topic = topic(context);
+        List<StudyScriptStepVO> nodes = new ArrayList<>();
+        nodes.add(node(context, "r1", "recall", "recall_check", "快速回忆：" + topic, "先检查你还记得多少", 4, "assessment", 1, templateCode));
+        nodes.add(node(context, "r2", "targeted_review", "targeted_review", "复习薄弱点：" + topic, shortDescription(context, "只复习容易遗忘的关键点"), 8, "concept", 2, templateCode));
+        nodes.add(node(context, "r3", "practice", "guided_practice", "复习巩固：" + topic, "用一道题完成巩固", 8, "practice", 3, templateCode));
+        nodes.add(node(context, "r4", "summary", "summary", "复习总结", "安排下一次复习触发点", 4, "summary", 4, templateCode));
+        return nodes;
+    }
+
+    private List<StudyScriptStepVO> practiceNodes(LessonScriptContext context, String templateCode) {
+        String topic = topic(context);
+        List<StudyScriptStepVO> nodes = new ArrayList<>();
+        nodes.add(node(context, "p1", "warmup", "concept_brief", "题前热身：" + topic, shortDescription(context, "回顾做题所需的最少知识"), 4, "concept", 1, templateCode));
+        nodes.add(node(context, "p2", "guided_practice", "guided_practice", "跟做练习：" + topic, "Agent 分步带你完成", duration(context, 10), "practice", 2, templateCode));
+        nodes.add(node(context, "p3", "assessment", "diagnostic_quiz", "独立检验：" + topic, "检查是否能独立完成同类题", 6, "assessment", 3, templateCode));
+        nodes.add(node(context, "p4", "summary", "summary", "练习总结", "记录错因和下一题建议", 4, "summary", 4, templateCode));
+        return nodes;
+    }
+
+    private StudyScriptStepVO node(LessonScriptContext context, String suffix, String phase, String nodeType, String title,
                                    String subtitle, Integer estimatedMinutes, String canvasType,
                                    Integer sortOrder, String templateCode) {
         StudyScriptStepVO node = new StudyScriptStepVO();
-        node.setId(taskId + "-" + suffix);
+        node.setId(context.getTaskId() + "-" + suffix);
         node.setPhase(phase);
         node.setNodeType(nodeType);
         node.setTitle(title);
@@ -106,9 +141,48 @@ public class LessonScriptBuilder {
         node.setSortOrder(sortOrder);
         node.setMetadata(new LinkedHashMap<>(Map.of(
                 "templateCode", templateCode,
-                "variableNode", true
+                "variableNode", true,
+                "taskType", safe(context.getTaskType()),
+                "spaceName", safe(context.getSpaceName()),
+                "pathNodeType", safe(context.getPathNodeType()),
+                "difficultyLevel", context.getDifficultyLevel() == null ? 0 : context.getDifficultyLevel()
         )));
         return node;
+    }
+
+    private String topic(LessonScriptContext context) {
+        if (hasText(context.getPathNodeTitle())) {
+            return context.getPathNodeTitle();
+        }
+        if (hasText(context.getTaskTitle())) {
+            return context.getTaskTitle();
+        }
+        return "洛必达法则";
+    }
+
+    private String shortDescription(LessonScriptContext context, String fallback) {
+        if (hasText(context.getPathNodeDescription())) {
+            return context.getPathNodeDescription();
+        }
+        if (hasText(context.getTaskDescription())) {
+            return context.getTaskDescription();
+        }
+        return fallback;
+    }
+
+    private Integer duration(LessonScriptContext context, Integer fallback) {
+        if (context.getEstimatedDurationMinutes() == null || context.getEstimatedDurationMinutes() <= 0) {
+            return fallback;
+        }
+        return Math.max(3, Math.min(context.getEstimatedDurationMinutes(), 20));
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value;
     }
 
     private int resolveStartIndex(List<StudyScriptStepVO> nodes, String requestedStepId) {
@@ -132,6 +206,7 @@ public class LessonScriptBuilder {
                 "subtitle", step.getSubtitle(),
                 "nodeType", step.getNodeType(),
                 "templateCode", templateCode,
+                "metadata", step.getMetadata(),
                 "mockContentSource", "frontend_compat"
         )));
         return scene;

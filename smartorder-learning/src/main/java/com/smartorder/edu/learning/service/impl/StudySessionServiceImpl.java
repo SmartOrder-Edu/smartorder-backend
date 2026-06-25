@@ -3,17 +3,23 @@ package com.smartorder.edu.learning.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.smartorder.edu.learning.domain.entity.LearningPathNode;
+import com.smartorder.edu.learning.domain.entity.LearningSpace;
 import com.smartorder.edu.learning.domain.entity.StudyEvent;
 import com.smartorder.edu.learning.domain.entity.StudySession;
 import com.smartorder.edu.learning.domain.entity.StudyTeachingAction;
+import com.smartorder.edu.learning.domain.entity.Task;
 import com.smartorder.edu.learning.domain.vo.StudyEventReceiptVO;
 import com.smartorder.edu.learning.domain.vo.StudySessionVO;
 import com.smartorder.edu.learning.domain.vo.StudyTeachingActionVO;
 import com.smartorder.edu.learning.dto.StudyEventDTO;
 import com.smartorder.edu.learning.dto.StudySessionStartDTO;
+import com.smartorder.edu.learning.mapper.LearningPathNodeMapper;
+import com.smartorder.edu.learning.mapper.LearningSpaceMapper;
 import com.smartorder.edu.learning.mapper.StudyEventMapper;
 import com.smartorder.edu.learning.mapper.StudySessionMapper;
 import com.smartorder.edu.learning.mapper.StudyTeachingActionMapper;
+import com.smartorder.edu.learning.mapper.TaskMapper;
 import com.smartorder.edu.learning.service.IStudySessionService;
 import com.smartorder.edu.learning.service.script.LessonScriptBuilder;
 import com.smartorder.edu.learning.service.script.LessonScriptContext;
@@ -38,6 +44,9 @@ public class StudySessionServiceImpl implements IStudySessionService {
     private final StudySessionMapper studySessionMapper;
     private final StudyEventMapper studyEventMapper;
     private final StudyTeachingActionMapper studyTeachingActionMapper;
+    private final TaskMapper taskMapper;
+    private final LearningSpaceMapper learningSpaceMapper;
+    private final LearningPathNodeMapper learningPathNodeMapper;
     private final LessonScriptBuilder lessonScriptBuilder;
 
     @Override
@@ -46,9 +55,7 @@ public class StudySessionServiceImpl implements IStudySessionService {
         String spaceId = dto.getSpaceId();
         String mode = normalizeMode(dto.getMode());
 
-        StudySessionVO session = lessonScriptBuilder.build(new LessonScriptContext(
-                userId, taskId, spaceId, mode, dto.getStepId()
-        ));
+        StudySessionVO session = lessonScriptBuilder.build(buildScriptContext(userId, taskId, spaceId, mode, dto.getStepId()));
         persistSession(session, dto);
         log.info("[StudySession] mock session started: userId={}, taskId={}, sessionId={}",
                 userId, taskId, session.getSessionId());
@@ -58,11 +65,64 @@ public class StudySessionServiceImpl implements IStudySessionService {
     @Override
     public StudySessionVO getSession(Long userId, String sessionId) {
         String taskId = parseTaskId(sessionId);
-        StudySessionVO session = lessonScriptBuilder.build(new LessonScriptContext(
-                userId, taskId, null, "learn", null
-        ));
+        StudySessionVO session = lessonScriptBuilder.build(buildScriptContext(userId, taskId, null, "learn", null));
         session.setSessionId(sessionId);
         return session;
+    }
+
+    private LessonScriptContext buildScriptContext(Long userId, String taskId, String requestedSpaceId,
+                                                   String mode, String requestedStepId) {
+        LessonScriptContext context = new LessonScriptContext(userId, taskId, requestedSpaceId, mode, requestedStepId);
+        if (!isNumeric(taskId)) {
+            return context;
+        }
+
+        try {
+            Task task = taskMapper.selectById(Long.valueOf(taskId));
+            if (task == null || !userId.equals(task.getUserId()) || isDeleted(task.getIsDeleted())) {
+                return context;
+            }
+
+            context.setTaskTitle(task.getTitle());
+            context.setTaskDescription(task.getDescription());
+            context.setTaskType(task.getTaskType());
+            context.setEstimatedDurationMinutes(task.getEstimatedDurationMinutes());
+            if (task.getSpaceId() != null) {
+                context.setSpaceId(String.valueOf(task.getSpaceId()));
+                fillSpaceContext(context, task.getSpaceId(), userId);
+            } else if (isNumeric(requestedSpaceId)) {
+                fillSpaceContext(context, Long.valueOf(requestedSpaceId), userId);
+            }
+            if (task.getPathNodeId() != null) {
+                fillPathNodeContext(context, task.getPathNodeId());
+            }
+        } catch (Exception e) {
+            log.warn("[StudySession] real task context skipped: taskId={}, reason={}", taskId, e.getMessage());
+        }
+        return context;
+    }
+
+    private void fillSpaceContext(LessonScriptContext context, Long spaceId, Long userId) {
+        LearningSpace space = learningSpaceMapper.selectById(spaceId);
+        if (space == null || !userId.equals(space.getUserId()) || isDeleted(space.getIsDeleted())) {
+            return;
+        }
+        context.setSpaceName(space.getName());
+        context.setSpaceType(space.getType());
+    }
+
+    private void fillPathNodeContext(LessonScriptContext context, Long pathNodeId) {
+        LearningPathNode node = learningPathNodeMapper.selectById(pathNodeId);
+        if (node == null || isDeleted(node.getIsDeleted())) {
+            return;
+        }
+        context.setPathNodeTitle(node.getTitle());
+        context.setPathNodeDescription(node.getDescription());
+        context.setPathNodeType(node.getNodeType());
+        context.setDifficultyLevel(node.getDifficultyLevel());
+        if (context.getEstimatedDurationMinutes() == null) {
+            context.setEstimatedDurationMinutes(node.getEstimatedDurationMinutes());
+        }
     }
 
     @Override
@@ -271,6 +331,14 @@ public class StudySessionServiceImpl implements IStudySessionService {
             return fallback;
         }
         return value;
+    }
+
+    private boolean isNumeric(String value) {
+        return value != null && value.matches("\\d+");
+    }
+
+    private boolean isDeleted(Integer isDeleted) {
+        return isDeleted != null && isDeleted == 1;
     }
 
     private String parseTaskId(String sessionId) {
