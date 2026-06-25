@@ -5,6 +5,7 @@ import com.smartorder.edu.learning.domain.vo.StudyEventReceiptVO;
 import com.smartorder.edu.learning.domain.vo.StudySceneVO;
 import com.smartorder.edu.learning.domain.vo.StudyScriptStepVO;
 import com.smartorder.edu.learning.domain.vo.StudySessionVO;
+import com.smartorder.edu.learning.domain.vo.StudyTeachingActionVO;
 import com.smartorder.edu.learning.domain.vo.StudyTimelineCueVO;
 import com.smartorder.edu.learning.domain.vo.StudyTimelineVO;
 import com.smartorder.edu.learning.dto.StudyEventDTO;
@@ -67,7 +68,83 @@ public class StudySessionServiceImpl implements IStudySessionService {
         receipt.setEventType(eventType);
         receipt.setStatus("accepted");
         receipt.setAcceptedAtMs(acceptedAtMs);
+        receipt.setActions(buildTeachingActions(dto));
         return receipt;
+    }
+
+    private List<StudyTeachingActionVO> buildTeachingActions(StudyEventDTO dto) {
+        if (!"feedback_clicked".equals(dto.getEventType())) {
+            return List.of();
+        }
+
+        String feedbackType = readPayloadString(dto, "feedbackType", dto.getTargetId());
+        StudyTeachingActionVO reply = agentReplyAction(feedbackType);
+        List<StudyTeachingActionVO> actions = new ArrayList<>();
+        actions.add(reply);
+
+        if ("already_mastered".equals(feedbackType)) {
+            actions.add(noteAction("Agent：已标记本步为掌握，可直接进入下一步。"));
+        } else if ("skip".equals(feedbackType)) {
+            StudyTeachingActionVO skip = new StudyTeachingActionVO();
+            skip.setActionId("act-" + UUID.randomUUID());
+            skip.setActionType("mark_current_step_skipped");
+            skip.setSceneType("script");
+            skip.setReason("学生主动选择跳过当前知识点");
+            skip.setPayload(new LinkedHashMap<>(Map.of(
+                    "message", "已跳过当前知识点。Agent 会在后续会话补一次快速检验。"
+            )));
+            actions.add(skip);
+        }
+
+        return actions;
+    }
+
+    private StudyTeachingActionVO agentReplyAction(String feedbackType) {
+        StudyTeachingActionVO action = new StudyTeachingActionVO();
+        action.setActionId("act-" + UUID.randomUUID());
+        action.setActionType("agent_reply");
+        action.setSceneType("agent_panel");
+        action.setReason("根据学生反馈返回即时教学回应");
+        action.setPayload(new LinkedHashMap<>(Map.of(
+                "text", feedbackReplyText(feedbackType),
+                "markdown", true
+        )));
+        return action;
+    }
+
+    private StudyTeachingActionVO noteAction(String note) {
+        StudyTeachingActionVO action = new StudyTeachingActionVO();
+        action.setActionId("act-" + UUID.randomUUID());
+        action.setActionType("append_agent_note");
+        action.setSceneType("canvas");
+        action.setReason("反馈触发画布补充提示");
+        action.setPayload(new LinkedHashMap<>(Map.of("note", note)));
+        return action;
+    }
+
+    private String feedbackReplyText(String feedbackType) {
+        return switch (feedbackType) {
+            case "dont_understand" -> "我换个更直白的说法：洛必达的本质是“用导数比代替函数比”，但前提是这个代替后的极限必须真的存在。";
+            case "slower" -> "好的，我把节奏放慢。我们先停在当前这一步，你消化完再继续。";
+            case "another_example" -> "换个例子：求 $\\lim_{x \\to 0} \\frac{1-\\cos x}{x^2}$。这是 0/0 型，一次洛必达后得到 $\\frac{1}{2}$。";
+            case "draw_diagram" -> "我用流程图解释：\n\n```mermaid\nflowchart TD\n  A[代入是否为 0/0 或 ∞/∞] -->|否| B[不能直接用洛必达]\n  A -->|是| C[导数比极限是否存在]\n  C -->|否| D[不能用洛必达]\n  C -->|是| E[可用洛必达]\n```";
+            case "similar_question" -> "再来一道类似题：求 $\\lim_{x \\to 0} \\frac{\\ln(1+x)}{x}$。提示：先判型，再对分子分母分别求导。";
+            case "already_mastered" -> "收到，Agent 已标记本知识点为“初步掌握”，后续会减少重复讲解。";
+            case "add_review" -> "已加入复习候选：这个知识点后续会通过今日学习再次出现，用来巩固长期记忆。";
+            case "skip" -> "已跳过当前知识点。Agent 已记录，会在下次会话开头补一次快速检验。";
+            default -> "收到你的反馈，Agent 正在调整讲解。";
+        };
+    }
+
+    private String readPayloadString(StudyEventDTO dto, String key, String fallback) {
+        if (dto.getPayload() == null) {
+            return fallback;
+        }
+        Object value = dto.getPayload().get(key);
+        if (value == null) {
+            return fallback;
+        }
+        return String.valueOf(value);
     }
 
     private StudySessionVO buildMockSession(Long userId, String taskId, String spaceId, String mode) {
