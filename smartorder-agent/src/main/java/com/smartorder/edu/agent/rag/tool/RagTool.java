@@ -6,6 +6,8 @@ import com.smartorder.edu.agent.rag.orchestrator.RagOrchestrator;
 import com.smartorder.edu.agent.tool.ToolCategory;
 import com.smartorder.edu.agent.tool.ToolHandler;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
+import com.smartorder.edu.agent.trace.AgentEventType;
+import com.smartorder.edu.agent.trace.TraceEventDispatcher;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +27,7 @@ import java.util.Map;
 public class RagTool implements ToolHandler {
 
     private final RagOrchestrator ragOrchestrator;
+    private final TraceEventDispatcher dispatcher;
 
     @Override
     public String name() {
@@ -79,7 +82,22 @@ public class RagTool implements ToolHandler {
                 .build();
 
         // 执行 RAG 检索
-      RagQueryResponse ragResponse = ragOrchestrator.retrieve(ragRequest);
+        RagQueryResponse ragResponse = ragOrchestrator.retrieve(ragRequest);
+
+        // 通过SSE推送RAG chunks给前端
+        if (ragResponse.isSuccess() && context.getEmitter() != null && context.getRuntimeContext() != null) {
+            dispatcher.emit(
+                    context.getEmitter(),
+                    context.getRuntimeContext(),
+                    AgentEventType.RAG_CHUNKS,
+                    Map.of(
+                            "chunks", ragResponse.getChunks() != null ? ragResponse.getChunks() : List.of(),
+                            "chunkCount", ragResponse.getChunks() != null ? ragResponse.getChunks().size() : 0,
+                            "usedRetrievalMode", ragResponse.getUsedRetrievalMode() != null ? ragResponse.getUsedRetrievalMode() : "unknown",
+                            "degraded", ragResponse.isDegraded()
+                    )
+            );
+        }
 
         // 构建返回结果
         Map<String, Object> result = new LinkedHashMap<>();
