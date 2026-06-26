@@ -21,6 +21,7 @@ import com.smartorder.edu.learning.domain.vo.StudyTimelineVO;
 import com.smartorder.edu.learning.dto.StudyEventDTO;
 import com.smartorder.edu.learning.dto.StudySessionCompleteDTO;
 import com.smartorder.edu.learning.dto.StudySessionStartDTO;
+import com.smartorder.edu.learning.dto.StudyTeachingActionStatusDTO;
 import com.smartorder.edu.learning.mapper.LearningPathNodeMapper;
 import com.smartorder.edu.learning.mapper.LearningRecordMapper;
 import com.smartorder.edu.learning.mapper.LearningSpaceMapper;
@@ -162,6 +163,37 @@ public class StudySessionServiceImpl implements IStudySessionService {
         vo.setNextSuggestion(session.getMastery() == null ? "" : session.getMastery().getNextSuggestion());
         vo.setSummary(summary);
         return vo;
+    }
+
+    @Override
+    public void updateTeachingActionStatus(Long userId, String sessionId, String actionId,
+                                           StudyTeachingActionStatusDTO dto) {
+        StudySession session = selectSessionForUser(userId, sessionId);
+        if (session == null) {
+            throw new IllegalArgumentException("学习会话不存在或无权访问: " + sessionId);
+        }
+        StudyTeachingAction action = studyTeachingActionMapper.selectOne(new QueryWrapper<StudyTeachingAction>()
+                .eq("session_id", sessionId)
+                .eq("action_id", actionId)
+                .eq("user_id", userId)
+                .eq("is_deleted", 0)
+                .last("LIMIT 1"));
+        if (action == null) {
+            throw new IllegalArgumentException("教学动作不存在或无权访问: " + actionId);
+        }
+
+        action.setStatus(normalizeActionStatus(dto == null ? null : dto.getStatus()));
+        if (dto != null && (dto.getErrorMessage() != null || dto.getPayload() != null)) {
+            Map<String, Object> patch = new LinkedHashMap<>();
+            if (dto.getErrorMessage() != null && !dto.getErrorMessage().isBlank()) {
+                patch.put("errorMessage", dto.getErrorMessage());
+            }
+            if (dto.getPayload() != null && !dto.getPayload().isEmpty()) {
+                patch.put("clientPayload", dto.getPayload());
+            }
+            action.setPayload(toJson(mergeMetadata(action.getPayload(), patch)));
+        }
+        studyTeachingActionMapper.updateById(action);
     }
 
     private StudyEntry resolveStudyEntry(Long userId, StudySessionStartDTO dto) {
@@ -550,6 +582,9 @@ public class StudySessionServiceImpl implements IStudySessionService {
     }
 
     private List<StudyTeachingActionVO> buildTeachingActions(StudyEventDTO dto) {
+        if ("quiz_answered".equals(dto.getEventType())) {
+            return buildQuizAnsweredActions(dto);
+        }
         if (!"feedback_clicked".equals(dto.getEventType())) {
             return List.of();
         }
@@ -573,6 +608,38 @@ public class StudySessionServiceImpl implements IStudySessionService {
             actions.add(skip);
         }
 
+        return actions;
+    }
+
+    private List<StudyTeachingActionVO> buildQuizAnsweredActions(StudyEventDTO dto) {
+        boolean correct = readPayloadBoolean(dto, "correct", false);
+        String answer = readPayloadString(dto, "answer", "");
+        List<StudyTeachingActionVO> actions = new ArrayList<>();
+
+        StudyTeachingActionVO reply = new StudyTeachingActionVO();
+        reply.setActionId("act-" + UUID.randomUUID());
+        reply.setActionType("agent_reply");
+        reply.setSceneType("agent_panel");
+        reply.setReason(correct ? "学生答题正确，给出正向确认" : "学生答题错误，给出即时诊断");
+        reply.setPayload(new LinkedHashMap<>(Map.of(
+                "text", correct
+                        ? "答对了。Agent 已记录这一步的掌握情况，可以继续推进。"
+                        : "这道题先别急着跳过。Agent 已记录你的答案「" + answer + "」，建议回到当前关键条件再看一遍。",
+                "markdown", true
+        )));
+        actions.add(reply);
+
+        if (!correct) {
+            StudyTeachingActionVO note = new StudyTeachingActionVO();
+            note.setActionId("act-" + UUID.randomUUID());
+            note.setActionType("append_agent_note");
+            note.setSceneType("canvas");
+            note.setReason("答题错误触发画布诊断提示");
+            note.setPayload(new LinkedHashMap<>(Map.of(
+                    "note", "Agent 诊断：这一步可能混淆了适用条件和计算步骤。先确认判型，再继续推导。"
+            )));
+            actions.add(note);
+        }
         return actions;
     }
 
@@ -622,6 +689,27 @@ public class StudySessionServiceImpl implements IStudySessionService {
             return fallback;
         }
         return String.valueOf(value);
+    }
+
+    private boolean readPayloadBoolean(StudyEventDTO dto, String key, boolean fallback) {
+        if (dto.getPayload() == null || dto.getPayload().get(key) == null) {
+            return fallback;
+        }
+        Object value = dto.getPayload().get(key);
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        return Boolean.parseBoolean(String.valueOf(value));
+    }
+
+    private String normalizeActionStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return "applied";
+        }
+        return switch (status) {
+            case "pending", "applied", "failed" -> status;
+            default -> "applied";
+        };
     }
 
     private int readPayloadInt(Map<String, Object> payload, String key, int fallback) {

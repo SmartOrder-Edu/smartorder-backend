@@ -8,6 +8,7 @@ import com.smartorder.edu.learning.domain.vo.StudySessionVO;
 import com.smartorder.edu.learning.dto.StudyEventDTO;
 import com.smartorder.edu.learning.dto.StudySessionCompleteDTO;
 import com.smartorder.edu.learning.dto.StudySessionStartDTO;
+import com.smartorder.edu.learning.dto.StudyTeachingActionStatusDTO;
 import com.smartorder.edu.learning.service.IStudySessionService;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
@@ -16,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -63,6 +65,18 @@ public class StudySessionController {
         Long userId = getCurrentUserId();
         return Result.success(studySessionService.completeSession(
                 userId, sessionId, dto == null ? new StudySessionCompleteDTO() : dto));
+    }
+
+    @PatchMapping("/{sessionId}/actions/{actionId}/status")
+    @Operation(summary = "回写教学动作状态", description = "前端应用教学动作后回写 applied/failed 状态，便于追踪教学动作是否真正执行")
+    public Result<Void> updateActionStatus(
+            @PathVariable String sessionId,
+            @PathVariable String actionId,
+            @RequestBody StudyTeachingActionStatusDTO dto
+    ) {
+        Long userId = getCurrentUserId();
+        studySessionService.updateTeachingActionStatus(userId, sessionId, actionId, dto);
+        return Result.success(null);
     }
 
     private Long getCurrentUserId() {
