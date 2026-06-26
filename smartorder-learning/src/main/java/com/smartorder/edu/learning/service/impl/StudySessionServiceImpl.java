@@ -400,9 +400,41 @@ public class StudySessionServiceImpl implements IStudySessionService {
     }
 
     private void updateSessionProgressSnapshot(StudySession session, StudyEventDTO dto) {
-        if (dto.getCurrentStepId() != null && !dto.getCurrentStepId().isBlank()
-                && !dto.getCurrentStepId().equals(session.getCurrentStepId())) {
-            session.setCurrentStepId(dto.getCurrentStepId());
+        if (dto.getCurrentStepId() == null || dto.getCurrentStepId().isBlank()) {
+            return;
+        }
+        if (!"step_entered".equals(dto.getEventType()) && !"step_completed".equals(dto.getEventType())) {
+            return;
+        }
+
+        StudySessionVO restored = restoreSession(session);
+        String currentStepId = dto.getCurrentStepId();
+        boolean changed = false;
+
+        if (restored.getScriptSteps() != null) {
+            for (var step : restored.getScriptSteps()) {
+                if ("step_completed".equals(dto.getEventType()) && currentStepId.equals(step.getId())) {
+                    step.setStatus("completed");
+                    changed = true;
+                } else if ("step_entered".equals(dto.getEventType())) {
+                    if (currentStepId.equals(step.getId()) && !"completed".equals(step.getStatus())) {
+                        step.setStatus("in_progress");
+                        changed = true;
+                    } else if ("in_progress".equals(step.getStatus())) {
+                        step.setStatus("pending");
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        session.setCurrentStepId(currentStepId);
+        session.setScriptSnapshot(toJson(restored.getScriptSteps()));
+        session.setCurrentSceneSnapshot(toJson(resolveCurrentScene(restored, currentStepId)));
+        session.setCurrentTimelineSnapshot(toJson(resolveCurrentTimeline(restored, currentStepId)));
+        if (changed || !currentStepId.equals(session.getCurrentStepId())) {
+            studySessionMapper.updateById(session);
+        } else {
             studySessionMapper.updateById(session);
         }
     }
@@ -447,14 +479,47 @@ public class StudySessionServiceImpl implements IStudySessionService {
         StudySceneVO scene = fromJson(entity.getCurrentSceneSnapshot(), StudySceneVO.class);
         if (scene != null) {
             vo.setCurrentScene(scene);
+        } else {
+            vo.setCurrentScene(resolveCurrentScene(vo, vo.getCurrentStepId()));
         }
         StudyTimelineVO timeline = fromJson(entity.getCurrentTimelineSnapshot(), StudyTimelineVO.class);
         if (timeline != null) {
             vo.setCurrentTimeline(timeline);
-        } else if (vo.getCurrentStepId() != null && vo.getTimelinesByStepId() != null) {
-            vo.setCurrentTimeline(vo.getTimelinesByStepId().get(vo.getCurrentStepId()));
+        } else {
+            vo.setCurrentTimeline(resolveCurrentTimeline(vo, vo.getCurrentStepId()));
         }
         return vo;
+    }
+
+    private StudyTimelineVO resolveCurrentTimeline(StudySessionVO session, String stepId) {
+        if (stepId == null || session.getTimelinesByStepId() == null) {
+            return null;
+        }
+        return session.getTimelinesByStepId().get(stepId);
+    }
+
+    private StudySceneVO resolveCurrentScene(StudySessionVO session, String stepId) {
+        if (stepId == null || session.getScriptSteps() == null) {
+            return null;
+        }
+        return session.getScriptSteps().stream()
+                .filter(step -> stepId.equals(step.getId()))
+                .findFirst()
+                .map(step -> {
+                    StudySceneVO scene = new StudySceneVO();
+                    scene.setSceneId(step.getId());
+                    scene.setSceneType(step.getCanvasType());
+                    scene.setStepId(step.getId());
+                    Map<String, Object> content = new LinkedHashMap<>();
+                    content.put("title", step.getTitle() == null ? "" : step.getTitle());
+                    content.put("subtitle", step.getSubtitle() == null ? "" : step.getSubtitle());
+                    content.put("nodeType", step.getNodeType() == null ? "" : step.getNodeType());
+                    content.put("metadata", step.getMetadata() == null ? Map.of() : step.getMetadata());
+                    content.put("source", "session_snapshot");
+                    scene.setContent(content);
+                    return scene;
+                })
+                .orElse(null);
     }
 
     private CompletionStats summarizeCompletion(StudySession entity, StudySessionVO session, StudySessionCompleteDTO dto) {
