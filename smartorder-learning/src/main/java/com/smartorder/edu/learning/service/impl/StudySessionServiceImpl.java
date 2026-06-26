@@ -502,6 +502,9 @@ public class StudySessionServiceImpl implements IStudySessionService {
         if (stepId == null || session.getScriptSteps() == null) {
             return null;
         }
+        if (session.getScenesByStepId() != null && session.getScenesByStepId().get(stepId) != null) {
+            return session.getScenesByStepId().get(stepId);
+        }
         return session.getScriptSteps().stream()
                 .filter(step -> stepId.equals(step.getId()))
                 .findFirst()

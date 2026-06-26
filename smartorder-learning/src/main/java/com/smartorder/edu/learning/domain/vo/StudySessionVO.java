@@ -23,6 +23,7 @@ public class StudySessionVO {
     private StudySceneVO currentScene;
     private StudyTimelineVO currentTimeline;
     private List<StudyScriptStepVO> scriptSteps = new ArrayList<>();
+    private Map<String, StudySceneVO> scenesByStepId = new LinkedHashMap<>();
     private Map<String, StudyTimelineVO> timelinesByStepId = new LinkedHashMap<>();
     private StudyMasteryVO mastery;
 }
