@@ -15,6 +15,7 @@ public class StudySessionVO {
     private String lessonBundleId;
     private Long userId;
     private String taskId;
+    private String pathNodeId;
     private String spaceId;
     private String mode;
     private String status;

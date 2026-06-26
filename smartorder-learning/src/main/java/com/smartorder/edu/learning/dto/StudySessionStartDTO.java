@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class StudySessionStartDTO {
     private String taskId;
+    private String pathNodeId;
     private String spaceId;
     private String mode;
     private String entrySource;

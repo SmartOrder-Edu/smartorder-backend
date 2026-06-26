@@ -13,6 +13,7 @@ public class StudySession {
     private String lessonBundleId;
     private Long userId;
     private String taskId;
+    private Long pathNodeId;
     private String spaceId;
     private String mode;
     private String status;

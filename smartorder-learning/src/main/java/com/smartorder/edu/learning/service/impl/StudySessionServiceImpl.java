@@ -2,20 +2,29 @@ package com.smartorder.edu.learning.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartorder.edu.learning.domain.entity.LearningPathNode;
+import com.smartorder.edu.learning.domain.entity.LearningRecord;
 import com.smartorder.edu.learning.domain.entity.LearningSpace;
+import com.smartorder.edu.learning.domain.entity.LessonBundle;
 import com.smartorder.edu.learning.domain.entity.StudyEvent;
 import com.smartorder.edu.learning.domain.entity.StudySession;
 import com.smartorder.edu.learning.domain.entity.StudyTeachingAction;
 import com.smartorder.edu.learning.domain.entity.Task;
 import com.smartorder.edu.learning.domain.vo.StudyEventReceiptVO;
+import com.smartorder.edu.learning.domain.vo.StudySceneVO;
+import com.smartorder.edu.learning.domain.vo.StudySessionCompleteVO;
 import com.smartorder.edu.learning.domain.vo.StudySessionVO;
 import com.smartorder.edu.learning.domain.vo.StudyTeachingActionVO;
+import com.smartorder.edu.learning.domain.vo.StudyTimelineVO;
 import com.smartorder.edu.learning.dto.StudyEventDTO;
+import com.smartorder.edu.learning.dto.StudySessionCompleteDTO;
 import com.smartorder.edu.learning.dto.StudySessionStartDTO;
 import com.smartorder.edu.learning.mapper.LearningPathNodeMapper;
+import com.smartorder.edu.learning.mapper.LearningRecordMapper;
 import com.smartorder.edu.learning.mapper.LearningSpaceMapper;
+import com.smartorder.edu.learning.mapper.LessonBundleMapper;
 import com.smartorder.edu.learning.mapper.StudyEventMapper;
 import com.smartorder.edu.learning.mapper.StudySessionMapper;
 import com.smartorder.edu.learning.mapper.StudyTeachingActionMapper;
@@ -26,12 +35,17 @@ import com.smartorder.edu.learning.service.script.LessonScriptContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -47,27 +61,172 @@ public class StudySessionServiceImpl implements IStudySessionService {
     private final TaskMapper taskMapper;
     private final LearningSpaceMapper learningSpaceMapper;
     private final LearningPathNodeMapper learningPathNodeMapper;
+    private final LearningRecordMapper learningRecordMapper;
+    private final LessonBundleMapper lessonBundleMapper;
     private final LessonScriptBuilder lessonScriptBuilder;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public StudySessionVO startSession(Long userId, StudySessionStartDTO dto) {
-        String taskId = normalizeId(dto.getTaskId(), "mock-task");
-        String spaceId = dto.getSpaceId();
+        StudyEntry entry = resolveStudyEntry(userId, dto);
         String mode = normalizeMode(dto.getMode());
+        String sessionId = "ss-" + UUID.randomUUID();
+        String bundleId = "lb-" + UUID.randomUUID();
 
-        StudySessionVO session = lessonScriptBuilder.build(buildScriptContext(userId, taskId, spaceId, mode, dto.getStepId()));
-        persistSession(session, dto);
-        log.info("[StudySession] mock session started: userId={}, taskId={}, sessionId={}",
-                userId, taskId, session.getSessionId());
+        StudySessionVO session = lessonScriptBuilder.build(buildScriptContext(
+                userId, entry.taskId(), entry.spaceId(), mode, dto.getStepId()));
+        session.setSessionId(sessionId);
+        session.setLessonBundleId(bundleId);
+        session.setTaskId(entry.taskId());
+        session.setPathNodeId(entry.pathNodeId() == null ? null : String.valueOf(entry.pathNodeId()));
+        session.setSpaceId(entry.spaceId());
+        session.setMode(mode);
+        session.setStatus("active");
+
+        persistLessonBundle(userId, entry, mode, bundleId, session);
+        persistSession(session, dto, entry);
+        log.info("[StudySession] session started: userId={}, taskId={}, pathNodeId={}, sessionId={}, bundleId={}",
+                userId, entry.taskId(), entry.pathNodeId(), sessionId, bundleId);
         return session;
     }
 
     @Override
     public StudySessionVO getSession(Long userId, String sessionId) {
-        String taskId = parseTaskId(sessionId);
-        StudySessionVO session = lessonScriptBuilder.build(buildScriptContext(userId, taskId, null, "learn", null));
-        session.setSessionId(sessionId);
-        return session;
+        StudySession entity = selectSessionForUser(userId, sessionId);
+        if (entity == null) {
+            throw new IllegalArgumentException("学习会话不存在或无权访问: " + sessionId);
+        }
+        return restoreSession(entity);
+    }
+
+    @Override
+    public StudyEventReceiptVO recordEvent(Long userId, String sessionId, StudyEventDTO dto) {
+        StudySession session = selectSessionForUser(userId, sessionId);
+        if (session == null) {
+            throw new IllegalArgumentException("学习会话不存在或无权访问: " + sessionId);
+        }
+
+        String eventType = dto.getEventType() == null ? "unknown" : dto.getEventType();
+        String eventId = "se-" + UUID.randomUUID();
+        long acceptedAtMs = System.currentTimeMillis();
+
+        log.info("[StudyEvent] accepted: eventId={}, userId={}, sessionId={}, eventType={}, targetType={}, targetId={}, stepId={}, timelineMs={}",
+                eventId,
+                userId,
+                sessionId,
+                eventType,
+                dto.getTargetType(),
+                dto.getTargetId(),
+                dto.getCurrentStepId(),
+                dto.getTimelineTimeMs());
+
+        StudyEventReceiptVO receipt = new StudyEventReceiptVO();
+        receipt.setEventId(eventId);
+        receipt.setSessionId(sessionId);
+        receipt.setEventType(eventType);
+        receipt.setStatus("accepted");
+        receipt.setAcceptedAtMs(acceptedAtMs);
+        receipt.setActions(buildTeachingActions(dto));
+        persistEvent(userId, sessionId, dto, receipt);
+        updateSessionProgressSnapshot(session, dto);
+        return receipt;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public StudySessionCompleteVO completeSession(Long userId, String sessionId, StudySessionCompleteDTO dto) {
+        StudySession entity = selectSessionForUser(userId, sessionId);
+        if (entity == null) {
+            throw new IllegalArgumentException("学习会话不存在或无权访问: " + sessionId);
+        }
+
+        StudySessionVO session = restoreSession(entity);
+        CompletionStats stats = summarizeCompletion(entity, session, dto);
+        Map<String, Object> summary = buildCompletionSummary(entity, session, dto, stats);
+
+        entity.setStatus("completed");
+        entity.setEndedAt(LocalDateTime.now());
+        entity.setMetadata(toJson(mergeMetadata(entity.getMetadata(), Map.of("summary", summary))));
+        studySessionMapper.updateById(entity);
+
+        completeRealTaskIfNeeded(userId, entity, stats.actualMinutes());
+        upsertLearningRecord(userId, entity, dto, stats, summary);
+
+        StudySessionCompleteVO vo = new StudySessionCompleteVO();
+        vo.setSessionId(sessionId);
+        vo.setStatus("completed");
+        vo.setActualMinutes(stats.actualMinutes());
+        vo.setCompletedSteps(stats.completedSteps());
+        vo.setTotalSteps(stats.totalSteps());
+        vo.setMasteryLevel(session.getMastery() == null ? "unknown" : session.getMastery().getLevel());
+        vo.setNextSuggestion(session.getMastery() == null ? "" : session.getMastery().getNextSuggestion());
+        vo.setSummary(summary);
+        return vo;
+    }
+
+    private StudyEntry resolveStudyEntry(Long userId, StudySessionStartDTO dto) {
+        String requestedTaskId = normalizeId(dto.getTaskId(), "");
+        if (isNumeric(requestedTaskId)) {
+            Task task = taskMapper.selectById(Long.valueOf(requestedTaskId));
+            if (task != null && userId.equals(task.getUserId()) && !isDeleted(task.getIsDeleted())) {
+                return new StudyEntry(String.valueOf(task.getId()), task.getPathNodeId(), stringId(task.getSpaceId()));
+            }
+        }
+
+        String requestedPathNodeId = normalizeId(dto.getPathNodeId(), "");
+        if (isNumeric(requestedPathNodeId)) {
+            LearningPathNode node = learningPathNodeMapper.selectById(Long.valueOf(requestedPathNodeId));
+            if (node == null || isDeleted(node.getIsDeleted())) {
+                throw new IllegalArgumentException("学习路径节点不存在: " + requestedPathNodeId);
+            }
+            LearningSpace space = learningSpaceMapper.selectById(node.getSpaceId());
+            if (space == null || !userId.equals(space.getUserId()) || isDeleted(space.getIsDeleted())) {
+                throw new IllegalArgumentException("学习路径节点不属于当前用户: " + requestedPathNodeId);
+            }
+            Task task = findOrCreatePathNodeTask(userId, node, dto);
+            return new StudyEntry(String.valueOf(task.getId()), node.getId(), String.valueOf(node.getSpaceId()));
+        }
+
+        if (!requestedTaskId.isBlank()) {
+            return new StudyEntry(requestedTaskId, null, dto.getSpaceId());
+        }
+        return new StudyEntry("mock-task", null, dto.getSpaceId());
+    }
+
+    private Task findOrCreatePathNodeTask(Long userId, LearningPathNode node, StudySessionStartDTO dto) {
+        Task existed = taskMapper.selectOne(new QueryWrapper<Task>()
+                .eq("user_id", userId)
+                .eq("space_id", node.getSpaceId())
+                .eq("path_node_id", node.getId())
+                .eq("is_deleted", 0)
+                .in("status", List.of("pending", "in_progress"))
+                .orderByDesc("create_time")
+                .last("LIMIT 1"));
+        if (existed != null) {
+            return existed;
+        }
+
+        Task task = new Task();
+        task.setUserId(userId);
+        task.setSpaceId(node.getSpaceId());
+        task.setPathNodeId(node.getId());
+        task.setTitle("学习：" + normalizeId(node.getTitle(), "路径节点"));
+        task.setDescription(node.getDescription());
+        task.setTaskType("review".equals(dto.getMode()) ? "review" : "daily");
+        task.setPriority(3);
+        task.setStatus("pending");
+        task.setDueDate(LocalDate.now());
+        task.setEstimatedDurationMinutes(node.getEstimatedDurationMinutes() == null
+                ? 20 : Math.max(5, node.getEstimatedDurationMinutes()));
+        task.setSortOrder(0);
+        task.setAiSuggestion("由学习路径节点直接进入学习时自动创建。");
+        task.setMetadata(toJson(new LinkedHashMap<>(Map.of(
+                "source", "path_node_study_entry",
+                "entrySource", normalizeId(dto.getEntrySource(), "unknown")
+        ))));
+        task.setIsDeleted(0);
+        taskMapper.insert(task);
+        return task;
     }
 
     private LessonScriptContext buildScriptContext(Long userId, String taskId, String requestedSpaceId,
@@ -125,94 +284,70 @@ public class StudySessionServiceImpl implements IStudySessionService {
         }
     }
 
-    @Override
-    public StudyEventReceiptVO recordEvent(Long userId, String sessionId, StudyEventDTO dto) {
-        String eventType = dto.getEventType() == null ? "unknown" : dto.getEventType();
-        String eventId = "se-" + UUID.randomUUID();
-        long acceptedAtMs = System.currentTimeMillis();
-
-        log.info("[StudyEvent] accepted: eventId={}, userId={}, sessionId={}, eventType={}, targetType={}, targetId={}, stepId={}, timelineMs={}",
-                eventId,
-                userId,
-                sessionId,
-                eventType,
-                dto.getTargetType(),
-                dto.getTargetId(),
-                dto.getCurrentStepId(),
-                dto.getTimelineTimeMs());
-
-        StudyEventReceiptVO receipt = new StudyEventReceiptVO();
-        receipt.setEventId(eventId);
-        receipt.setSessionId(sessionId);
-        receipt.setEventType(eventType);
-        receipt.setStatus("accepted");
-        receipt.setAcceptedAtMs(acceptedAtMs);
-        receipt.setActions(buildTeachingActions(dto));
-        persistEvent(userId, sessionId, dto, receipt);
-        return receipt;
+    private void persistLessonBundle(Long userId, StudyEntry entry, String mode, String bundleId, StudySessionVO session) {
+        LessonBundle bundle = new LessonBundle();
+        bundle.setBundleId(bundleId);
+        bundle.setUserId(userId);
+        bundle.setTaskId(entry.taskId());
+        bundle.setPathNodeId(entry.pathNodeId());
+        bundle.setSpaceId(entry.spaceId());
+        bundle.setMode(mode);
+        bundle.setStatus("ready");
+        bundle.setVersion(1);
+        bundle.setGenerationContext(toJson(new LinkedHashMap<>(Map.of(
+                "source", "template_v1",
+                "taskId", entry.taskId(),
+                "pathNodeId", entry.pathNodeId() == null ? "" : entry.pathNodeId(),
+                "spaceId", entry.spaceId() == null ? "" : entry.spaceId()
+        ))));
+        bundle.setBundleJson(toJson(session));
+        bundle.setIsDeleted(0);
+        lessonBundleMapper.insert(bundle);
     }
 
-    private void persistSession(StudySessionVO session, StudySessionStartDTO dto) {
-        try {
-            StudySession entity = new StudySession();
-            entity.setSessionId(session.getSessionId());
-            entity.setLessonBundleId(session.getLessonBundleId());
-            entity.setUserId(session.getUserId());
-            entity.setTaskId(session.getTaskId());
-            entity.setSpaceId(session.getSpaceId());
-            entity.setMode(session.getMode());
-            entity.setStatus(session.getStatus());
-            entity.setCurrentStepId(session.getCurrentStepId());
-            entity.setScriptSnapshot(toJson(session.getScriptSteps()));
-            entity.setCurrentSceneSnapshot(toJson(session.getCurrentScene()));
-            entity.setCurrentTimelineSnapshot(toJson(session.getCurrentTimeline()));
-            entity.setMasterySnapshot(toJson(session.getMastery()));
-            entity.setMetadata(toJson(new LinkedHashMap<>(Map.of(
-                    "entrySource", normalizeId(dto.getEntrySource(), "unknown"),
-                    "requestedStepId", normalizeId(dto.getStepId(), "")
-            ))));
-            entity.setStartedAt(LocalDateTime.now());
-            entity.setIsDeleted(0);
-
-            StudySession existed = studySessionMapper.selectOne(new QueryWrapper<StudySession>()
-                    .eq("session_id", session.getSessionId())
-                    .eq("is_deleted", 0)
-                    .last("LIMIT 1"));
-            if (existed == null) {
-                studySessionMapper.insert(entity);
-            } else {
-                entity.setId(existed.getId());
-                studySessionMapper.updateById(entity);
-            }
-        } catch (Exception e) {
-            log.warn("[StudySession] persist skipped: sessionId={}, reason={}",
-                    session.getSessionId(), e.getMessage());
-        }
+    private void persistSession(StudySessionVO session, StudySessionStartDTO dto, StudyEntry entry) {
+        StudySession entity = new StudySession();
+        entity.setSessionId(session.getSessionId());
+        entity.setLessonBundleId(session.getLessonBundleId());
+        entity.setUserId(session.getUserId());
+        entity.setTaskId(session.getTaskId());
+        entity.setPathNodeId(entry.pathNodeId());
+        entity.setSpaceId(session.getSpaceId());
+        entity.setMode(session.getMode());
+        entity.setStatus(session.getStatus());
+        entity.setCurrentStepId(session.getCurrentStepId());
+        entity.setScriptSnapshot(toJson(session.getScriptSteps()));
+        entity.setCurrentSceneSnapshot(toJson(session.getCurrentScene()));
+        entity.setCurrentTimelineSnapshot(toJson(session.getCurrentTimeline()));
+        entity.setMasterySnapshot(toJson(session.getMastery()));
+        entity.setMetadata(toJson(new LinkedHashMap<>(Map.of(
+                "entrySource", normalizeId(dto.getEntrySource(), "unknown"),
+                "requestedStepId", normalizeId(dto.getStepId(), ""),
+                "pathNodeId", entry.pathNodeId() == null ? "" : entry.pathNodeId()
+        ))));
+        entity.setStartedAt(LocalDateTime.now());
+        entity.setIsDeleted(0);
+        studySessionMapper.insert(entity);
     }
 
     private void persistEvent(Long userId, String sessionId, StudyEventDTO dto, StudyEventReceiptVO receipt) {
-        try {
-            StudyEvent event = new StudyEvent();
-            event.setEventId(receipt.getEventId());
-            event.setSessionId(sessionId);
-            event.setUserId(userId);
-            event.setEventType(receipt.getEventType());
-            event.setTargetType(dto.getTargetType());
-            event.setTargetId(dto.getTargetId());
-            event.setCurrentStepId(dto.getCurrentStepId());
-            event.setCurrentTimelineId(dto.getCurrentTimelineId());
-            event.setTimelineTimeMs(dto.getTimelineTimeMs());
-            event.setClientTimeMs(dto.getClientTimeMs());
-            event.setPayload(toJson(dto.getPayload()));
-            event.setStatus(receipt.getStatus());
-            event.setAcceptedAt(LocalDateTime.now());
-            event.setIsDeleted(0);
-            studyEventMapper.insert(event);
-            persistActions(userId, sessionId, receipt);
-        } catch (Exception e) {
-            log.warn("[StudyEvent] persist skipped: eventId={}, sessionId={}, reason={}",
-                    receipt.getEventId(), sessionId, e.getMessage());
-        }
+        StudyEvent event = new StudyEvent();
+        event.setEventId(receipt.getEventId());
+        event.setSessionId(sessionId);
+        event.setUserId(userId);
+        event.setEventType(receipt.getEventType());
+        event.setTargetType(dto.getTargetType());
+        event.setTargetId(dto.getTargetId());
+        event.setCurrentStepId(dto.getCurrentStepId());
+        event.setCurrentTimelineId(dto.getCurrentTimelineId());
+        event.setTimelineTimeMs(dto.getTimelineTimeMs());
+        event.setClientTimeMs(dto.getClientTimeMs());
+        event.setPayload(toJson(dto.getPayload()));
+        event.setStatus(receipt.getStatus());
+        event.setAcceptedAt(LocalDateTime.now());
+        event.setIsDeleted(0);
+        studyEventMapper.insert(event);
+        persistActions(userId, sessionId, receipt);
     }
 
     private void persistActions(Long userId, String sessionId, StudyEventReceiptVO receipt) {
@@ -229,6 +364,188 @@ public class StudySessionServiceImpl implements IStudySessionService {
             entity.setStatus("pending");
             entity.setIsDeleted(0);
             studyTeachingActionMapper.insert(entity);
+        }
+    }
+
+    private void updateSessionProgressSnapshot(StudySession session, StudyEventDTO dto) {
+        if (dto.getCurrentStepId() != null && !dto.getCurrentStepId().isBlank()
+                && !dto.getCurrentStepId().equals(session.getCurrentStepId())) {
+            session.setCurrentStepId(dto.getCurrentStepId());
+            studySessionMapper.updateById(session);
+        }
+    }
+
+    private StudySession selectSessionForUser(Long userId, String sessionId) {
+        return studySessionMapper.selectOne(new QueryWrapper<StudySession>()
+                .eq("session_id", sessionId)
+                .eq("user_id", userId)
+                .eq("is_deleted", 0)
+                .last("LIMIT 1"));
+    }
+
+    private StudySessionVO restoreSession(StudySession entity) {
+        StudySessionVO vo = null;
+        if (entity.getLessonBundleId() != null) {
+            LessonBundle bundle = lessonBundleMapper.selectOne(new QueryWrapper<LessonBundle>()
+                    .eq("bundle_id", entity.getLessonBundleId())
+                    .eq("user_id", entity.getUserId())
+                    .eq("is_deleted", 0)
+                    .last("LIMIT 1"));
+            if (bundle != null && bundle.getBundleJson() != null) {
+                vo = fromJson(bundle.getBundleJson(), StudySessionVO.class);
+            }
+        }
+        if (vo == null) {
+            vo = new StudySessionVO();
+        }
+
+        vo.setSessionId(entity.getSessionId());
+        vo.setLessonBundleId(entity.getLessonBundleId());
+        vo.setUserId(entity.getUserId());
+        vo.setTaskId(entity.getTaskId());
+        vo.setPathNodeId(entity.getPathNodeId() == null ? null : String.valueOf(entity.getPathNodeId()));
+        vo.setSpaceId(entity.getSpaceId());
+        vo.setMode(entity.getMode());
+        vo.setStatus(entity.getStatus());
+        vo.setCurrentStepId(entity.getCurrentStepId());
+
+        if (entity.getScriptSnapshot() != null) {
+            vo.setScriptSteps(fromJson(entity.getScriptSnapshot(), new TypeReference<>() {}));
+        }
+        StudySceneVO scene = fromJson(entity.getCurrentSceneSnapshot(), StudySceneVO.class);
+        if (scene != null) {
+            vo.setCurrentScene(scene);
+        }
+        StudyTimelineVO timeline = fromJson(entity.getCurrentTimelineSnapshot(), StudyTimelineVO.class);
+        if (timeline != null) {
+            vo.setCurrentTimeline(timeline);
+        } else if (vo.getCurrentStepId() != null && vo.getTimelinesByStepId() != null) {
+            vo.setCurrentTimeline(vo.getTimelinesByStepId().get(vo.getCurrentStepId()));
+        }
+        return vo;
+    }
+
+    private CompletionStats summarizeCompletion(StudySession entity, StudySessionVO session, StudySessionCompleteDTO dto) {
+        List<StudyEvent> events = studyEventMapper.selectList(new QueryWrapper<StudyEvent>()
+                .eq("session_id", entity.getSessionId())
+                .eq("user_id", entity.getUserId())
+                .eq("is_deleted", 0));
+        Set<String> completedStepIds = new LinkedHashSet<>();
+        int interruptionCount = 0;
+        for (StudyEvent event : events) {
+            if ("step_completed".equals(event.getEventType()) && event.getTargetId() != null) {
+                completedStepIds.add(event.getTargetId());
+            }
+            if ("pause_clicked".equals(event.getEventType())) {
+                interruptionCount++;
+            }
+        }
+        int totalSteps = readPayloadInt(dto.getPayload(), "totalSteps",
+                session.getScriptSteps() == null ? 0 : session.getScriptSteps().size());
+        int clientCompletedSteps = readPayloadInt(dto.getPayload(), "completedSteps", -1);
+        int completedSteps = clientCompletedSteps >= 0
+                ? clientCompletedSteps
+                : Math.max(completedStepIds.size(), "completed".equals(entity.getStatus()) ? totalSteps : 0);
+        Integer requestedMinutes = dto.getActualMinutes();
+        int actualMinutes = requestedMinutes != null && requestedMinutes > 0
+                ? requestedMinutes : estimateActualMinutes(entity, session);
+        return new CompletionStats(actualMinutes, completedSteps, totalSteps, interruptionCount);
+    }
+
+    private int estimateActualMinutes(StudySession entity, StudySessionVO session) {
+        if (entity.getStartedAt() != null) {
+            LocalDateTime end = entity.getEndedAt() == null ? LocalDateTime.now() : entity.getEndedAt();
+            long minutes = Duration.between(entity.getStartedAt(), end).toMinutes();
+            if (minutes > 0) {
+                return (int) Math.min(minutes, 24 * 60);
+            }
+        }
+        if (session.getScriptSteps() == null) {
+            return 0;
+        }
+        return session.getScriptSteps().stream()
+                .mapToInt(step -> step.getEstimatedMinutes() == null ? 0 : step.getEstimatedMinutes())
+                .sum();
+    }
+
+    private Map<String, Object> buildCompletionSummary(StudySession entity, StudySessionVO session,
+                                                       StudySessionCompleteDTO dto, CompletionStats stats) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("sessionId", entity.getSessionId());
+        summary.put("taskId", entity.getTaskId());
+        summary.put("pathNodeId", entity.getPathNodeId());
+        summary.put("spaceId", entity.getSpaceId());
+        summary.put("actualMinutes", stats.actualMinutes());
+        summary.put("completedSteps", stats.completedSteps());
+        summary.put("totalSteps", stats.totalSteps());
+        summary.put("interruptionCount", stats.interruptionCount());
+        summary.put("completedAt", LocalDateTime.now().toString());
+        if (session.getMastery() != null) {
+            summary.put("masteryLevel", session.getMastery().getLevel());
+            summary.put("masteryLabel", session.getMastery().getLevelLabel());
+            summary.put("nextSuggestion", session.getMastery().getNextSuggestion());
+        }
+        if (dto.getPayload() != null && !dto.getPayload().isEmpty()) {
+            summary.put("clientPayload", dto.getPayload());
+        }
+        return summary;
+    }
+
+    private void completeRealTaskIfNeeded(Long userId, StudySession entity, int actualMinutes) {
+        if (!isNumeric(entity.getTaskId())) {
+            return;
+        }
+        Task task = taskMapper.selectById(Long.valueOf(entity.getTaskId()));
+        if (task == null || !userId.equals(task.getUserId()) || isDeleted(task.getIsDeleted())) {
+            return;
+        }
+        task.setStatus("completed");
+        task.setActualDurationMinutes(actualMinutes);
+        task.setCompletedAt(LocalDateTime.now());
+        taskMapper.updateById(task);
+    }
+
+    private void upsertLearningRecord(Long userId, StudySession entity, StudySessionCompleteDTO dto,
+                                      CompletionStats stats, Map<String, Object> summary) {
+        if (!isNumeric(entity.getSpaceId())) {
+            return;
+        }
+        Long spaceId = Long.valueOf(entity.getSpaceId());
+        LocalDate today = LocalDate.now();
+        LearningRecord record = learningRecordMapper.selectOne(new QueryWrapper<LearningRecord>()
+                .eq("user_id", userId)
+                .eq("space_id", spaceId)
+                .eq("record_date", today)
+                .eq("is_deleted", 0)
+                .last("LIMIT 1"));
+        if (record == null) {
+            record = new LearningRecord();
+            record.setUserId(userId);
+            record.setSpaceId(spaceId);
+            record.setRecordDate(today);
+            record.setStudyDurationMinutes(0);
+            record.setTasksCompleted(0);
+            record.setTasksPlanned(0);
+            record.setInterruptionCount(0);
+            record.setIsDeleted(0);
+        }
+        record.setStudyDurationMinutes(nullSafe(record.getStudyDurationMinutes()) + stats.actualMinutes());
+        record.setTasksCompleted(nullSafe(record.getTasksCompleted()) + (isNumeric(entity.getTaskId()) ? 1 : 0));
+        record.setTasksPlanned(Math.max(nullSafe(record.getTasksPlanned()), record.getTasksCompleted()));
+        record.setInterruptionCount(nullSafe(record.getInterruptionCount()) + stats.interruptionCount());
+        record.setFocusLevel(dto.getFocusLevel());
+        record.setMood(dto.getMood());
+        record.setSelfRating(dto.getSelfRating());
+        record.setNotes(dto.getNotes());
+        record.setAiReflection(String.valueOf(summary.getOrDefault("nextSuggestion", "本次学习会话已完成。")));
+        record.setMetadata(toJson(mergeMetadata(record.getMetadata(), Map.of(
+                "latestStudySession", summary
+        ))));
+
+        if (record.getId() == null) {
+            learningRecordMapper.insert(record);
+        } else {
+            learningRecordMapper.updateById(record);
         }
     }
 
@@ -307,6 +624,32 @@ public class StudySessionServiceImpl implements IStudySessionService {
         return String.valueOf(value);
     }
 
+    private int readPayloadInt(Map<String, Object> payload, String key, int fallback) {
+        if (payload == null || payload.get(key) == null) {
+            return fallback;
+        }
+        Object value = payload.get(key);
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value));
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private Map<String, Object> mergeMetadata(String raw, Map<String, Object> patch) {
+        Map<String, Object> metadata = raw == null || raw.isBlank()
+                ? new LinkedHashMap<>()
+                : fromJson(raw, new TypeReference<LinkedHashMap<String, Object>>() {});
+        if (metadata == null) {
+            metadata = new LinkedHashMap<>();
+        }
+        metadata.putAll(patch);
+        return metadata;
+    }
+
     private String toJson(Object value) {
         if (value == null) {
             return null;
@@ -315,6 +658,30 @@ public class StudySessionServiceImpl implements IStudySessionService {
             return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException e) {
             log.warn("[StudySession] json serialize failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private <T> T fromJson(String value, Class<T> clazz) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(value, clazz);
+        } catch (Exception e) {
+            log.warn("[StudySession] json parse failed: type={}, reason={}", clazz.getSimpleName(), e.getMessage());
+            return null;
+        }
+    }
+
+    private <T> T fromJson(String value, TypeReference<T> type) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(value, type);
+        } catch (Exception e) {
+            log.warn("[StudySession] json parse failed: reason={}", e.getMessage());
             return null;
         }
     }
@@ -341,13 +708,17 @@ public class StudySessionServiceImpl implements IStudySessionService {
         return isDeleted != null && isDeleted == 1;
     }
 
-    private String parseTaskId(String sessionId) {
-        if (sessionId == null || sessionId.isBlank()) {
-            return "mock-task";
-        }
-        if (sessionId.startsWith("ss-mock-")) {
-            return sessionId.substring("ss-mock-".length());
-        }
-        return sessionId;
+    private String stringId(Long value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private int nullSafe(Integer value) {
+        return value == null ? 0 : value;
+    }
+
+    private record StudyEntry(String taskId, Long pathNodeId, String spaceId) {
+    }
+
+    private record CompletionStats(int actualMinutes, int completedSteps, int totalSteps, int interruptionCount) {
     }
 }

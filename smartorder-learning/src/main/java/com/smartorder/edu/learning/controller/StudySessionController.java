@@ -3,8 +3,10 @@ package com.smartorder.edu.learning.controller;
 import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import com.smartorder.edu.learning.domain.vo.StudyEventReceiptVO;
+import com.smartorder.edu.learning.domain.vo.StudySessionCompleteVO;
 import com.smartorder.edu.learning.domain.vo.StudySessionVO;
 import com.smartorder.edu.learning.dto.StudyEventDTO;
+import com.smartorder.edu.learning.dto.StudySessionCompleteDTO;
 import com.smartorder.edu.learning.dto.StudySessionStartDTO;
 import com.smartorder.edu.learning.service.IStudySessionService;
 import io.jsonwebtoken.Claims;
@@ -50,6 +52,17 @@ public class StudySessionController {
     ) {
         Long userId = getCurrentUserId();
         return Result.success(studySessionService.recordEvent(userId, sessionId, dto));
+    }
+
+    @PostMapping("/{sessionId}/complete")
+    @Operation(summary = "完成学习会话", description = "保存会话总结，汇总学习记录，并同步真实任务完成状态")
+    public Result<StudySessionCompleteVO> complete(
+            @PathVariable String sessionId,
+            @RequestBody(required = false) StudySessionCompleteDTO dto
+    ) {
+        Long userId = getCurrentUserId();
+        return Result.success(studySessionService.completeSession(
+                userId, sessionId, dto == null ? new StudySessionCompleteDTO() : dto));
     }
 
     private Long getCurrentUserId() {

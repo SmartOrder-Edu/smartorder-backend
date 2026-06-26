@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS `study_session` (
     `lesson_bundle_id`          VARCHAR(80)  DEFAULT NULL            COMMENT '课程包/脚本包ID',
     `user_id`                   BIGINT       NOT NULL                COMMENT '用户ID',
     `task_id`                   VARCHAR(80)  NOT NULL                COMMENT '任务ID，兼容 mock 与真实任务',
+    `path_node_id`              BIGINT       DEFAULT NULL            COMMENT '来源学习路径节点ID',
     `space_id`                  VARCHAR(80)  DEFAULT NULL            COMMENT '学习空间ID，兼容 mock 与真实空间',
     `mode`                      VARCHAR(30)  NOT NULL DEFAULT 'learn' COMMENT '学习模式：learn/assessment/breakthrough',
     `status`                    VARCHAR(30)  NOT NULL DEFAULT 'active' COMMENT '状态：active/completed/cancelled/expired',
@@ -23,5 +24,6 @@ CREATE TABLE IF NOT EXISTS `study_session` (
     UNIQUE KEY `uk_session_id` (`session_id`),
     KEY `idx_user_id_status` (`user_id`, `status`),
     KEY `idx_task_id` (`task_id`),
+    KEY `idx_path_node_id` (`path_node_id`),
     KEY `idx_space_id` (`space_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='学习会话表';
