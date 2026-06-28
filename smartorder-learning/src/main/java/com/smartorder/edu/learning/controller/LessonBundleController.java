@@ -4,6 +4,7 @@ import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import com.smartorder.edu.learning.domain.vo.LessonBundleStatusVO;
 import com.smartorder.edu.learning.dto.LessonBundleGenerateDTO;
+import com.smartorder.edu.learning.dto.LessonBundleStatusBatchDTO;
 import com.smartorder.edu.learning.service.ILessonBundleService;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
@@ -15,6 +16,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RequiredArgsConstructor
 @RestController
@@ -41,6 +44,13 @@ public class LessonBundleController {
     ) {
         Long userId = getCurrentUserId();
         return Result.success(lessonBundleService.getBundleStatus(userId, taskId, pathNodeId, spaceId, mode));
+    }
+
+    @PostMapping("/by-targets")
+    @Operation(summary = "批量查询学习脚本包状态", description = "按多个学习路径节点一次性查询最近一次脚本生成状态")
+    public Result<List<LessonBundleStatusVO>> byTargets(@RequestBody LessonBundleStatusBatchDTO dto) {
+        Long userId = getCurrentUserId();
+        return Result.success(lessonBundleService.getBundleStatuses(userId, dto));
     }
 
     private Long getCurrentUserId() {

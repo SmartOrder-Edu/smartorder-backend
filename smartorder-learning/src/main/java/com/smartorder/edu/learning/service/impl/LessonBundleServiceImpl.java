@@ -12,6 +12,7 @@ import com.smartorder.edu.learning.domain.entity.Task;
 import com.smartorder.edu.learning.domain.vo.LessonBundleStatusVO;
 import com.smartorder.edu.learning.domain.vo.StudySessionVO;
 import com.smartorder.edu.learning.dto.LessonBundleGenerateDTO;
+import com.smartorder.edu.learning.dto.LessonBundleStatusBatchDTO;
 import com.smartorder.edu.learning.mapper.LearningPathEdgeMapper;
 import com.smartorder.edu.learning.mapper.LearningPathNodeMapper;
 import com.smartorder.edu.learning.mapper.LearningSpaceMapper;
@@ -26,9 +27,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -125,6 +131,38 @@ public class LessonBundleServiceImpl implements ILessonBundleService {
             return vo;
         }
         return toStatusVO(bundle);
+    }
+
+    @Override
+    public List<LessonBundleStatusVO> getBundleStatuses(Long userId, LessonBundleStatusBatchDTO dto) {
+        String normalizedMode = normalizeMode(dto == null ? null : dto.getMode());
+        List<Long> requestedIds = normalizePathNodeIds(dto == null ? null : dto.getPathNodeIds());
+        if (requestedIds.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, LearningPathNode> accessibleNodes = selectAccessiblePathNodes(userId, requestedIds);
+        Map<Long, LessonBundle> latestBundles = selectLatestBundlesByPathNode(
+                userId, new ArrayList<>(accessibleNodes.keySet()), normalizeText(dto == null ? null : dto.getSpaceId(), null), normalizedMode);
+
+        List<LessonBundleStatusVO> result = new ArrayList<>();
+        for (Long pathNodeId : requestedIds) {
+            LearningPathNode node = accessibleNodes.get(pathNodeId);
+            LessonBundle bundle = latestBundles.get(pathNodeId);
+            if (node == null || bundle == null) {
+                result.add(notGeneratedStatus(pathNodeId, node == null ? null : String.valueOf(node.getSpaceId()), normalizedMode));
+                continue;
+            }
+            if ("ready".equals(bundle.getStatus()) && bundle.getExpiresAt() != null
+                    && bundle.getExpiresAt().isBefore(LocalDateTime.now())) {
+                LessonBundleStatusVO vo = toStatusVO(bundle);
+                vo.setStatus("expired");
+                result.add(vo);
+            } else {
+                result.add(toStatusVO(bundle));
+            }
+        }
+        return result;
     }
 
     @Override
@@ -287,6 +325,93 @@ public class LessonBundleServiceImpl implements ILessonBundleService {
             query.eq("space_id", spaceId);
         }
         return lessonBundleMapper.selectOne(query);
+    }
+
+    private Map<Long, LessonBundle> selectLatestBundlesByPathNode(Long userId, List<Long> pathNodeIds, String spaceId, String mode) {
+        if (pathNodeIds == null || pathNodeIds.isEmpty()) {
+            return Map.of();
+        }
+        QueryWrapper<LessonBundle> query = new QueryWrapper<LessonBundle>()
+                .eq("user_id", userId)
+                .eq("mode", mode)
+                .eq("is_deleted", 0)
+                .in("path_node_id", pathNodeIds)
+                .orderByDesc("create_time");
+        if (spaceId != null && !spaceId.isBlank()) {
+            query.eq("space_id", spaceId);
+        }
+
+        List<LessonBundle> bundles = lessonBundleMapper.selectList(query);
+        Map<Long, LessonBundle> latestByPathNodeId = new HashMap<>();
+        for (LessonBundle bundle : bundles) {
+            if (bundle.getPathNodeId() != null) {
+                latestByPathNodeId.putIfAbsent(bundle.getPathNodeId(), bundle);
+            }
+        }
+        return latestByPathNodeId;
+    }
+
+    private Map<Long, LearningPathNode> selectAccessiblePathNodes(Long userId, List<Long> pathNodeIds) {
+        if (pathNodeIds == null || pathNodeIds.isEmpty()) {
+            return Map.of();
+        }
+        List<LearningPathNode> nodes = learningPathNodeMapper.selectList(new QueryWrapper<LearningPathNode>()
+                .in("id", pathNodeIds)
+                .eq("is_deleted", 0));
+        if (nodes.isEmpty()) {
+            return Map.of();
+        }
+
+        Set<Long> spaceIds = new HashSet<>();
+        for (LearningPathNode node : nodes) {
+            if (node.getSpaceId() != null) {
+                spaceIds.add(node.getSpaceId());
+            }
+        }
+        if (spaceIds.isEmpty()) {
+            return Map.of();
+        }
+
+        List<LearningSpace> spaces = learningSpaceMapper.selectList(new QueryWrapper<LearningSpace>()
+                .in("id", spaceIds)
+                .eq("user_id", userId)
+                .eq("is_deleted", 0));
+        Set<Long> accessibleSpaceIds = new HashSet<>();
+        for (LearningSpace space : spaces) {
+            accessibleSpaceIds.add(space.getId());
+        }
+
+        Map<Long, LearningPathNode> result = new HashMap<>();
+        for (LearningPathNode node : nodes) {
+            if (accessibleSpaceIds.contains(node.getSpaceId())) {
+                result.put(node.getId(), node);
+            }
+        }
+        return result;
+    }
+
+    private List<Long> normalizePathNodeIds(List<Long> rawIds) {
+        if (rawIds == null || rawIds.isEmpty()) {
+            return List.of();
+        }
+        List<Long> result = new ArrayList<>();
+        Set<Long> seen = new HashSet<>();
+        for (Long id : rawIds) {
+            if (id != null && seen.add(id)) {
+                result.add(id);
+            }
+        }
+        return result;
+    }
+
+    private LessonBundleStatusVO notGeneratedStatus(Long pathNodeId, String spaceId, String mode) {
+        LessonBundleStatusVO vo = new LessonBundleStatusVO();
+        vo.setTaskId(pathNodeId == null ? null : "path-node-" + pathNodeId);
+        vo.setPathNodeId(pathNodeId);
+        vo.setSpaceId(spaceId);
+        vo.setMode(mode);
+        vo.setStatus("not_generated");
+        return vo;
     }
 
     private int resolveNextVersion(Long userId, String taskId, Long pathNodeId, String spaceId, String mode) {
