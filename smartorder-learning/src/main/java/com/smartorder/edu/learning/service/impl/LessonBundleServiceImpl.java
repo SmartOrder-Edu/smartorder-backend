@@ -18,8 +18,8 @@ import com.smartorder.edu.learning.mapper.LearningSpaceMapper;
 import com.smartorder.edu.learning.mapper.LessonBundleMapper;
 import com.smartorder.edu.learning.mapper.TaskMapper;
 import com.smartorder.edu.learning.service.ILessonBundleService;
-import com.smartorder.edu.learning.service.script.LessonScriptBuilder;
 import com.smartorder.edu.learning.service.script.LessonScriptContext;
+import com.smartorder.edu.learning.service.script.LessonScriptGenerationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -44,7 +44,7 @@ public class LessonBundleServiceImpl implements ILessonBundleService {
     private final LearningSpaceMapper learningSpaceMapper;
     private final LearningPathNodeMapper learningPathNodeMapper;
     private final LearningPathEdgeMapper learningPathEdgeMapper;
-    private final LessonScriptBuilder lessonScriptBuilder;
+    private final LessonScriptGenerationService lessonScriptGenerationService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -62,7 +62,7 @@ public class LessonBundleServiceImpl implements ILessonBundleService {
 
         LessonScriptContext context = buildScriptContext(userId, target, mode);
         String bundleId = "lb-" + UUID.randomUUID();
-        StudySessionVO session = lessonScriptBuilder.build(context);
+        StudySessionVO session = lessonScriptGenerationService.generate(context);
         session.setSessionId("preview-" + bundleId);
         session.setLessonBundleId(bundleId);
         session.setTaskId(target.taskId());
@@ -85,7 +85,7 @@ public class LessonBundleServiceImpl implements ILessonBundleService {
         bundle.setExpiresAt(LocalDateTime.now().plusDays(DEFAULT_EXPIRES_DAYS));
         bundle.setSourceContextHash(sourceContextHash(context));
         bundle.setGenerationContext(toJson(new LinkedHashMap<>(Map.of(
-                "source", "lesson_bundle_service",
+                "source", resolveScriptSource(session),
                 "taskId", target.taskId(),
                 "pathNodeId", target.pathNodeId() == null ? "" : target.pathNodeId(),
                 "spaceId", target.spaceId() == null ? "" : target.spaceId(),
@@ -332,6 +332,21 @@ public class LessonBundleServiceImpl implements ILessonBundleService {
                 context.getPathNodeDescription(),
                 context.getEstimatedDurationMinutes()
         ));
+    }
+
+    private String resolveScriptSource(StudySessionVO session) {
+        if (session == null || session.getScriptSteps() == null || session.getScriptSteps().isEmpty()
+                || session.getScriptSteps().get(0).getMetadata() == null) {
+            return "lesson_script_generator";
+        }
+        Object source = session.getScriptSteps().get(0).getMetadata().get("source");
+        if (source != null && !String.valueOf(source).isBlank()) {
+            return String.valueOf(source);
+        }
+        Object generator = session.getScriptSteps().get(0).getMetadata().get("generator");
+        return generator == null || String.valueOf(generator).isBlank()
+                ? "lesson_script_generator"
+                : "lesson_script_generator_" + generator;
     }
 
     private String toJson(Object value) {

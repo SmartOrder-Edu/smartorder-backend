@@ -302,6 +302,13 @@ agent:
       medium-to-simple: true
       alert-on-simple-failure: true
 
+lesson:
+  script:
+    # template: 仅使用本地模板；hybrid/llm: 优先 LLM，失败自动回退模板
+    generator: ${LESSON_SCRIPT_GENERATOR:template}
+    llm:
+      enabled: ${LESSON_SCRIPT_LLM_ENABLED:false}
+
 # 讯飞虚拟人交互配置
 xfyun:
   avatar:

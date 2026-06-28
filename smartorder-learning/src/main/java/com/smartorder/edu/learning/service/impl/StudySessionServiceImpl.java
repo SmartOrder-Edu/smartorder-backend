@@ -32,8 +32,8 @@ import com.smartorder.edu.learning.mapper.StudyTeachingActionMapper;
 import com.smartorder.edu.learning.mapper.TaskMapper;
 import com.smartorder.edu.learning.service.ILessonBundleService;
 import com.smartorder.edu.learning.service.IStudySessionService;
-import com.smartorder.edu.learning.service.script.LessonScriptBuilder;
 import com.smartorder.edu.learning.service.script.LessonScriptContext;
+import com.smartorder.edu.learning.service.script.LessonScriptGenerationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -65,7 +65,7 @@ public class StudySessionServiceImpl implements IStudySessionService {
     private final LearningPathNodeMapper learningPathNodeMapper;
     private final LearningRecordMapper learningRecordMapper;
     private final LessonBundleMapper lessonBundleMapper;
-    private final LessonScriptBuilder lessonScriptBuilder;
+    private final LessonScriptGenerationService lessonScriptGenerationService;
     private final ILessonBundleService lessonBundleService;
 
     @Override
@@ -84,7 +84,7 @@ public class StudySessionServiceImpl implements IStudySessionService {
             resetSessionProgress(session, dto.getStepId());
         } else {
             bundleId = "lb-" + UUID.randomUUID();
-            session = lessonScriptBuilder.build(buildScriptContext(
+            session = lessonScriptGenerationService.generate(buildScriptContext(
                     userId, entry.taskId(), entry.spaceId(), mode, dto.getStepId()));
         }
         session.setSessionId(sessionId);
@@ -411,7 +411,7 @@ public class StudySessionServiceImpl implements IStudySessionService {
         bundle.setStatus("ready");
         bundle.setVersion(1);
         bundle.setGenerationContext(toJson(new LinkedHashMap<>(Map.of(
-                "source", "template_v1",
+                "source", resolveScriptSource(session),
                 "taskId", entry.taskId(),
                 "pathNodeId", entry.pathNodeId() == null ? "" : entry.pathNodeId(),
                 "spaceId", entry.spaceId() == null ? "" : entry.spaceId()
@@ -419,6 +419,21 @@ public class StudySessionServiceImpl implements IStudySessionService {
         bundle.setBundleJson(toJson(session));
         bundle.setIsDeleted(0);
         lessonBundleMapper.insert(bundle);
+    }
+
+    private String resolveScriptSource(StudySessionVO session) {
+        if (session == null || session.getScriptSteps() == null || session.getScriptSteps().isEmpty()
+                || session.getScriptSteps().get(0).getMetadata() == null) {
+            return "lesson_script_generator";
+        }
+        Object source = session.getScriptSteps().get(0).getMetadata().get("source");
+        if (source != null && !String.valueOf(source).isBlank()) {
+            return String.valueOf(source);
+        }
+        Object generator = session.getScriptSteps().get(0).getMetadata().get("generator");
+        return generator == null || String.valueOf(generator).isBlank()
+                ? "lesson_script_generator"
+                : "lesson_script_generator_" + generator;
     }
 
     private void persistSession(StudySessionVO session, StudySessionStartDTO dto, StudyEntry entry) {
