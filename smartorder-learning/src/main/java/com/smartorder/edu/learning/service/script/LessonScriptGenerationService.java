@@ -14,10 +14,10 @@ public class LessonScriptGenerationService {
     private final LessonScriptBuilder templateBuilder;
     private final LlmLessonScriptGenerator llmLessonScriptGenerator;
 
-    @Value("${lesson.script.generator:template}")
+    @Value("${lesson.script.generator:hybrid}")
     private String generator;
 
-    @Value("${lesson.script.llm.enabled:false}")
+    @Value("${lesson.script.llm.enabled:true}")
     private boolean llmEnabled;
 
     public StudySessionVO generate(LessonScriptContext context) {
@@ -33,7 +33,10 @@ public class LessonScriptGenerationService {
     }
 
     private boolean shouldTryLlm() {
-        String normalized = generator == null ? "template" : generator.trim().toLowerCase();
-        return llmEnabled || "llm".equals(normalized) || "hybrid".equals(normalized);
+        String normalized = generator == null ? "hybrid" : generator.trim().toLowerCase();
+        if (!llmEnabled || "template".equals(normalized)) {
+            return false;
+        }
+        return "llm".equals(normalized) || "hybrid".equals(normalized);
     }
 }
