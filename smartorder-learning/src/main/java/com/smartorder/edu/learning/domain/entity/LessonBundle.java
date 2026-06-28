@@ -19,6 +19,11 @@ public class LessonBundle {
     private Integer version;
     private String targetKnowledgePoints;
     private String generationContext;
+    private String generationTrigger;
+    private String generationReason;
+    private LocalDateTime expiresAt;
+    private String sourceContextHash;
+    private String errorMessage;
     private String bundleJson;
     private Integer isDeleted;
     private LocalDateTime createTime;

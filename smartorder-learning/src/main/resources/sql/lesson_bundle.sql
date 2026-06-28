@@ -11,6 +11,11 @@ CREATE TABLE IF NOT EXISTS `lesson_bundle` (
     `version`                  INT          NOT NULL DEFAULT 1      COMMENT '版本号',
     `target_knowledge_points`  JSON         DEFAULT NULL            COMMENT '目标知识点',
     `generation_context`       JSON         DEFAULT NULL            COMMENT '生成上下文',
+    `generation_trigger`       VARCHAR(40)  DEFAULT NULL            COMMENT '生成触发源：manual/after_complete/system',
+    `generation_reason`        VARCHAR(255) DEFAULT NULL            COMMENT '生成原因说明',
+    `expires_at`               DATETIME     DEFAULT NULL            COMMENT '脚本有效期',
+    `source_context_hash`      VARCHAR(80)  DEFAULT NULL            COMMENT '源上下文摘要，用于判断是否需要刷新',
+    `error_message`            VARCHAR(500) DEFAULT NULL            COMMENT '生成失败原因',
     `bundle_json`              JSON         NOT NULL                COMMENT '脚本、场景、Timeline、掌握度快照',
     `is_deleted`               TINYINT      NOT NULL DEFAULT 0      COMMENT '逻辑删除',
     `create_time`              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -20,5 +25,6 @@ CREATE TABLE IF NOT EXISTS `lesson_bundle` (
     KEY `idx_user_task_mode` (`user_id`, `task_id`, `mode`),
     KEY `idx_user_path_node_mode` (`user_id`, `path_node_id`, `mode`),
     KEY `idx_space_id` (`space_id`),
-    KEY `idx_status` (`status`)
+    KEY `idx_status` (`status`),
+    KEY `idx_expires_at` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='学习脚本/备课包表';

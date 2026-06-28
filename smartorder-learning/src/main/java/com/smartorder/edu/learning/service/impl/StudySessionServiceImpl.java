@@ -30,6 +30,7 @@ import com.smartorder.edu.learning.mapper.StudyEventMapper;
 import com.smartorder.edu.learning.mapper.StudySessionMapper;
 import com.smartorder.edu.learning.mapper.StudyTeachingActionMapper;
 import com.smartorder.edu.learning.mapper.TaskMapper;
+import com.smartorder.edu.learning.service.ILessonBundleService;
 import com.smartorder.edu.learning.service.IStudySessionService;
 import com.smartorder.edu.learning.service.script.LessonScriptBuilder;
 import com.smartorder.edu.learning.service.script.LessonScriptContext;
@@ -65,6 +66,7 @@ public class StudySessionServiceImpl implements IStudySessionService {
     private final LearningRecordMapper learningRecordMapper;
     private final LessonBundleMapper lessonBundleMapper;
     private final LessonScriptBuilder lessonScriptBuilder;
+    private final ILessonBundleService lessonBundleService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -152,6 +154,7 @@ public class StudySessionServiceImpl implements IStudySessionService {
 
         completeRealTaskIfNeeded(userId, entity, stats.actualMinutes());
         upsertLearningRecord(userId, entity, dto, stats, summary);
+        preheatNextLessonBundle(userId, entity);
 
         StudySessionCompleteVO vo = new StudySessionCompleteVO();
         vo.setSessionId(sessionId);
@@ -163,6 +166,18 @@ public class StudySessionServiceImpl implements IStudySessionService {
         vo.setNextSuggestion(session.getMastery() == null ? "" : session.getMastery().getNextSuggestion());
         vo.setSummary(summary);
         return vo;
+    }
+
+    private void preheatNextLessonBundle(Long userId, StudySession entity) {
+        if (entity.getPathNodeId() == null) {
+            return;
+        }
+        try {
+            lessonBundleService.preheatNextPathNode(userId, entity.getPathNodeId(), entity.getMode());
+        } catch (Exception e) {
+            log.warn("[StudySession] next lesson bundle preheat skipped: sessionId={}, pathNodeId={}, reason={}",
+                    entity.getSessionId(), entity.getPathNodeId(), e.getMessage());
+        }
     }
 
     @Override
