@@ -74,10 +74,19 @@ public class StudySessionServiceImpl implements IStudySessionService {
         StudyEntry entry = resolveStudyEntry(userId, dto);
         String mode = normalizeMode(dto.getMode());
         String sessionId = "ss-" + UUID.randomUUID();
-        String bundleId = "lb-" + UUID.randomUUID();
+        LessonBundle reusableBundle = selectReusableLessonBundle(userId, entry, mode);
 
-        StudySessionVO session = lessonScriptBuilder.build(buildScriptContext(
-                userId, entry.taskId(), entry.spaceId(), mode, dto.getStepId()));
+        StudySessionVO session = reusableBundle == null ? null : restoreBundleSession(reusableBundle);
+        String bundleId;
+        boolean reusedBundle = session != null;
+        if (reusedBundle) {
+            bundleId = reusableBundle.getBundleId();
+            resetSessionProgress(session, dto.getStepId());
+        } else {
+            bundleId = "lb-" + UUID.randomUUID();
+            session = lessonScriptBuilder.build(buildScriptContext(
+                    userId, entry.taskId(), entry.spaceId(), mode, dto.getStepId()));
+        }
         session.setSessionId(sessionId);
         session.setLessonBundleId(bundleId);
         session.setTaskId(entry.taskId());
@@ -86,10 +95,12 @@ public class StudySessionServiceImpl implements IStudySessionService {
         session.setMode(mode);
         session.setStatus("active");
 
-        persistLessonBundle(userId, entry, mode, bundleId, session);
+        if (!reusedBundle) {
+            persistLessonBundle(userId, entry, mode, bundleId, session);
+        }
         persistSession(session, dto, entry);
-        log.info("[StudySession] session started: userId={}, taskId={}, pathNodeId={}, sessionId={}, bundleId={}",
-                userId, entry.taskId(), entry.pathNodeId(), sessionId, bundleId);
+        log.info("[StudySession] session started: userId={}, taskId={}, pathNodeId={}, sessionId={}, bundleId={}, reusedBundle={}",
+                userId, entry.taskId(), entry.pathNodeId(), sessionId, bundleId, reusedBundle);
         return session;
     }
 
@@ -209,6 +220,64 @@ public class StudySessionServiceImpl implements IStudySessionService {
             action.setPayload(toJson(mergeMetadata(action.getPayload(), patch)));
         }
         studyTeachingActionMapper.updateById(action);
+    }
+
+    private LessonBundle selectReusableLessonBundle(Long userId, StudyEntry entry, String mode) {
+        QueryWrapper<LessonBundle> query = new QueryWrapper<LessonBundle>()
+                .eq("user_id", userId)
+                .eq("mode", mode)
+                .eq("status", "ready")
+                .eq("is_deleted", 0)
+                .orderByDesc("create_time")
+                .last("LIMIT 1");
+        if (entry.pathNodeId() != null) {
+            query.eq("path_node_id", entry.pathNodeId());
+        } else {
+            query.eq("task_id", entry.taskId());
+        }
+        if (entry.spaceId() != null && !entry.spaceId().isBlank()) {
+            query.eq("space_id", entry.spaceId());
+        }
+
+        LessonBundle bundle = lessonBundleMapper.selectOne(query);
+        if (bundle == null || isBundleExpired(bundle) || bundle.getBundleJson() == null) {
+            return null;
+        }
+        return bundle;
+    }
+
+    private boolean isBundleExpired(LessonBundle bundle) {
+        return bundle.getExpiresAt() != null && bundle.getExpiresAt().isBefore(LocalDateTime.now());
+    }
+
+    private StudySessionVO restoreBundleSession(LessonBundle bundle) {
+        StudySessionVO session = fromJson(bundle.getBundleJson(), StudySessionVO.class);
+        if (session == null || session.getScriptSteps() == null || session.getScriptSteps().isEmpty()) {
+            return null;
+        }
+        return session;
+    }
+
+    private void resetSessionProgress(StudySessionVO session, String requestedStepId) {
+        if (session.getScriptSteps() == null || session.getScriptSteps().isEmpty()) {
+            return;
+        }
+        String currentStepId = session.getScriptSteps().get(0).getId();
+        if (requestedStepId != null && !requestedStepId.isBlank()) {
+            for (var step : session.getScriptSteps()) {
+                if (requestedStepId.equals(step.getId())) {
+                    currentStepId = requestedStepId;
+                    break;
+                }
+            }
+        }
+
+        for (var step : session.getScriptSteps()) {
+            step.setStatus(currentStepId.equals(step.getId()) ? "in_progress" : "pending");
+        }
+        session.setCurrentStepId(currentStepId);
+        session.setCurrentScene(resolveCurrentScene(session, currentStepId));
+        session.setCurrentTimeline(resolveCurrentTimeline(session, currentStepId));
     }
 
     private StudyEntry resolveStudyEntry(Long userId, StudySessionStartDTO dto) {
