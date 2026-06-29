@@ -78,6 +78,20 @@ public class LlmConfig {
         return builder.build();
     }
 
+    @Bean("lessonScriptChatModel")
+    public OpenAiChatModel lessonScriptChatModel() {
+        return OpenAiChatModel.builder()
+                .httpClientBuilder(JdkLangChain4jHttpClientBuilder.withDefaults())
+                .apiKey(apiKey)
+                .baseUrl(baseUrl)
+                .modelName(modelName)
+                .logRequests(logRequests)
+                .logResponses(logResponses)
+                .responseFormat("json_object")
+                .timeout(Duration.ofSeconds(120))
+                .build();
+    }
+
     @Bean
     public EmbeddingModel embeddingModel() {
         return OpenAiEmbeddingModel.builder()

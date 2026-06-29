@@ -235,24 +235,24 @@ python:
 langchain4j:
   open-ai:
     chat-model:
-      api-key: ${MIMO_API_KEY}
-      base-url: https://token-plan-cn.xiaomimimo.com/v1
-      model-name: mimo-v2.5-pro
-#      api-key: sk-00d1dcd9a07048e3906331d6bf085e19
-#      base-url: https://api.deepseek.com/v1
-#      model-name: deepseek-v4-pro
+#      api-key: ${MIMO_API_KEY}
+#      base-url: https://token-plan-cn.xiaomimimo.com/v1
+#      model-name: mimo-v2.5-pro
+      api-key: sk-00d1dcd9a07048e3906331d6bf085e19
+      base-url: https://api.deepseek.com/v1
+      model-name: deepseek-v4-pro
       log-requests: true
       log-responses: true
       timeout: PT120S
       max-retries: 2
     streaming-chat-model:
-      api-key: ${MIMO_API_KEY}
+#      api-key: ${MIMO_API_KEY}
       # DeepSeek 提供了完全兼容 OpenAI 格式的接口，通常需要在 URL 后加上 /v1
-      base-url: https://token-plan-cn.xiaomimimo.com/v1
-      model-name: mimo-v2.5-pro
-#      api-key: sk-00d1dcd9a07048e3906331d6bf085e19
-#      base-url: https://api.deepseek.com/v1
-#      model-name: deepseek-v4-pro
+#      base-url: https://token-plan-cn.xiaomimimo.com/v1
+#      model-name: mimo-v2.5-pro
+      api-key: sk-00d1dcd9a07048e3906331d6bf085e19
+      base-url: https://api.deepseek.com/v1
+      model-name: deepseek-v4-pro
       # 强烈建议在开发阶段开启以下两项日志！
       # 这能让你在控制台清楚地看到发给大模型的 JSON Schema 是什么样的，
       # 以及大模型返回的工具调用指令长什么样，非常有助于排障。
@@ -301,6 +301,14 @@ agent:
       complex-to-medium: true
       medium-to-simple: true
       alert-on-simple-failure: true
+
+lesson:
+  script:
+    # 默认优先使用 LLM 生成教程脚本；如需关闭 LLM，设置 LESSON_SCRIPT_LLM_ENABLED=false 或 LESSON_SCRIPT_GENERATOR=template
+    # template: 仅使用本地模板；hybrid/llm: 优先 LLM，失败自动回退模板
+    generator: ${LESSON_SCRIPT_GENERATOR:hybrid}
+    llm:
+      enabled: ${LESSON_SCRIPT_LLM_ENABLED:true}
 
 # 讯飞虚拟人交互配置
 xfyun:
