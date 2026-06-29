@@ -8,8 +8,7 @@ import com.smartorder.edu.learning.domain.vo.StudyScriptStepVO;
 import com.smartorder.edu.learning.domain.vo.StudySessionVO;
 import com.smartorder.edu.learning.domain.vo.StudyTimelineVO;
 import dev.langchain4j.model.chat.ChatModel;
-import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -18,22 +17,26 @@ import java.util.List;
 import java.util.Map;
 
 @Component
-@RequiredArgsConstructor
 public class LlmLessonScriptGenerator {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
-    private final ObjectProvider<ChatModel> chatModelProvider;
+    private final ChatModel chatModel;
     private final LessonTimelineBuilder timelineBuilder;
 
-    public StudySessionVO generate(LessonScriptContext context) {
-        ChatModel chatModel = chatModelProvider.getIfAvailable();
-        if (chatModel == null) {
-            throw new IllegalStateException("ChatModel bean not available");
-        }
+    public LlmLessonScriptGenerator(@Qualifier("lessonScriptChatModel") ChatModel chatModel,
+                                    LessonTimelineBuilder timelineBuilder) {
+        this.chatModel = chatModel;
+        this.timelineBuilder = timelineBuilder;
+    }
 
+    public StudySessionVO generate(LessonScriptContext context) {
         String raw = chatModel.chat(buildPrompt(context));
-        JsonNode root = parseJson(raw);
+        JsonNode root = parseAndValidateOrRepair(context, raw);
+        return buildSession(context, root);
+    }
+
+    private StudySessionVO buildSession(LessonScriptContext context, JsonNode root) {
         List<StudyScriptStepVO> steps = parseSteps(context, root.path("steps"));
         if (steps.isEmpty()) {
             throw new IllegalStateException("LLM returned empty lesson steps");
@@ -47,8 +50,9 @@ public class LlmLessonScriptGenerator {
         JsonNode rawSteps = root.path("steps");
         for (int i = 0; i < steps.size(); i++) {
             StudyScriptStepVO step = steps.get(i);
-            timelinesByStepId.put(step.getId(), timelineBuilder.build(step));
-            scenesByStepId.put(step.getId(), buildScene(step, rawSteps.path(i)));
+            StudySceneVO scene = buildScene(step, rawSteps.path(i));
+            scenesByStepId.put(step.getId(), scene);
+            timelinesByStepId.put(step.getId(), timelineBuilder.build(step, segmentTypesFromScene(scene)));
         }
 
         StudySessionVO session = new StudySessionVO();
@@ -69,6 +73,94 @@ public class LlmLessonScriptGenerator {
         return session;
     }
 
+    private JsonNode parseAndValidateOrRepair(LessonScriptContext context, String raw) {
+        List<String> errors;
+        try {
+            JsonNode root = parseJson(raw);
+            errors = validateRoot(root);
+            if (errors.isEmpty()) {
+                return root;
+            }
+        } catch (Exception e) {
+            errors = List.of("LLM response JSON parse failed: " + e.getMessage());
+        }
+
+        String repaired = chatModel.chat(buildRepairPrompt(context, raw, errors));
+        JsonNode repairedRoot = parseJson(repaired);
+        List<String> repairedErrors = validateRoot(repairedRoot);
+        if (!repairedErrors.isEmpty()) {
+            throw new IllegalStateException("LLM lesson script contract invalid after repair: "
+                    + String.join("; ", repairedErrors));
+        }
+        return repairedRoot;
+    }
+
+    private List<String> validateRoot(JsonNode root) {
+        List<String> errors = new ArrayList<>();
+        JsonNode steps = root == null ? null : root.path("steps");
+        if (steps == null || !steps.isArray()) {
+            errors.add("steps must be an array");
+            return errors;
+        }
+        int size = steps.size();
+        if (size < 4 || size > 6) {
+            errors.add("steps size must be 4 to 6, actual=" + size);
+        }
+
+        boolean hasConcept = false;
+        boolean hasExampleOrPractice = false;
+        boolean hasAssessment = false;
+        boolean hasSummary = false;
+        boolean hasQuiz = false;
+        int index = 0;
+        for (JsonNode step : steps) {
+            index++;
+            String title = text(step, "title", "");
+            String markdown = text(step, "markdown", "");
+            String canvasType = normalizeCanvasType(text(step, "canvasType", defaultCanvasType(index)));
+            String phase = text(step, "phase", "");
+            if (title.isBlank()) {
+                errors.add("step " + index + " title is blank");
+            }
+            if (markdown.length() < 40) {
+                errors.add("step " + index + " markdown is too short");
+            }
+            hasConcept = hasConcept || "concept".equals(canvasType) || "derivation".equals(canvasType);
+            hasExampleOrPractice = hasExampleOrPractice || "example".equals(canvasType) || "practice".equals(canvasType);
+            hasAssessment = hasAssessment || "assessment".equals(canvasType) || "assessment".equals(phase);
+            hasSummary = hasSummary || "summary".equals(canvasType) || "summary".equals(phase);
+            hasQuiz = hasQuiz || step.has("quiz") || containsSegmentQuiz(step.path("teachingSegments"));
+        }
+        if (!hasConcept) {
+            errors.add("steps must include a concept or derivation step");
+        }
+        if (!hasExampleOrPractice) {
+            errors.add("steps must include an example or practice step");
+        }
+        if (!hasAssessment) {
+            errors.add("steps must include an assessment step");
+        }
+        if (!hasSummary) {
+            errors.add("steps must include a summary step");
+        }
+        if (!hasQuiz) {
+            errors.add("at least one quiz is required");
+        }
+        return errors;
+    }
+
+    private boolean containsSegmentQuiz(JsonNode segmentsNode) {
+        if (!segmentsNode.isArray()) {
+            return false;
+        }
+        for (JsonNode segment : segmentsNode) {
+            if ("quiz".equals(normalizeSegmentType(text(segment, "type", ""))) || segment.has("quiz")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private List<StudyScriptStepVO> parseSteps(LessonScriptContext context, JsonNode stepsNode) {
         if (!stepsNode.isArray()) {
             throw new IllegalStateException("LLM steps must be an array");
@@ -76,6 +168,9 @@ public class LlmLessonScriptGenerator {
         List<StudyScriptStepVO> steps = new ArrayList<>();
         int index = 1;
         for (JsonNode node : stepsNode) {
+            if (index > 6) {
+                break;
+            }
             String title = text(node, "title", "");
             if (title.isBlank()) {
                 continue;
@@ -129,6 +224,30 @@ public class LlmLessonScriptGenerator {
         return scene;
     }
 
+    @SuppressWarnings("unchecked")
+    private List<String> segmentTypesFromScene(StudySceneVO scene) {
+        if (scene == null || scene.getContent() == null) {
+            return List.of();
+        }
+        Object flow = scene.getContent().get("teachingFlow");
+        if (!(flow instanceof Map<?, ?> flowMap)) {
+            return List.of();
+        }
+        Object segments = flowMap.get("segments");
+        if (!(segments instanceof List<?> segmentList)) {
+            return List.of();
+        }
+        List<String> types = new ArrayList<>();
+        for (Object item : segmentList) {
+            if (item instanceof Map<?, ?> segment) {
+                Object rawType = segment.get("type");
+                String type = normalizeSegmentType(rawType == null ? "text" : String.valueOf(rawType));
+                types.add(type);
+            }
+        }
+        return types;
+    }
+
     private Map<String, Object> buildTeachingFlow(StudyScriptStepVO step, JsonNode segmentsNode) {
         List<Map<String, Object>> segments = new ArrayList<>();
         if (segmentsNode.isArray()) {
@@ -171,15 +290,21 @@ public class LlmLessonScriptGenerator {
 
     private Map<String, Object> normalizeQuiz(StudyScriptStepVO step, JsonNode quizNode) {
         Map<String, Object> quiz = new LinkedHashMap<>();
+        String answerType = normalizeAnswerType(text(quizNode, "answerType", "text"), quizNode);
+        String answer = text(quizNode, "answer", text(quizNode, "correctAnswer", "请参考解析"));
+        String correctAnswer = text(quizNode, "correctAnswer", answer);
+        String explanation = text(quizNode, "explanation",
+                text(quizNode, "errorExplanation", "关键是先确认条件，再选择方法。"));
         quiz.put("id", step.getId() + "-q1");
         quiz.put("prompt", text(quizNode, "prompt", "完成当前知识点的小检验"));
-        quiz.put("answerType", text(quizNode, "answerType", "short_text"));
+        quiz.put("answerType", answerType);
         quiz.put("body", text(quizNode, "body", text(quizNode, "prompt", "请说明这一步最关键的判断依据。")));
-        quiz.put("answer", text(quizNode, "answer", text(quizNode, "correctAnswer", "")));
-        quiz.put("correctAnswer", text(quizNode, "correctAnswer", text(quizNode, "answer", "")));
+        quiz.put("answer", answer);
+        quiz.put("correctAnswer", correctAnswer);
         quiz.put("hint", text(quizNode, "hint", "先回到本步骤的定义和适用条件。"));
-        quiz.put("explanation", text(quizNode, "explanation", text(quizNode, "errorExplanation", "关键是先确认条件，再选择方法。")));
-        if (quizNode.has("options")) {
+        quiz.put("explanation", explanation);
+        quiz.put("errorExplanation", explanation);
+        if (quizNode.has("options") && !"text".equals(answerType)) {
             quiz.put("options", toPlainObject(quizNode.path("options")));
         }
         return quiz;
@@ -212,9 +337,9 @@ public class LlmLessonScriptGenerator {
                       "canvasType": "concept|example|practice|assessment|derivation|summary",
                       "markdown": "本步骤展示给学生的 Markdown 内容",
                       "teachingSegments": [
-                        {"type": "text|formula|diagram|quiz", "markdown": "分段讲解", "agentCommentary": "导师口吻提示", "quiz": {"prompt": "题干", "answerType": "short_text", "answer": "参考答案", "hint": "提示", "explanation": "解析"}}
+                        {"type": "text|formula|diagram|quiz", "markdown": "分段讲解", "agentCommentary": "导师口吻提示", "quiz": {"prompt": "题干", "answerType": "text|single_select|multi_select|number", "answer": "参考答案", "correctAnswer": "参考答案", "hint": "提示", "explanation": "解析"}}
                       ],
-                      "quiz": {"prompt": "题干", "answerType": "short_text", "answer": "参考答案", "hint": "提示", "explanation": "解析"},
+                      "quiz": {"prompt": "题干", "answerType": "text|single_select|multi_select|number", "answer": "参考答案", "correctAnswer": "参考答案", "hint": "提示", "explanation": "解析"},
                       "exampleSteps": [{"id": "ex1", "label": "步骤名", "markdown": "例题步骤"}]
                     }
                   ],
@@ -226,7 +351,8 @@ public class LlmLessonScriptGenerator {
                 2. 内容必须围绕上下文知识点，不要使用“洛必达法则”等无关默认示例。
                 3. 讲解要像教程脚本，不要只列大纲；每个 markdown 至少 80 个中文字符。
                 4. quiz 要有明确参考答案和解析。
-                5. 如果知识点属于编程/工程/计算机，请优先给出可执行思路、例子或伪代码。
+                5. answerType 只能使用 text、single_select、multi_select、number；不要使用 short_text。
+                6. 如果知识点属于编程/工程/计算机，请优先给出可执行思路、例子或伪代码。
 
                 学习上下文：
                 - 学习空间：%s
@@ -250,6 +376,48 @@ public class LlmLessonScriptGenerator {
                 safe(context.getMode(), "learn"),
                 context.getDifficultyLevel() == null ? "未知" : context.getDifficultyLevel(),
                 context.getEstimatedDurationMinutes() == null ? "20" : context.getEstimatedDurationMinutes()
+        );
+    }
+
+    private String buildRepairPrompt(LessonScriptContext context, String invalidJson, List<String> errors) {
+        return """
+                你是学习教程脚本 JSON 修复器。请根据错误列表修复下方 JSON，使其严格满足学习空间教程脚本合同。
+
+                只输出一个 JSON 对象，不要 Markdown 代码块，不要解释，不要额外文本。
+
+                必须满足：
+                - steps 数量为 4 到 6。
+                - 必须包含 concept 或 derivation 步骤。
+                - 必须包含 example 或 practice 步骤。
+                - 必须包含 assessment 步骤，且至少有一个 quiz。
+                - 必须包含 summary 步骤。
+                - 每个 step 必须有 title、subtitle、estimatedMinutes、canvasType、markdown、teachingSegments。
+                - canvasType 只能是 concept、example、practice、assessment、derivation、summary。
+                - teachingSegments[*].type 只能是 text、formula、diagram、quiz。
+                - quiz.answerType 只能是 text、single_select、multi_select、number。
+                - answer 和 correctAnswer 都必须有值。
+                - 内容必须围绕知识点，不要使用无关默认示例。
+
+                学习上下文：
+                - 学习空间：%s
+                - 任务标题：%s
+                - 知识点标题：%s
+                - 知识点描述：%s
+                - 学习模式：%s
+
+                错误列表：
+                %s
+
+                待修复 JSON：
+                %s
+                """.formatted(
+                safe(context.getSpaceName(), "未命名学习空间"),
+                safe(context.getTaskTitle(), ""),
+                safe(topic(context), "当前知识点"),
+                safe(context.getPathNodeDescription(), ""),
+                safe(context.getMode(), "learn"),
+                "- " + String.join("\n- ", errors),
+                invalidJson == null ? "" : invalidJson
         );
     }
 
@@ -339,6 +507,22 @@ public class LlmLessonScriptGenerator {
             case "text", "formula", "diagram", "quiz" -> value.toLowerCase();
             default -> "text";
         };
+    }
+
+    private String normalizeAnswerType(String value, JsonNode quizNode) {
+        String normalized = safe(value, "text").toLowerCase().replace('-', '_');
+        String answerType = switch (normalized) {
+            case "single_select", "single_choice", "choice", "select" -> "single_select";
+            case "multi_select", "multi_choice", "multiple_choice" -> "multi_select";
+            case "number", "numeric" -> "number";
+            case "text", "short_text", "short_answer", "free_text", "open_text" -> "text";
+            default -> "text";
+        };
+        if (("single_select".equals(answerType) || "multi_select".equals(answerType))
+                && !quizNode.path("options").isArray()) {
+            return "text";
+        }
+        return answerType;
     }
 
     private String text(JsonNode node, String field, String fallback) {

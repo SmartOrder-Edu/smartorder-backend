@@ -19,7 +19,13 @@ public class LessonTimelineBuilder {
     private final LessonSceneActionFactory sceneActionFactory;
 
     public StudyTimelineVO build(StudyScriptStepVO step) {
-        List<String> segmentTypes = segmentTypes(step);
+        return build(step, segmentTypes(step));
+    }
+
+    public StudyTimelineVO build(StudyScriptStepVO step, List<String> segmentTypes) {
+        List<String> effectiveSegmentTypes = segmentTypes == null || segmentTypes.isEmpty()
+                ? segmentTypes(step)
+                : segmentTypes;
 
         StudyTimelineVO timeline = new StudyTimelineVO();
         timeline.setId("timeline-" + step.getId());
@@ -27,9 +33,9 @@ public class LessonTimelineBuilder {
         timeline.setClockSource("internal");
 
         long cursorMs = 0L;
-        for (int i = 0; i < segmentTypes.size(); i++) {
-            String segmentType = segmentTypes.get(i);
-            boolean waitForUser = i == segmentTypes.size() - 1 || "quiz".equals(segmentType) || "diagram".equals(segmentType);
+        for (int i = 0; i < effectiveSegmentTypes.size(); i++) {
+            String segmentType = effectiveSegmentTypes.get(i);
+            boolean waitForUser = i == effectiveSegmentTypes.size() - 1 || "quiz".equals(segmentType) || "diagram".equals(segmentType);
             long durationMs = waitForUser ? 800L : DEFAULT_SEGMENT_MS + i * 400L;
             Map<String, Object> sceneAction = sceneActionFactory.build(step, segmentType, i, cursorMs, durationMs);
 
