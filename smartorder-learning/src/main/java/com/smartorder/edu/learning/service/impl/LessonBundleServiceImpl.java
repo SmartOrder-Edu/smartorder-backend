@@ -19,6 +19,7 @@ import com.smartorder.edu.learning.mapper.LearningSpaceMapper;
 import com.smartorder.edu.learning.mapper.LessonBundleMapper;
 import com.smartorder.edu.learning.mapper.TaskMapper;
 import com.smartorder.edu.learning.service.ILessonBundleService;
+import com.smartorder.edu.learning.service.media.LessonMediaAssetService;
 import com.smartorder.edu.learning.service.script.LessonScriptContext;
 import com.smartorder.edu.learning.service.script.LessonScriptGenerationService;
 import lombok.RequiredArgsConstructor;
@@ -51,6 +52,7 @@ public class LessonBundleServiceImpl implements ILessonBundleService {
     private final LearningPathNodeMapper learningPathNodeMapper;
     private final LearningPathEdgeMapper learningPathEdgeMapper;
     private final LessonScriptGenerationService lessonScriptGenerationService;
+    private final LessonMediaAssetService lessonMediaAssetService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -76,6 +78,7 @@ public class LessonBundleServiceImpl implements ILessonBundleService {
         session.setSpaceId(target.spaceId());
         session.setMode(mode);
         session.setStatus("bundle_ready");
+        lessonMediaAssetService.enrichSession(session);
 
         LessonBundle bundle = new LessonBundle();
         bundle.setBundleId(bundleId);

@@ -310,8 +310,25 @@ lesson:
     llm:
       enabled: ${LESSON_SCRIPT_LLM_ENABLED:true}
 
+study:
+  media:
+    # 学习语音和字幕资源生成开关。未配置讯飞密钥时保持 false，不影响现有学习链路。
+    enabled: ${STUDY_MEDIA_ENABLED:false}
+    root-path: ${STUDY_MEDIA_ROOT_PATH:D:/smartorder-assets}
+    public-prefix: ${STUDY_MEDIA_PUBLIC_PREFIX:/study-assets}
+
 # 讯飞虚拟人交互配置
 xfyun:
+  super-tts:
+    enabled: ${XFYUN_SUPER_TTS_ENABLED:false}
+    app-id: ${XFYUN_SUPER_TTS_APP_ID:}
+    api-password: ${XFYUN_SUPER_TTS_API_PASSWORD:}
+    websocket-url: ${XFYUN_SUPER_TTS_WEBSOCKET_URL:wss://cbm01.cn-huabei-1.xf-yun.com/v1/private/mcd9m97e6}
+    voice: ${XFYUN_SUPER_TTS_VOICE:x5_lingfeiyi_flow}
+    speed: ${XFYUN_SUPER_TTS_SPEED:50}
+    volume: ${XFYUN_SUPER_TTS_VOLUME:50}
+    pitch: ${XFYUN_SUPER_TTS_PITCH:50}
+    timeout-seconds: ${XFYUN_SUPER_TTS_TIMEOUT_SECONDS:90}
   avatar:
     app-id: ${xfyun_avatar_app_id}
     api-key: ${xfyun_avatar_api_key}
