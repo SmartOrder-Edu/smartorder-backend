@@ -35,7 +35,7 @@ public class LessonTimelineBuilder {
         long cursorMs = 0L;
         for (int i = 0; i < effectiveSegmentTypes.size(); i++) {
             String segmentType = effectiveSegmentTypes.get(i);
-            boolean waitForUser = i == effectiveSegmentTypes.size() - 1 || "quiz".equals(segmentType) || "diagram".equals(segmentType);
+            boolean waitForUser = i == effectiveSegmentTypes.size() - 1 || waitsForUser(segmentType);
             long durationMs = waitForUser ? 800L : DEFAULT_SEGMENT_MS + i * 400L;
             Map<String, Object> sceneAction = sceneActionFactory.build(step, segmentType, i, cursorMs, durationMs);
 
@@ -76,13 +76,21 @@ public class LessonTimelineBuilder {
 
     private List<String> segmentTypes(StudyScriptStepVO step) {
         return switch (step.getCanvasType()) {
-            case "concept" -> List.of("text", "formula", "text", "diagram", "quiz", "text");
-            case "example" -> List.of("text", "text", "text", "formula");
-            case "practice" -> List.of("text", "quiz", "formula");
-            case "assessment" -> List.of("text", "formula", "quiz");
-            case "derivation" -> List.of("text", "formula", "formula");
-            case "summary" -> List.of("text", "text", "text");
-            default -> List.of("text");
+            case "concept" -> List.of("hook", "recall", "explain", "board_write", "teacher_question", "summary");
+            case "example" -> List.of("hook", "worked_example", "board_write", "student_try", "summary");
+            case "practice" -> List.of("recall", "student_try", "diagnosis", "summary");
+            case "assessment" -> List.of("teacher_question", "student_try", "diagnosis");
+            case "derivation" -> List.of("explain", "formula", "board_write", "teacher_question");
+            case "summary" -> List.of("summary", "mistake_warning", "transition");
+            default -> List.of("explain");
         };
+    }
+
+    private boolean waitsForUser(String segmentType) {
+        return "quiz".equals(segmentType)
+                || "diagram".equals(segmentType)
+                || "teacher_question".equals(segmentType)
+                || "student_try".equals(segmentType)
+                || "self_check".equals(segmentType);
     }
 }

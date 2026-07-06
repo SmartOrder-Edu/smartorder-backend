@@ -121,13 +121,16 @@ public class LlmLessonScriptGenerator {
             index++;
             String title = text(step, "title", "");
             String markdown = text(step, "markdown", "");
+            String teacherTalk = collectSegmentField(step.path("teachingSegments"), "teacherTalk");
+            String boardContent = collectSegmentField(step.path("teachingSegments"), "boardContent");
+            String instructionalText = markdown + teacherTalk + boardContent;
             String canvasType = normalizeCanvasType(text(step, "canvasType", defaultCanvasType(index)));
             String phase = text(step, "phase", "");
             if (title.isBlank()) {
                 errors.add("step " + index + " title is blank");
             }
-            if (markdown.length() < 40) {
-                errors.add("step " + index + " markdown is too short");
+            if (instructionalText.length() < 80) {
+                errors.add("step " + index + " instructional content is too short");
             }
             hasConcept = hasConcept || "concept".equals(canvasType) || "derivation".equals(canvasType);
             hasExampleOrPractice = hasExampleOrPractice || "example".equals(canvasType) || "practice".equals(canvasType);
@@ -163,6 +166,17 @@ public class LlmLessonScriptGenerator {
             }
         }
         return false;
+    }
+
+    private String collectSegmentField(JsonNode segmentsNode, String field) {
+        if (!segmentsNode.isArray()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (JsonNode segment : segmentsNode) {
+            builder.append(text(segment, field, ""));
+        }
+        return builder.toString();
     }
 
     private List<StudyScriptStepVO> parseSteps(LessonScriptContext context, JsonNode stepsNode) {
@@ -257,19 +271,40 @@ public class LlmLessonScriptGenerator {
         if (segmentsNode.isArray()) {
             int index = 1;
             for (JsonNode segmentNode : segmentsNode) {
+                String type = normalizeSegmentType(text(segmentNode, "type", "explain"));
+                String teacherTalk = text(segmentNode, "teacherTalk",
+                        text(segmentNode, "agentCommentary", ""));
+                String boardContent = text(segmentNode, "boardContent", "");
                 String markdown = text(segmentNode, "markdown", "");
-                if (markdown.isBlank() && !"quiz".equals(text(segmentNode, "type", ""))) {
+                if (markdown.isBlank()) {
+                    markdown = boardContent.isBlank() ? teacherTalk : boardContent;
+                }
+                if (markdown.isBlank() && !isInteractiveSegment(type)) {
                     continue;
                 }
                 Map<String, Object> segment = new LinkedHashMap<>();
-                String type = normalizeSegmentType(text(segmentNode, "type", "text"));
                 segment.put("id", step.getId() + "-" + index);
                 segment.put("type", type);
                 segment.put("markdown", markdown);
-                segment.put("autoAdvanceMs", "quiz".equals(type) || index >= segmentsNode.size() ? 0 : 3600 + index * 400);
-                segment.put("agentCommentary", text(segmentNode, "agentCommentary", ""));
-                if ("quiz".equals(type)) {
-                    segment.put("quiz", normalizeQuiz(step, segmentNode.path("quiz")));
+                segment.put("teacherTalk", teacherTalk.isBlank() ? markdown : teacherTalk);
+                segment.put("boardContent", boardContent);
+                segment.put("teachingIntent", text(segmentNode, "teachingIntent", ""));
+                segment.put("emotionTone", text(segmentNode, "emotionTone", defaultTone(type)));
+                segment.put("agentCommentary", text(segmentNode, "agentCommentary",
+                        teacherTalk.isBlank() ? defaultCommentary(type) : teacherTalk));
+                if (segmentNode.has("visualHint")) {
+                    segment.put("visualHint", toPlainObject(segmentNode.path("visualHint")));
+                }
+                if (segmentNode.has("interaction")) {
+                    segment.put("interaction", toPlainObject(segmentNode.path("interaction")));
+                }
+                int autoAdvanceMs = resolveAutoAdvanceMs(segmentNode, type, index >= segmentsNode.size());
+                segment.put("autoAdvanceMs", autoAdvanceMs);
+                if (isInteractiveSegment(type)) {
+                    JsonNode quizNode = segmentNode.has("quiz")
+                            ? segmentNode.path("quiz")
+                            : segmentNode.path("interaction");
+                    segment.put("quiz", normalizeQuiz(step, quizNode));
                 }
                 segments.add(segment);
                 index++;
@@ -278,8 +313,12 @@ public class LlmLessonScriptGenerator {
         if (segments.isEmpty()) {
             Map<String, Object> segment = new LinkedHashMap<>();
             segment.put("id", step.getId() + "-1");
-            segment.put("type", "text");
+            segment.put("type", "explain");
             segment.put("markdown", defaultMarkdown(step));
+            segment.put("teacherTalk", "我们先抓住这一步的核心判断，再慢慢展开。");
+            segment.put("boardContent", defaultMarkdown(step));
+            segment.put("teachingIntent", "兜底生成基础讲解段，保证课堂脚本可播放。");
+            segment.put("emotionTone", "serious");
             segment.put("autoAdvanceMs", 0);
             segment.put("agentCommentary", "我们先抓住这一步的核心判断。");
             segments.add(segment);
@@ -292,6 +331,47 @@ public class LlmLessonScriptGenerator {
         ));
     }
 
+    private int resolveAutoAdvanceMs(JsonNode segmentNode, String type, boolean lastSegment) {
+        JsonNode pacing = segmentNode.path("pacing");
+        if (pacing != null && pacing.isObject()) {
+            if (pacing.path("waitForUser").asBoolean(false)) {
+                return 0;
+            }
+            JsonNode autoAdvance = pacing.path("autoAdvanceMs");
+            if (autoAdvance.isNumber()) {
+                return clamp(autoAdvance.asInt(), 0, 12000);
+            }
+        }
+        return isInteractiveSegment(type) || lastSegment ? 0 : 3600;
+    }
+
+    private boolean isInteractiveSegment(String type) {
+        return "quiz".equals(type)
+                || "teacher_question".equals(type)
+                || "student_try".equals(type)
+                || "self_check".equals(type);
+    }
+
+    private String defaultTone(String type) {
+        return switch (type) {
+            case "hook", "analogy" -> "curious";
+            case "mistake_warning", "diagnosis" -> "warning";
+            case "summary" -> "summary";
+            default -> "serious";
+        };
+    }
+
+    private String defaultCommentary(String type) {
+        return switch (type) {
+            case "hook" -> "先看一个问题，把注意力放到今天要解决的矛盾上。";
+            case "recall" -> "先回忆前置知识，后面会用到它。";
+            case "teacher_question", "student_try", "self_check" -> "这里停一下，你先判断再继续。";
+            case "mistake_warning" -> "这一点很容易错，先把错误原因看清楚。";
+            case "summary" -> "最后把这节课的方法收束成可复用步骤。";
+            default -> "继续推进这一步，注意老师强调的判断条件。";
+        };
+    }
+
     private Map<String, Object> normalizeQuiz(StudyScriptStepVO step, JsonNode quizNode) {
         Map<String, Object> quiz = new LinkedHashMap<>();
         String rawPrompt = text(quizNode, "prompt", "完成当前知识点的小检验");
@@ -301,7 +381,9 @@ public class LlmLessonScriptGenerator {
         String answer = text(quizNode, "answer", text(quizNode, "correctAnswer", "请参考解析"));
         String correctAnswer = text(quizNode, "correctAnswer", answer);
         String explanation = text(quizNode, "explanation",
-                text(quizNode, "errorExplanation", "关键是先确认条件，再选择方法。"));
+                text(quizNode, "feedbackWhenCorrect",
+                        text(quizNode, "feedbackWhenWrong",
+                                text(quizNode, "errorExplanation", "关键是先确认条件，再选择方法。"))));
         if ("text".equals(answerType) && !options.isEmpty()) {
             answerType = "single_select";
         }
@@ -323,6 +405,8 @@ public class LlmLessonScriptGenerator {
         quiz.put("hint", text(quizNode, "hint", "先回到本步骤的定义和适用条件。"));
         quiz.put("explanation", explanation);
         quiz.put("errorExplanation", explanation);
+        quiz.put("feedbackWhenCorrect", text(quizNode, "feedbackWhenCorrect", explanation));
+        quiz.put("feedbackWhenWrong", text(quizNode, "feedbackWhenWrong", explanation));
         if (!options.isEmpty() && !"text".equals(answerType)) {
             quiz.put("options", options);
         }
@@ -477,7 +561,17 @@ public class LlmLessonScriptGenerator {
                       "canvasType": "concept|example|practice|assessment|derivation|summary",
                       "markdown": "本步骤展示给学生的 Markdown 内容",
                       "teachingSegments": [
-                        {"type": "text|formula|diagram|quiz", "markdown": "分段讲解", "agentCommentary": "导师口吻提示", "quiz": {"prompt": "题干，不要把 A/B/C 选项写在这里", "answerType": "text|single_select|multi_select|number", "options": [{"label": "展示给学生的选项文本", "value": "a"}], "answer": "参考答案或选项 value", "correctAnswer": "参考答案或选项 value", "hint": "提示", "explanation": "解析"}}
+                        {
+                          "type": "hook|recall|explain|analogy|board_write|diagram|worked_example|teacher_question|student_try|diagnosis|mistake_warning|summary|transition|quiz|formula",
+                          "teacherTalk": "老师真实会说出口的话，像面对学生讲课，不要写成资料摘要",
+                          "boardContent": "黑板/画布上逐步出现的内容，可用 Markdown、公式、代码或 Mermaid",
+                          "markdown": "兼容字段，通常等于 boardContent 或本段展示内容",
+                          "teachingIntent": "说明本段为什么这样讲",
+                          "emotionTone": "curious|encourage|serious|warning|summary",
+                          "visualHint": {"type": "formula|diagram|code|table|mindmap|text", "content": "可视化内容"},
+                          "interaction": {"type": "pause|single_select|multi_select|text_answer|predict|self_check", "prompt": "课堂提问", "options": [{"label": "选项文本", "value": "a"}], "correctAnswer": "a", "feedbackWhenCorrect": "答对反馈", "feedbackWhenWrong": "答错反馈"},
+                          "pacing": {"autoAdvanceMs": 3600, "waitForUser": false}
+                        }
                       ],
                       "quiz": {"prompt": "题干，不要把 A/B/C 选项写在这里", "answerType": "text|single_select|multi_select|number", "options": [{"label": "展示给学生的选项文本", "value": "a"}], "answer": "参考答案或选项 value", "correctAnswer": "参考答案或选项 value", "hint": "提示", "explanation": "解析"},
                       "exampleSteps": [{"id": "ex1", "label": "步骤名", "markdown": "例题步骤"}]
@@ -487,13 +581,16 @@ public class LlmLessonScriptGenerator {
                 }
 
                 规则：
-                1. steps 数量 4 到 6 个，必须包含概念、例题或练习、检验、总结。
+                1. steps 数量 4 到 6 个，必须包含导入、前置回忆、概念、例题或练习、检验、总结。
                 2. 内容必须围绕上下文知识点，不要使用“洛必达法则”等无关默认示例。
-                3. 讲解要像教程脚本，不要只列大纲；每个 markdown 至少 80 个中文字符。
+                3. 讲解要像老师正在上课，不要只列大纲；每个 step 的 teacherTalk + boardContent 总量至少 160 个中文字符。
                 4. quiz 要有明确参考答案和解析；选择题必须使用 single_select 或 multi_select，并提供 options 数组。
                 5. answerType 只能使用 text、single_select、multi_select、number；不要使用 short_text。
                 6. 选择题的 options 必须是 {"label":"展示给学生的选项文本","value":"a|b|c|d"}，correctAnswer 必须填写选项 value，不要把 “A. ... B. ...” 拼进 prompt。
                 7. 如果知识点属于编程/工程/计算机，请优先给出可执行思路、例子或伪代码。
+                8. 每个脚本至少包含 3 次课堂停顿或互动，类型可为 teacher_question、student_try、quiz 或 self_check。
+                9. 至少包含 1 个 mistake_warning 或 diagnosis，像老师一样指出常见误区并纠正。
+                10. teacherTalk 用自然口语，boardContent 用精炼板书；不要把长篇资料一口气塞进同一段。
 
                 学习上下文：
                 - 学习空间：%s
@@ -534,7 +631,8 @@ public class LlmLessonScriptGenerator {
                 - 必须包含 summary 步骤。
                 - 每个 step 必须有 title、subtitle、estimatedMinutes、canvasType、markdown、teachingSegments。
                 - canvasType 只能是 concept、example、practice、assessment、derivation、summary。
-                - teachingSegments[*].type 只能是 text、formula、diagram、quiz。
+                - teachingSegments[*].type 只能是 hook、recall、explain、analogy、board_write、diagram、worked_example、teacher_question、student_try、diagnosis、mistake_warning、summary、transition、quiz、formula。
+                - 每个 teachingSegment 必须有 teacherTalk、boardContent 或 markdown 之一。
                 - quiz.answerType 只能是 text、single_select、multi_select、number。
                 - 当 quiz.answerType 为 single_select 或 multi_select 时，quiz.options 必须是数组，且每项包含 label 和 value；correctAnswer 必须填写选项 value。
                 - answer 和 correctAnswer 都必须有值。
@@ -646,8 +744,11 @@ public class LlmLessonScriptGenerator {
 
     private String normalizeSegmentType(String value) {
         return switch (safe(value, "").toLowerCase()) {
-            case "text", "formula", "diagram", "quiz" -> value.toLowerCase();
-            default -> "text";
+            case "text" -> "explain";
+            case "hook", "recall", "explain", "analogy", "board_write", "diagram", "worked_example",
+                    "teacher_question", "student_try", "diagnosis", "mistake_warning", "summary",
+                    "transition", "quiz", "formula", "self_check" -> value.toLowerCase();
+            default -> "explain";
         };
     }
 

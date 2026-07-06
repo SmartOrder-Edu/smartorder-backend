@@ -294,10 +294,15 @@ public class LessonScriptBuilder {
             segment.put("id", step.getId() + "-" + (i + 1));
             segment.put("type", segmentType);
             segment.put("markdown", segmentMarkdown(step, segmentType, i));
-            segment.put("autoAdvanceMs", ("quiz".equals(segmentType) || i == segmentTypes.size() - 1) ? 0 : 3600 + i * 400);
+            segment.put("teacherTalk", teacherTalk(step, segmentType, i));
+            segment.put("boardContent", boardContent(step, segmentType, i));
+            segment.put("teachingIntent", teachingIntent(segmentType));
+            segment.put("emotionTone", emotionTone(segmentType));
+            segment.put("autoAdvanceMs", (isInteractiveSegment(segmentType) || i == segmentTypes.size() - 1) ? 0 : 3600 + i * 400);
             segment.put("agentCommentary", segmentCommentary(step, segmentType, i));
-            if ("quiz".equals(segmentType)) {
+            if (isInteractiveSegment(segmentType)) {
                 segment.put("quiz", inlineQuiz(step));
+                segment.put("interaction", inlineQuiz(step));
             }
             if ("diagram".equals(segmentType)) {
                 segment.put("focusTarget", new LinkedHashMap<>(Map.of(
@@ -318,13 +323,13 @@ public class LessonScriptBuilder {
 
     private List<String> segmentTypes(StudyScriptStepVO step) {
         return switch (step.getCanvasType()) {
-            case "concept" -> List.of("text", "formula", "text", "diagram", "quiz", "text");
-            case "example" -> List.of("text", "text", "text", "formula");
-            case "practice" -> List.of("text", "quiz", "formula");
-            case "assessment" -> List.of("text", "formula", "quiz");
-            case "derivation" -> List.of("text", "formula", "formula");
-            case "summary" -> List.of("text", "text", "text");
-            default -> List.of("text");
+            case "concept" -> List.of("hook", "recall", "explain", "board_write", "teacher_question", "summary");
+            case "example" -> List.of("hook", "worked_example", "board_write", "student_try", "summary");
+            case "practice" -> List.of("recall", "student_try", "diagnosis", "summary");
+            case "assessment" -> List.of("teacher_question", "student_try", "diagnosis");
+            case "derivation" -> List.of("explain", "formula", "board_write", "teacher_question");
+            case "summary" -> List.of("summary", "mistake_warning", "transition");
+            default -> List.of("explain");
         };
     }
 
@@ -333,12 +338,80 @@ public class LessonScriptBuilder {
         return switch (segmentType) {
             case "formula" -> "## 关键表达\n\n围绕 **" + title + "**，先确认条件，再执行方法。\n\n"
                     + "$$\\text{条件成立} \\Rightarrow \\text{选择当前方法} \\Rightarrow \\text{验证结果}$$";
+            case "hook" -> "## 先看一个问题\n\n如果一上来就套方法，很容易忽略 **" + title + "** 的关键条件。";
+            case "recall" -> "## 先回忆\n\n学习 **" + title + "** 前，先确认你是否记得它依赖的定义、条件和常见判定方式。";
+            case "board_write" -> "## 板书\n\n1. 先写出题目给出的条件\n2. 圈出必须验证的关键点\n3. 再选择可用方法";
+            case "worked_example" -> "## 例题分镜\n\n先判定题型，再拆解条件，最后把步骤沉淀成可复用模板。";
+            case "teacher_question", "student_try" -> "";
+            case "diagnosis" -> "## 诊断\n\n如果刚才答错，通常不是不会算，而是跳过了条件判断。我们先把错因拆开。";
+            case "mistake_warning" -> "## 常见误区\n\n把“看起来像”当成“条件满足”，是学习 **" + title + "** 时最容易出现的问题。";
+            case "summary", "transition" -> "## 小结\n\n把本段方法压缩成一句话：先判断条件，再选择方法，最后验证结果。";
             case "diagram" -> "```mermaid\nflowchart TD\n  A[阅读题目] --> B[判断关键条件]\n  B -->|满足| C[使用当前方法]\n  B -->|不满足| D[换方法或先变形]\n  C --> E[验证结果]\n```";
             case "quiz" -> "";
             default -> "## " + (index + 1) + ". " + title + "\n\n"
                     + safe(step.getSubtitle()) + "\n\n"
                     + "Agent 会把这一步拆成可执行的小动作，帮助你减少跳步。";
         };
+    }
+
+    private String teacherTalk(StudyScriptStepVO step, String segmentType, int index) {
+        String title = safe(step.getTitle());
+        return switch (segmentType) {
+            case "hook" -> "我们先不急着看定义。你可以先想一下，为什么同样是“" + title + "”，有的人一套方法就错？今天我们要解决的就是这个判断问题。";
+            case "recall" -> "在正式讲之前，先把前置知识叫醒。后面每一步都不是凭感觉做，而是依赖这些条件来判断。";
+            case "explain" -> "现在进入核心讲解。我会先说结论，再把它拆成几个可执行的小判断。";
+            case "board_write" -> "你看黑板上这三行，第一行写条件，第二行写判断，第三行才是方法。顺序不要反。";
+            case "worked_example" -> "我们用一个例子走一遍。注意我不是直接算，而是先判断这个例子到底属于哪一类。";
+            case "teacher_question" -> "这里停一下。如果现在让你决定下一步，你会先检查什么？";
+            case "student_try" -> "这一小步交给你试一下。先不用追求完整答案，只要说出最关键的判断依据。";
+            case "diagnosis" -> "如果你刚才选错了，问题大概率出在跳过了条件。我们把这个错因拆开看。";
+            case "mistake_warning" -> "这一点是高频误区。很多同学不是不会公式，而是把条件没满足的情况也拿来套。";
+            case "summary" -> "最后收束一下，把这一步变成以后可以复用的方法。";
+            case "transition" -> "接下来我们把刚才的方法迁移到下一步，看看它是否还能成立。";
+            case "formula" -> "公式不是第一步。先确认条件成立，再让公式上场。";
+            case "diagram" -> "看这张图，真正重要的是中间那个分叉：条件满足还是不满足。";
+            default -> index == 0 ? "我们开始学习：" + title : "继续拆解这一步，先把判断依据说清楚。";
+        };
+    }
+
+    private String boardContent(StudyScriptStepVO step, String segmentType, int index) {
+        String title = safe(step.getTitle());
+        return switch (segmentType) {
+            case "teacher_question", "student_try" -> "问题：使用当前方法前，最先要确认什么？";
+            case "diagnosis" -> "错因定位：\n\n- 是否跳过了条件？\n- 是否把形式相似当成方法适用？\n- 是否验证了结果？";
+            case "mistake_warning" -> "易错点：条件未满足时，不能直接套用当前方法。";
+            default -> segmentMarkdown(step, segmentType, index).isBlank()
+                    ? "围绕 **" + title + "** 做一次关键判断。"
+                    : segmentMarkdown(step, segmentType, index);
+        };
+    }
+
+    private String teachingIntent(String segmentType) {
+        return switch (segmentType) {
+            case "hook" -> "制造问题感，让学生知道本节课要解决什么。";
+            case "recall" -> "激活前置知识，降低后续理解负担。";
+            case "teacher_question", "student_try" -> "通过停顿和作答检查学生是否真的跟上。";
+            case "diagnosis", "mistake_warning" -> "暴露并纠正常见误区。";
+            case "summary" -> "沉淀可复用方法。";
+            default -> "推进课堂讲解。";
+        };
+    }
+
+    private String emotionTone(String segmentType) {
+        return switch (segmentType) {
+            case "hook" -> "curious";
+            case "teacher_question", "student_try" -> "encourage";
+            case "diagnosis", "mistake_warning" -> "warning";
+            case "summary", "transition" -> "summary";
+            default -> "serious";
+        };
+    }
+
+    private boolean isInteractiveSegment(String segmentType) {
+        return "quiz".equals(segmentType)
+                || "teacher_question".equals(segmentType)
+                || "student_try".equals(segmentType)
+                || "self_check".equals(segmentType);
     }
 
     private String segmentCommentary(StudyScriptStepVO step, String segmentType, int index) {
