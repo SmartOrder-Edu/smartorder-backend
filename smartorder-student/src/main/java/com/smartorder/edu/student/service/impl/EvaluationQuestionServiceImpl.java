@@ -13,13 +13,13 @@ import com.smartorder.edu.student.aiservice.QuestionAiService;
 import com.smartorder.edu.student.domain.dto.GenerateQuestionDTO;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestion;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationItem;
-import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationJob;
+import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationTask;
 import com.smartorder.edu.student.domain.enums.PromptFile;
-import com.smartorder.edu.student.domain.enums.QuestionJobPlan;
+import com.smartorder.edu.student.domain.enums.QuestionTaskPlan;
 import com.smartorder.edu.student.domain.enums.QuestionScore;
 import com.smartorder.edu.student.domain.vo.GenerateQuestionVO;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationItemMapper;
-import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationJobMapper;
+import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationTaskMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
 import com.smartorder.edu.student.service.IEvaluationQuestionService;
 import com.smartorder.edu.student.util.StudentPromptFileLoader;
@@ -49,10 +49,10 @@ import static com.smartorder.edu.common.util.ThreadLocalUtils.getCurrentUserId;
  *
  * <p>整体流程：
  * <ol>
- *   <li>接收 {@link GenerateQuestionDTO} 请求，在事务中创建「生成任务(job)」与「生成明细(item)」。</li>
+ *   <li>接收 {@link GenerateQuestionDTO} 请求，在事务中创建「生成任务(task)」与「生成明细(item)」。</li>
  *   <li>按题型将明细拆分为多个批次，批量并行调用大模型流式生成题目。</li>
  *   <li>解析大模型返回的 JSON，落库到 {@code evaluation_question} 题库表。</li>
- *   <li>全程通过 SSE 向前端推送进度事件，并实时更新 job/item 状态。</li>
+ *   <li>全程通过 SSE 向前端推送进度事件，并实时更新 task/item 状态。</li>
  * </ol>
  * </p>
  *
@@ -76,7 +76,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     private final EvaluationQuestionMapper evaluationQuestionMapper;
     private final LearningSpaceMapper learningSpaceMapper;
     private final ObjectMapper objectMapper;
-    private final EvaluationQuestionGenerationJobMapper generationJobMapper;
+    private final EvaluationQuestionGenerationTaskMapper generationTaskMapper;
     private final EvaluationQuestionGenerationItemMapper generationItemMapper;
     private final TransactionTemplate transactionTemplate;
     private final QuestionAiService questionAiService;
@@ -103,15 +103,14 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         // createGenerationContext 内部只抛 BusinessException(RuntimeException)，
         // TransactionTemplate 遇到 RuntimeException 会自动回滚并向上抛出，
         // 因此无需 try-catch 包装，也无需 null 检查（execute 不会返回 null）。
-        // 在事务中创建生成任务(job)与生成明细(item)，保证初始数据一致。
+        // 在事务中创建生成任务(task)与生成明细(item)，保证初始数据一致。
         GenerationContext context = transactionTemplate.execute(status -> createGenerationContext(dto));
-        log.info("生成问题任务开始: jobId={}, jobNo={}, totalCount={}",
-                context.job().getId(), context.job().getJobNo(), context.job().getTotalCount());
+        log.info("生成问题任务开始: taskId={}, totalCount={}",
+                context.task().getId(), context.task().getTotalCount());
         // SSE 推送「任务开始」事件，便于前端初始化进度条
-        sendEvent(emitter, QuestionJobPlan.QUESTION_JOB_PLAN.getEventName(), Map.of(
-                "jobId", context.job().getId(),
-                "jobNo", context.job().getJobNo(),
-                "totalCount", context.job().getTotalCount(),
+        sendEvent(emitter, QuestionTaskPlan.QUESTION_TASK_PLAN.getEventName(), Map.of(
+                "taskId", context.task().getId(),
+                "totalCount", context.task().getTotalCount(),
                 "description", "生成问题任务开始"
         ));
 
@@ -141,10 +140,10 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     }
 
     /**
-     * 在事务中构建生成上下文：校验请求、解析课程名，并落库「生成任务(job)」与「生成明细(item)」。
+     * 在事务中构建生成上下文：校验请求、解析课程名，并落库「生成任务(task)」与「生成明细(item)」。
      *
      * @param dto 出题请求参数
-     * @return 包含 job、item 列表及课程/主题信息的生成上下文
+     * @return 包含 task、item 列表及课程/主题信息的生成上下文
      */
     private GenerationContext createGenerationContext(GenerateQuestionDTO dto) {
         if (dto.getQuestionTypeCountList() == null || dto.getQuestionTypeCountList().isEmpty()) {
@@ -161,10 +160,9 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
         long id = IdGenerator.nextId();
         Long userId = resolveCurrentUserId();
-        // 构建生成任务(job)记录，初始状态为 pending
-        EvaluationQuestionGenerationJob job = EvaluationQuestionGenerationJob.builder()
+        // 构建生成任务(task)记录，初始状态为 pending
+        EvaluationQuestionGenerationTask task = EvaluationQuestionGenerationTask.builder()
                 .id(id)
-                .jobNo("QG-" + id)
                 .userId(userId)
                 .learningSpaceId(dto.getLearningSpaceId())
                 .chapterId(dto.getChapterId())
@@ -177,24 +175,24 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                 .successCount(0)
                 .failedCount(0)
                 .progress(0)
-                .currentStep("created")
+                .currentStep("running")
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
-        generationJobMapper.insert(job);
+        generationTaskMapper.insert(task);
 
         // 构建并批量落库生成明细(item)，每道题对应一条明细
-        List<EvaluationQuestionGenerationItem> items = createGenerationItems(job.getId(), dto, now);
+        List<EvaluationQuestionGenerationItem> items = createGenerationItems(task.getId(), dto, now);
         generationItemMapper.insertBatch(items);
 
 
-        return new GenerationContext(dto, courseName, topic, job, items);
+        return new GenerationContext(dto, courseName, topic, task, items);
     }
 
     /**
      * 根据请求中各题型的「数量」展开成多条生成明细(item)，每条明细代表一个待生成的题目。
      */
-    private List<EvaluationQuestionGenerationItem> createGenerationItems(Long jobId, GenerateQuestionDTO dto, LocalDateTime now) {
+    private List<EvaluationQuestionGenerationItem> createGenerationItems(Long taskId, GenerateQuestionDTO dto, LocalDateTime now) {
         List<EvaluationQuestionGenerationItem> items = new ArrayList<>();
         int sequenceNo = 1;
 
@@ -206,7 +204,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
             for (int i = 0; i < count; i++) {
                 EvaluationQuestionGenerationItem item = EvaluationQuestionGenerationItem.builder()
                         .id(IdGenerator.nextId())
-                        .jobId(jobId)
+                        .taskId(taskId)
                         .questionType(typeCount.getQuestionType())
                         .difficulty(difficulty)
                         .optionCount(optionCount)
@@ -234,14 +232,14 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         AtomicInteger successCount = new AtomicInteger(0);
         Set<Long> successfulItemIds = ConcurrentHashMap.newKeySet();
 
-        updateJobRunning(context.job().getId());
+        updateTaskRunning(context.task().getId());
 
         try {
             // 把待生成的 item 分成多个批次，每个批次包含同一题型的若干题目，批次之间可以并行生成
             List<GenerationBatch> batches = createGenerationBatches(context);
             validateGenerationBatches(batches);
-            log.info("并行生成问题开始: jobId={}, batchCount={}, totalCount={}",
-                    context.job().getId(), batches.size(), context.job().getTotalCount());
+            log.info("并行生成问题开始: taskId={}, batchCount={}, totalCount={}",
+                    context.task().getId(), batches.size(), context.task().getTotalCount());
 
             // 每个批次提交到线程池并行生成
             List<CompletableFuture<Void>> futures = batches.stream()
@@ -252,20 +250,20 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                     .toList();
             waitForBatches(futures);
 
-            updateJobFinished(context.job().getId(), "success", successCount.get(), 0, null);
-            log.info("生成问题任务完成: jobId={}, successCount={}, failedCount=0",
-                    context.job().getId(), successCount.get());
+            updateTaskFinished(context.task().getId(), "success", successCount.get(), 0, null);
+            log.info("生成问题任务完成: taskId={}, successCount={}, failedCount=0",
+                    context.task().getId(), successCount.get());
 
             completeEmitter(emitter);
 
         } catch (Exception e) {
             // 失败兜底：未成功的明细标记为 failed，并按成功/失败比例确定任务终态
-            int failedCount = context.job().getTotalCount() - successfulItemIds.size();
+            int failedCount = context.task().getTotalCount() - successfulItemIds.size();
             markUnfinishedItemsFailed(context.items(), successfulItemIds, e);
-            updateJobFinished(context.job().getId(), resolveTerminalStatus(successfulItemIds.size(), failedCount),
+            updateTaskFinished(context.task().getId(), resolveTerminalStatus(successfulItemIds.size(), failedCount),
                     successfulItemIds.size(), failedCount, e.getMessage());
-            log.error("异步生成问题失败: jobId={}, successCount={}, failedCount={}",
-                    context.job().getId(), successfulItemIds.size(), failedCount, e);
+            log.error("异步生成问题失败: taskId={}, successCount={}, failedCount={}",
+                    context.task().getId(), successfulItemIds.size(), failedCount, e);
             completeEmitterWithError(emitter, e);
         }
     }
@@ -343,8 +341,8 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         // 先将本批次所有 item 标记为 running
         markItemsRunning(batch.items());
 
-        log.info("准备生成题型批次: jobId={}, questionType={}, difficulty={}, count={}",
-                context.job().getId(), batch.questionType(), batch.difficulty(), batch.count());
+        log.info("准备生成题型批次: taskId={}, questionType={}, difficulty={}, count={}",
+                context.task().getId(), batch.questionType(), batch.difficulty(), batch.count());
 
         // 根据课程/主题/题型/难度等构建大模型提示词
         String userPrompt = buildUserPrompt(
@@ -355,12 +353,12 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                 batch.difficulty(),
                 batch.optionCount()
         );
-        log.debug("生成问题提示词构建完成: jobId={}, questionType={}, length={}",
-                context.job().getId(), batch.questionType(), userPrompt.length());
+        log.debug("生成问题提示词构建完成: taskId={}, questionType={}, length={}",
+                context.task().getId(), batch.questionType(), userPrompt.length());
 
-        updateJobStep(context.job().getId(), "generating " + batch.questionType());
+        updateTaskStep(context.task().getId(), "generating " + batch.questionType());
         // 流式调用大模型并等待完整响应，过程中通过 SSE 实时推送 token
-        String llmJson = callStreamingModelAndWait(userPrompt, emitter, batch.questionType(), context.job().getId());
+        String llmJson = callStreamingModelAndWait(userPrompt, emitter, batch.questionType(), context.task().getId());
         JsonNode questionsNode = parseLlmResponse(llmJson);
 
         // 校验返回题目数量是否与请求一致
@@ -386,11 +384,11 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
             markItemSuccess(item.getId(), questionId, llmJson);
             successfulItemIds.add(item.getId());
             int generatedCount = successCount.incrementAndGet();
-            updateJobProgress(context.job().getId(), generatedCount, 0, context.job().getTotalCount(),
-                    "generated " + generatedCount + "/" + context.job().getTotalCount());
+            updateTaskProgress(context.task().getId(), generatedCount, 0, context.task().getTotalCount(),
+                    "generated " + generatedCount + "/" + context.task().getTotalCount());
         }
-        log.info("题型批次生成完成: jobId={}, questionType={}, count={}",
-                context.job().getId(), batch.questionType(), batch.count());
+        log.info("题型批次生成完成: taskId={}, questionType={}, count={}",
+                context.task().getId(), batch.questionType(), batch.count());
     }
 
     /**
@@ -430,7 +428,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
      * <p>通过 Reactor Flux 订阅流式输出，每收到一个分片就追加到 fullContent 并通过 SSE 推送；
      * 使用 CountDownLatch 阻塞至流结束或出错。返回拼接后的完整文本。</p>
      */
-    private String callStreamingModelAndWait(String userPrompt, SseEmitter emitter, String questionType, Long jobId) {
+    private String callStreamingModelAndWait(String userPrompt, SseEmitter emitter, String questionType, Long taskId) {
         StringBuilder fullContent = new StringBuilder();
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<Throwable> errorRef = new AtomicReference<>();
@@ -445,7 +443,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                                 sendEvent(emitter, questionType,
                                         Map.of(
                                                 "questionType", questionType,
-                                                "jobId", jobId,
+                                                "taskId", taskId,
                                                 "chunk", partialResponse
                                         ));
                             },
@@ -518,18 +516,18 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     }
 
     /** 任务进入运行状态：更新 currentStep=running */
-    private void updateJobRunning(Long jobId) {
-        buildAndUpdate(jobId, update -> update.setCurrentStep("running"));
+    private void updateTaskRunning(Long taskId) {
+        buildAndUpdate(taskId, update -> update.setCurrentStep("running"));
     }
 
     /** 更新任务当前步骤描述（如 generating single_choice） */
-    private void updateJobStep(Long jobId, String currentStep) {
-        buildAndUpdate(jobId, update -> update.setCurrentStep(currentStep));
+    private void updateTaskStep(Long taskId, String currentStep) {
+        buildAndUpdate(taskId, update -> update.setCurrentStep(currentStep));
     }
 
     /** 更新任务进度：成功数、失败数与百分比进度 */
-    private void updateJobProgress(Long jobId, int successCount, int failedCount, int totalCount, String currentStep) {
-        buildAndUpdate(jobId, update -> {
+    private void updateTaskProgress(Long taskId, int successCount, int failedCount, int totalCount, String currentStep) {
+        buildAndUpdate(taskId, update -> {
             update.setSuccessCount(successCount);
             update.setFailedCount(failedCount);
             update.setProgress(calculateProgress(successCount, failedCount, totalCount));
@@ -538,8 +536,8 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     }
 
     /** 任务结束：写入终态(status)、成功/失败数、进度、错误信息与结束时间 */
-    private void updateJobFinished(Long jobId, String status, int successCount, int failedCount, String errorMessage) {
-        buildAndUpdate(jobId, update -> {
+    private void updateTaskFinished(Long taskId, String status, int successCount, int failedCount, String errorMessage) {
+        buildAndUpdate(taskId, update -> {
             update.setStatus(status);
             update.setSuccessCount(successCount);
             update.setFailedCount(failedCount);
@@ -550,13 +548,13 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         });
     }
 
-    /** 通用更新工具：构建仅含 jobId 与 updatedAt 的更新对象，套用自定义字段后写库 */
-    private void buildAndUpdate(Long jobId, Consumer<EvaluationQuestionGenerationJob> customizer) {
-        EvaluationQuestionGenerationJob update = new EvaluationQuestionGenerationJob();
-        update.setId(jobId);
+    /** 通用更新工具：构建仅含 taskId 与 updatedAt 的更新对象，套用自定义字段后写库 */
+    private void buildAndUpdate(Long taskId, Consumer<EvaluationQuestionGenerationTask> customizer) {
+        EvaluationQuestionGenerationTask update = new EvaluationQuestionGenerationTask();
+        update.setId(taskId);
         update.setUpdatedAt(LocalDateTime.now());
         customizer.accept(update);
-        generationJobMapper.updateById(update);
+        generationTaskMapper.updateById(update);
     }
 
     /** 将一批明细(item)标记为 running，并记录开始时间 */
@@ -595,7 +593,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         generationItemMapper.update(null, wrapper);
     }
 
-    /** 解析当前登录用户ID（用于 job 归属），失败则抛业务异常 */
+    /** 解析当前登录用户ID（用于 task 归属），失败则抛业务异常 */
     private Long resolveCurrentUserId() {
         try {
             return getCurrentUserId();
@@ -617,7 +615,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         return learningSpace.getName();
     }
 
-    /** 将请求 DTO 序列化为 JSON，用于存储到 job 的 requestPayload（便于回溯原始请求） */
+    /** 将请求 DTO 序列化为 JSON，用于存储到 task 的 requestPayload（便于回溯原始请求） */
     private String toJson(GenerateQuestionDTO dto) {
         try {
             return objectMapper.writeValueAsString(dto);
@@ -826,12 +824,12 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         return text;
     }
 
-    /** 生成上下文：贯穿一次生成任务的请求参数、课程/主题、任务(job)与明细(item)集合 */
+    /** 生成上下文：贯穿一次生成任务的请求参数、课程/主题、任务(task)与明细(item)集合 */
     private record GenerationContext(
             GenerateQuestionDTO dto,
             String courseName,
             String topic,
-            EvaluationQuestionGenerationJob job,
+            EvaluationQuestionGenerationTask task,
             List<EvaluationQuestionGenerationItem> items
     ) {
     }

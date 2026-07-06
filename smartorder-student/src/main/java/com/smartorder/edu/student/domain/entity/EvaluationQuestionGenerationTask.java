@@ -11,24 +11,22 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 /**
- * 测评题目生成任务(job)实体。
+ * 测评题目生成任务(task)实体。
  *
- * <p>一次「生成题库」请求对应一条 job 记录，汇总该次任务的进度、成功/失败数与状态，
- * 并通过 jobNo 便于前端或运维追踪。</p>
+ * <p>一次「生成题库」请求对应一条 task 记录，汇总该次任务的进度、成功/失败数与状态，
+ * 便于前端或运维追踪。</p>
  */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@TableName("evaluation_question_generation_job")
+@TableName("evaluation_question_generation_task")
 @Builder
-public class EvaluationQuestionGenerationJob {
+public class EvaluationQuestionGenerationTask {
 
     /** 主键ID */
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
-    /** 任务编号，形如 QG-{id}，用于追踪 */
-    private String jobNo;
     /** 发起用户ID */
     private Long userId;
     /** 所属学习空间ID */

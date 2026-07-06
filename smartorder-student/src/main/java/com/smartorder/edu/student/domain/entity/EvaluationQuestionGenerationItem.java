@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 /**
  * 测评题目生成明细(item)实体。
  *
- * <p>job 下每道待生成题目对应一条 item。与题库题目通过 {@code questionId} 关联，
+ * <p>task 下每道待生成题目对应一条 item。与题库题目通过 {@code questionId} 关联，
  * 记录单题的生成状态、重试次数与原始大模型响应，便于失败重试与问题排查。</p>
  */
 @Data
@@ -28,7 +28,7 @@ public class EvaluationQuestionGenerationItem {
     private Long id;
 
     /** 所属生成任务ID */
-    private Long jobId;
+    private Long taskId;
     /** 关联生成的题库题目ID（成功落库后回填） */
     private Long questionId;
     /** 题型 */

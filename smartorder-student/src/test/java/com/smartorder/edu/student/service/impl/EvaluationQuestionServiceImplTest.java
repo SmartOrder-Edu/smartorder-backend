@@ -7,10 +7,10 @@ import com.smartorder.edu.student.aiservice.QuestionAiService;
 import com.smartorder.edu.student.domain.dto.GenerateQuestionDTO;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestion;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationItem;
-import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationJob;
+import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationTask;
 import com.smartorder.edu.student.domain.vo.GenerateQuestionVO;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationItemMapper;
-import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationJobMapper;
+import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationTaskMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
 import com.smartorder.edu.student.util.StudentPromptFileLoader;
 import io.jsonwebtoken.Claims;
@@ -32,7 +32,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -52,19 +51,19 @@ class EvaluationQuestionServiceImplTest {
     }
 
     @Test
-    void createsGenerationJobAndExpandedItemsBeforeAsyncGenerationRuns() {
+    void createsGenerationTaskAndExpandedItemsBeforeAsyncGenerationRuns() {
         StudentPromptFileLoader promptLoader = mock(StudentPromptFileLoader.class);
         QuestionAiService questionAiService = mock(QuestionAiService.class);
         EvaluationQuestionMapper evaluationQuestionMapper = mock(EvaluationQuestionMapper.class);
         LearningSpaceMapper learningSpaceMapper = mock(LearningSpaceMapper.class);
         ObjectMapper objectMapper = new ObjectMapper();
-        EvaluationQuestionGenerationJobMapper jobMapper = mock(EvaluationQuestionGenerationJobMapper.class);
+        EvaluationQuestionGenerationTaskMapper taskMapper = mock(EvaluationQuestionGenerationTaskMapper.class);
         EvaluationQuestionGenerationItemMapper itemMapper = mock(EvaluationQuestionGenerationItemMapper.class);
         TransactionTemplate transactionTemplate = passthroughTransactionTemplate();
 
-        when(jobMapper.insert(any(EvaluationQuestionGenerationJob.class))).thenAnswer(invocation -> {
-            EvaluationQuestionGenerationJob job = invocation.getArgument(0);
-            job.setId(101L);
+        when(taskMapper.insert(any(EvaluationQuestionGenerationTask.class))).thenAnswer(invocation -> {
+            EvaluationQuestionGenerationTask task = invocation.getArgument(0);
+            task.setId(101L);
             return 1;
         });
         when(itemMapper.insertBatch(any())).thenReturn(3);
@@ -89,7 +88,7 @@ class EvaluationQuestionServiceImplTest {
                 evaluationQuestionMapper,
                 learningSpaceMapper,
                 objectMapper,
-                jobMapper,
+                taskMapper,
                 itemMapper,
                 transactionTemplate,
                 questionAiService
@@ -107,19 +106,18 @@ class EvaluationQuestionServiceImplTest {
 
         service.generateQuestions(dto, new SseEmitter(1_000L));
 
-        ArgumentCaptor<EvaluationQuestionGenerationJob> jobCaptor =
-                ArgumentCaptor.forClass(EvaluationQuestionGenerationJob.class);
-        verify(jobMapper).insert(jobCaptor.capture());
+        ArgumentCaptor<EvaluationQuestionGenerationTask> taskCaptor =
+                ArgumentCaptor.forClass(EvaluationQuestionGenerationTask.class);
+        verify(taskMapper).insert(taskCaptor.capture());
 
-        EvaluationQuestionGenerationJob job = jobCaptor.getValue();
-        assertNotNull(job.getJobNo());
-        assertEquals(10L, job.getLearningSpaceId());
-        assertEquals("Data Structures", job.getCourseName());
-        assertEquals("Sorting", job.getTopic());
-        assertEquals("pending", job.getStatus());
-        assertEquals(3, job.getTotalCount());
-        assertEquals(0, job.getSuccessCount());
-        assertEquals(0, job.getFailedCount());
+        EvaluationQuestionGenerationTask task = taskCaptor.getValue();
+        assertEquals(10L, task.getLearningSpaceId());
+        assertEquals("Data Structures", task.getCourseName());
+        assertEquals("Sorting", task.getTopic());
+        assertEquals("pending", task.getStatus());
+        assertEquals(3, task.getTotalCount());
+        assertEquals(0, task.getSuccessCount());
+        assertEquals(0, task.getFailedCount());
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<EvaluationQuestionGenerationItem>> itemCaptor =
@@ -135,7 +133,7 @@ class EvaluationQuestionServiceImplTest {
         assertEquals(List.of("pending", "pending", "pending"),
                 items.stream().map(EvaluationQuestionGenerationItem::getStatus).toList());
         assertEquals(List.of(101L, 101L, 101L),
-                items.stream().map(EvaluationQuestionGenerationItem::getJobId).toList());
+                items.stream().map(EvaluationQuestionGenerationItem::getTaskId).toList());
         verify(evaluationQuestionMapper, timeout(1_000).times(3)).insert(any(EvaluationQuestion.class));
     }
 
@@ -146,16 +144,16 @@ class EvaluationQuestionServiceImplTest {
         EvaluationQuestionMapper evaluationQuestionMapper = mock(EvaluationQuestionMapper.class);
         LearningSpaceMapper learningSpaceMapper = mock(LearningSpaceMapper.class);
         ObjectMapper objectMapper = new ObjectMapper();
-        EvaluationQuestionGenerationJobMapper jobMapper = mock(EvaluationQuestionGenerationJobMapper.class);
+        EvaluationQuestionGenerationTaskMapper taskMapper = mock(EvaluationQuestionGenerationTaskMapper.class);
         EvaluationQuestionGenerationItemMapper itemMapper = mock(EvaluationQuestionGenerationItemMapper.class);
         TransactionTemplate transactionTemplate = passthroughTransactionTemplate();
         AtomicInteger llmCallCount = new AtomicInteger();
         CountDownLatch secondCallStarted = new CountDownLatch(1);
         AtomicBoolean secondStartedBeforeFirstCompleted = new AtomicBoolean(false);
 
-        when(jobMapper.insert(any(EvaluationQuestionGenerationJob.class))).thenAnswer(invocation -> {
-            EvaluationQuestionGenerationJob job = invocation.getArgument(0);
-            job.setId(101L);
+        when(taskMapper.insert(any(EvaluationQuestionGenerationTask.class))).thenAnswer(invocation -> {
+            EvaluationQuestionGenerationTask task = invocation.getArgument(0);
+            task.setId(101L);
             return 1;
         });
         when(itemMapper.insertBatch(any())).thenReturn(2);
@@ -194,7 +192,7 @@ class EvaluationQuestionServiceImplTest {
                 evaluationQuestionMapper,
                 learningSpaceMapper,
                 objectMapper,
-                jobMapper,
+                taskMapper,
                 itemMapper,
                 transactionTemplate,
                 questionAiService
@@ -223,11 +221,11 @@ class EvaluationQuestionServiceImplTest {
         EvaluationQuestionMapper evaluationQuestionMapper = mock(EvaluationQuestionMapper.class);
         LearningSpaceMapper learningSpaceMapper = mock(LearningSpaceMapper.class);
         ObjectMapper objectMapper = new ObjectMapper();
-        EvaluationQuestionGenerationJobMapper jobMapper = mock(EvaluationQuestionGenerationJobMapper.class);
+        EvaluationQuestionGenerationTaskMapper taskMapper = mock(EvaluationQuestionGenerationTaskMapper.class);
         EvaluationQuestionGenerationItemMapper itemMapper = mock(EvaluationQuestionGenerationItemMapper.class);
         TransactionTemplate transactionTemplate = passthroughTransactionTemplate();
 
-        when(jobMapper.insert(any(EvaluationQuestionGenerationJob.class))).thenReturn(1);
+        when(taskMapper.insert(any(EvaluationQuestionGenerationTask.class))).thenReturn(1);
         when(itemMapper.insertBatch(any()))
                 .thenThrow(new RuntimeException("insert item failed"));
 
@@ -236,7 +234,7 @@ class EvaluationQuestionServiceImplTest {
                 evaluationQuestionMapper,
                 learningSpaceMapper,
                 objectMapper,
-                jobMapper,
+                taskMapper,
                 itemMapper,
                 transactionTemplate,
                 questionAiService
@@ -261,7 +259,7 @@ class EvaluationQuestionServiceImplTest {
         EvaluationQuestionMapper evaluationQuestionMapper = mock(EvaluationQuestionMapper.class);
         LearningSpaceMapper learningSpaceMapper = mock(LearningSpaceMapper.class);
         ObjectMapper objectMapper = new ObjectMapper();
-        EvaluationQuestionGenerationJobMapper jobMapper = mock(EvaluationQuestionGenerationJobMapper.class);
+        EvaluationQuestionGenerationTaskMapper taskMapper = mock(EvaluationQuestionGenerationTaskMapper.class);
         EvaluationQuestionGenerationItemMapper itemMapper = mock(EvaluationQuestionGenerationItemMapper.class);
         TransactionTemplate transactionTemplate = passthroughTransactionTemplate();
 
@@ -274,7 +272,7 @@ class EvaluationQuestionServiceImplTest {
                 evaluationQuestionMapper,
                 learningSpaceMapper,
                 objectMapper,
-                jobMapper,
+                taskMapper,
                 itemMapper,
                 transactionTemplate,
                 questionAiService
