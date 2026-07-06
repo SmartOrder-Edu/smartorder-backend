@@ -15,11 +15,15 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 public class LlmLessonScriptGenerator {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final Pattern INLINE_OPTION_PATTERN = Pattern.compile(
+            "(?s)(^|\\s)([A-Ha-h])\\s*[\\.、．)]\\s*(.+?)(?=(\\s+[A-Ha-h]\\s*[\\.、．)]\\s*)|$)");
 
     private final ChatModel chatModel;
     private final LessonTimelineBuilder timelineBuilder;
@@ -290,24 +294,160 @@ public class LlmLessonScriptGenerator {
 
     private Map<String, Object> normalizeQuiz(StudyScriptStepVO step, JsonNode quizNode) {
         Map<String, Object> quiz = new LinkedHashMap<>();
+        String rawPrompt = text(quizNode, "prompt", "完成当前知识点的小检验");
+        String rawBody = text(quizNode, "body", rawPrompt);
+        List<Map<String, Object>> options = normalizeOptions(quizNode.path("options"), rawPrompt, rawBody);
         String answerType = normalizeAnswerType(text(quizNode, "answerType", "text"), quizNode);
         String answer = text(quizNode, "answer", text(quizNode, "correctAnswer", "请参考解析"));
         String correctAnswer = text(quizNode, "correctAnswer", answer);
         String explanation = text(quizNode, "explanation",
                 text(quizNode, "errorExplanation", "关键是先确认条件，再选择方法。"));
+        if ("text".equals(answerType) && !options.isEmpty()) {
+            answerType = "single_select";
+        }
+        if (("single_select".equals(answerType) || "multi_select".equals(answerType)) && options.isEmpty()) {
+            answerType = "text";
+        }
+        if (!options.isEmpty()) {
+            answer = normalizeOptionAnswer(answer, options, "multi_select".equals(answerType));
+            correctAnswer = normalizeOptionAnswer(correctAnswer, options, "multi_select".equals(answerType));
+            rawPrompt = stripInlineOptions(rawPrompt);
+            rawBody = stripInlineOptions(rawBody);
+        }
         quiz.put("id", step.getId() + "-q1");
-        quiz.put("prompt", text(quizNode, "prompt", "完成当前知识点的小检验"));
+        quiz.put("prompt", rawPrompt);
         quiz.put("answerType", answerType);
-        quiz.put("body", text(quizNode, "body", text(quizNode, "prompt", "请说明这一步最关键的判断依据。")));
+        quiz.put("body", rawBody.isBlank() ? rawPrompt : rawBody);
         quiz.put("answer", answer);
         quiz.put("correctAnswer", correctAnswer);
         quiz.put("hint", text(quizNode, "hint", "先回到本步骤的定义和适用条件。"));
         quiz.put("explanation", explanation);
         quiz.put("errorExplanation", explanation);
-        if (quizNode.has("options") && !"text".equals(answerType)) {
-            quiz.put("options", toPlainObject(quizNode.path("options")));
+        if (!options.isEmpty() && !"text".equals(answerType)) {
+            quiz.put("options", options);
         }
         return quiz;
+    }
+
+    private List<Map<String, Object>> normalizeOptions(JsonNode optionsNode, String prompt, String body) {
+        List<Map<String, Object>> options = new ArrayList<>();
+        if (optionsNode != null && optionsNode.isArray()) {
+            int index = 0;
+            for (JsonNode optionNode : optionsNode) {
+                Map<String, Object> option = normalizeOption(optionNode, index);
+                if (option != null) {
+                    options.add(option);
+                    index++;
+                }
+            }
+        }
+        if (!options.isEmpty()) {
+            return options;
+        }
+        options.addAll(parseInlineOptions(prompt));
+        if (options.isEmpty() && body != null && !body.equals(prompt)) {
+            options.addAll(parseInlineOptions(body));
+        }
+        return options;
+    }
+
+    private Map<String, Object> normalizeOption(JsonNode optionNode, int index) {
+        String defaultValue = String.valueOf((char) ('a' + index));
+        if (optionNode == null || optionNode.isNull()) {
+            return null;
+        }
+        if (optionNode.isTextual()) {
+            String label = optionNode.asText();
+            return label == null || label.isBlank() ? null : option(defaultValue, label);
+        }
+        if (!optionNode.isObject()) {
+            return null;
+        }
+        String value = text(optionNode, "value", text(optionNode, "key", defaultValue));
+        String label = text(optionNode, "label", text(optionNode, "text", text(optionNode, "content", "")));
+        if (label.isBlank()) {
+            return null;
+        }
+        return option(normalizeOptionValue(value), stripOptionPrefix(label));
+    }
+
+    private List<Map<String, Object>> parseInlineOptions(String text) {
+        List<Map<String, Object>> options = new ArrayList<>();
+        if (text == null || text.isBlank()) {
+            return options;
+        }
+        Matcher matcher = INLINE_OPTION_PATTERN.matcher(text);
+        while (matcher.find()) {
+            String value = normalizeOptionValue(matcher.group(2));
+            String label = stripOptionPrefix(matcher.group(3).trim());
+            if (!label.isBlank()) {
+                options.add(option(value, label));
+            }
+        }
+        return options.size() >= 2 ? options : List.of();
+    }
+
+    private Map<String, Object> option(String value, String label) {
+        return new LinkedHashMap<>(Map.of("value", normalizeOptionValue(value), "label", label));
+    }
+
+    private String stripInlineOptions(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        Matcher matcher = INLINE_OPTION_PATTERN.matcher(text);
+        return matcher.find() ? text.substring(0, matcher.start()).trim() : text;
+    }
+
+    private String stripOptionPrefix(String value) {
+        return value == null ? "" : value.replaceFirst("^[A-Ha-h]\\s*[\\.、．)]\\s*", "").trim();
+    }
+
+    private String normalizeOptionValue(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return trimmed.length() == 1 && Character.isLetter(trimmed.charAt(0))
+                ? trimmed.toLowerCase()
+                : trimmed;
+    }
+
+    private String normalizeOptionAnswer(String answer, List<Map<String, Object>> options, boolean multiSelect) {
+        if (answer == null || answer.isBlank() || options.isEmpty()) {
+            return answer;
+        }
+        if (multiSelect) {
+            String[] parts = answer.split("[,，、\\s]+");
+            List<String> normalized = new ArrayList<>();
+            for (String part : parts) {
+                String value = normalizeSingleOptionAnswer(part, options);
+                if (value != null && !value.isBlank()) {
+                    normalized.add(value);
+                }
+            }
+            return normalized.isEmpty() ? answer : String.join(",", normalized);
+        }
+        String normalized = normalizeSingleOptionAnswer(answer, options);
+        return normalized == null || normalized.isBlank() ? answer : normalized;
+    }
+
+    private String normalizeSingleOptionAnswer(String answer, List<Map<String, Object>> options) {
+        String normalized = normalizeOptionValue(stripOptionPrefix(answer));
+        for (Map<String, Object> option : options) {
+            String value = String.valueOf(option.get("value"));
+            String label = String.valueOf(option.get("label"));
+            if (value.equals(normalized)
+                    || label.equals(answer.trim())
+                    || label.equals(stripOptionPrefix(answer))) {
+                return value;
+            }
+        }
+        Matcher matcher = INLINE_OPTION_PATTERN.matcher(answer.trim());
+        if (matcher.find()) {
+            return normalizeOptionValue(matcher.group(2));
+        }
+        return normalized.length() == 1 ? normalized : null;
     }
 
     private StudyMasteryVO parseMastery(JsonNode node) {
@@ -337,9 +477,9 @@ public class LlmLessonScriptGenerator {
                       "canvasType": "concept|example|practice|assessment|derivation|summary",
                       "markdown": "本步骤展示给学生的 Markdown 内容",
                       "teachingSegments": [
-                        {"type": "text|formula|diagram|quiz", "markdown": "分段讲解", "agentCommentary": "导师口吻提示", "quiz": {"prompt": "题干", "answerType": "text|single_select|multi_select|number", "answer": "参考答案", "correctAnswer": "参考答案", "hint": "提示", "explanation": "解析"}}
+                        {"type": "text|formula|diagram|quiz", "markdown": "分段讲解", "agentCommentary": "导师口吻提示", "quiz": {"prompt": "题干，不要把 A/B/C 选项写在这里", "answerType": "text|single_select|multi_select|number", "options": [{"label": "展示给学生的选项文本", "value": "a"}], "answer": "参考答案或选项 value", "correctAnswer": "参考答案或选项 value", "hint": "提示", "explanation": "解析"}}
                       ],
-                      "quiz": {"prompt": "题干", "answerType": "text|single_select|multi_select|number", "answer": "参考答案", "correctAnswer": "参考答案", "hint": "提示", "explanation": "解析"},
+                      "quiz": {"prompt": "题干，不要把 A/B/C 选项写在这里", "answerType": "text|single_select|multi_select|number", "options": [{"label": "展示给学生的选项文本", "value": "a"}], "answer": "参考答案或选项 value", "correctAnswer": "参考答案或选项 value", "hint": "提示", "explanation": "解析"},
                       "exampleSteps": [{"id": "ex1", "label": "步骤名", "markdown": "例题步骤"}]
                     }
                   ],
@@ -350,9 +490,10 @@ public class LlmLessonScriptGenerator {
                 1. steps 数量 4 到 6 个，必须包含概念、例题或练习、检验、总结。
                 2. 内容必须围绕上下文知识点，不要使用“洛必达法则”等无关默认示例。
                 3. 讲解要像教程脚本，不要只列大纲；每个 markdown 至少 80 个中文字符。
-                4. quiz 要有明确参考答案和解析。
+                4. quiz 要有明确参考答案和解析；选择题必须使用 single_select 或 multi_select，并提供 options 数组。
                 5. answerType 只能使用 text、single_select、multi_select、number；不要使用 short_text。
-                6. 如果知识点属于编程/工程/计算机，请优先给出可执行思路、例子或伪代码。
+                6. 选择题的 options 必须是 {"label":"展示给学生的选项文本","value":"a|b|c|d"}，correctAnswer 必须填写选项 value，不要把 “A. ... B. ...” 拼进 prompt。
+                7. 如果知识点属于编程/工程/计算机，请优先给出可执行思路、例子或伪代码。
 
                 学习上下文：
                 - 学习空间：%s
@@ -395,6 +536,7 @@ public class LlmLessonScriptGenerator {
                 - canvasType 只能是 concept、example、practice、assessment、derivation、summary。
                 - teachingSegments[*].type 只能是 text、formula、diagram、quiz。
                 - quiz.answerType 只能是 text、single_select、multi_select、number。
+                - 当 quiz.answerType 为 single_select 或 multi_select 时，quiz.options 必须是数组，且每项包含 label 和 value；correctAnswer 必须填写选项 value。
                 - answer 和 correctAnswer 都必须有值。
                 - 内容必须围绕知识点，不要使用无关默认示例。
 
