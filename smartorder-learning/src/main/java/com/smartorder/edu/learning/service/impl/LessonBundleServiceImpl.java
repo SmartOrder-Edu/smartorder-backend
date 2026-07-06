@@ -64,6 +64,7 @@ public class LessonBundleServiceImpl implements ILessonBundleService {
         if (!forceRegenerate) {
             LessonBundle existed = selectLatestBundle(userId, target.taskId(), target.pathNodeId(), target.spaceId(), mode);
             if (isReusable(existed)) {
+                enrichReusableBundle(existed);
                 return toStatusVO(existed);
             }
         }
@@ -430,6 +431,21 @@ public class LessonBundleServiceImpl implements ILessonBundleService {
             return false;
         }
         return bundle.getExpiresAt() == null || bundle.getExpiresAt().isAfter(LocalDateTime.now());
+    }
+
+    private void enrichReusableBundle(LessonBundle bundle) {
+        if (bundle == null || bundle.getBundleJson() == null || bundle.getBundleJson().isBlank()) {
+            return;
+        }
+        try {
+            StudySessionVO session = objectMapper.readValue(bundle.getBundleJson(), StudySessionVO.class);
+            lessonMediaAssetService.enrichSession(session);
+            bundle.setBundleJson(toJson(session));
+            lessonBundleMapper.updateById(bundle);
+        } catch (Exception e) {
+            log.warn("[LessonBundle] reusable bundle media enrich skipped: bundleId={}, reason={}",
+                    bundle.getBundleId(), e.getMessage());
+        }
     }
 
     private LessonBundleStatusVO toStatusVO(LessonBundle bundle) {

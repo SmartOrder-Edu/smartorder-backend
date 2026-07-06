@@ -96,9 +96,7 @@ public class StudySessionServiceImpl implements IStudySessionService {
         session.setSpaceId(entry.spaceId());
         session.setMode(mode);
         session.setStatus("active");
-        if (!reusedBundle) {
-            lessonMediaAssetService.enrichSession(session);
-        }
+        lessonMediaAssetService.enrichSession(session);
 
         if (!reusedBundle) {
             persistLessonBundle(userId, entry, mode, bundleId, session);

@@ -6,20 +6,30 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
+import java.net.URLEncoder;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
+import java.net.http.WebSocketHandshakeException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 @Component
 @RequiredArgsConstructor
@@ -32,8 +42,9 @@ public class XfyunSuperTtsClient {
         if (!properties.isEnabled()) {
             return CompletableFuture.failedFuture(new IllegalStateException("讯飞超拟人 TTS 未启用"));
         }
-        if (isBlank(properties.getAppId()) || isBlank(properties.getApiPassword())) {
-            return CompletableFuture.failedFuture(new IllegalStateException("讯飞超拟人 TTS appId 或 apiPassword 未配置"));
+        if (isBlank(properties.getAppId()) || !hasValidAuthConfig()) {
+            return CompletableFuture.failedFuture(new IllegalStateException(
+                    "讯飞超拟人 TTS 鉴权配置不完整：需要 appId + apiPassword，或 appId + apiKey + apiSecret"));
         }
         if (isBlank(speechText)) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("待合成文本不能为空"));
@@ -90,15 +101,21 @@ public class XfyunSuperTtsClient {
 
             @Override
             public void onError(WebSocket webSocket, Throwable error) {
-                completeExceptionallyOnce(resultFuture, completed, error);
+                completeExceptionallyOnce(resultFuture, completed, enrichConnectionError(error));
             }
         };
 
-        client.newWebSocketBuilder()
-                .header("x-api-key", properties.getApiPassword())
-                .buildAsync(URI.create(properties.getWebsocketUrl()), listener)
+        WebSocket.Builder builder = client.newWebSocketBuilder();
+        URI websocketUri;
+        try {
+            websocketUri = buildWebsocketUri(builder);
+        } catch (Exception e) {
+            return CompletableFuture.failedFuture(e);
+        }
+
+        builder.buildAsync(websocketUri, listener)
                 .exceptionally(error -> {
-                    completeExceptionallyOnce(resultFuture, completed, error);
+                    completeExceptionallyOnce(resultFuture, completed, enrichConnectionError(error));
                     return null;
                 });
 
@@ -106,6 +123,85 @@ public class XfyunSuperTtsClient {
                 properties.getTimeoutSeconds() == null ? 90 : properties.getTimeoutSeconds(),
                 TimeUnit.SECONDS
         );
+    }
+
+    private boolean hasValidAuthConfig() {
+        return !isBlank(properties.getApiPassword())
+                || hasHmacAuthConfig();
+    }
+
+    private URI buildWebsocketUri(WebSocket.Builder builder) throws Exception {
+        if (hasHmacAuthConfig()) {
+            return URI.create(buildHmacAuthUrl());
+        }
+        builder.header("x-api-key", properties.getApiPassword());
+        return URI.create(properties.getWebsocketUrl());
+    }
+
+    private boolean hasHmacAuthConfig() {
+        return !isBlank(properties.getApiKey()) && !isBlank(properties.getApiSecret());
+    }
+
+    private String authMode() {
+        return hasHmacAuthConfig() ? "hmac" : "apiPassword";
+    }
+
+    private Throwable enrichConnectionError(Throwable error) {
+        Throwable root = unwrap(error);
+        if (root instanceof WebSocketHandshakeException handshakeException) {
+            Integer status = handshakeException.getResponse() == null
+                    ? null
+                    : handshakeException.getResponse().statusCode();
+            String host = URI.create(properties.getWebsocketUrl()).getHost();
+            return new IllegalStateException("讯飞 TTS WebSocket 握手失败"
+                    + (status == null ? "" : "，status=" + status)
+                    + "，authMode=" + authMode()
+                    + "，host=" + host, handshakeException);
+        }
+        return root;
+    }
+
+    private Throwable unwrap(Throwable error) {
+        Throwable current = error;
+        while (current instanceof CompletionException && current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current;
+    }
+
+    private String buildHmacAuthUrl() throws Exception {
+        URI uri = URI.create(properties.getWebsocketUrl());
+        String host = uri.getHost();
+        String path = uri.getRawPath();
+        if (uri.getRawQuery() != null && !uri.getRawQuery().isBlank()) {
+            path = path + "?" + uri.getRawQuery();
+        }
+        String date = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss 'GMT'", Locale.US)
+                .format(ZonedDateTime.now(ZoneOffset.UTC));
+        String signatureOrigin = "host: " + host + "\n"
+                + "date: " + date + "\n"
+                + "GET " + path + " HTTP/1.1";
+        String signature = hmacSha256Base64(signatureOrigin, properties.getApiSecret());
+        String authorizationOrigin = "api_key=\"" + properties.getApiKey()
+                + "\", algorithm=\"hmac-sha256\", headers=\"host date request-line\", signature=\""
+                + signature + "\"";
+        String authorization = Base64.getEncoder().encodeToString(authorizationOrigin.getBytes(StandardCharsets.UTF_8));
+        String baseUrl = properties.getWebsocketUrl();
+        String separator = baseUrl.contains("?") ? "&" : "?";
+        return baseUrl + separator
+                + "authorization=" + urlEncode(authorization)
+                + "&date=" + urlEncode(date)
+                + "&host=" + urlEncode(host);
+    }
+
+    private String hmacSha256Base64(String content, String secret) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        return Base64.getEncoder().encodeToString(mac.doFinal(content.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private String urlEncode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     private void handleMessage(String message,
@@ -180,7 +276,7 @@ public class XfyunSuperTtsClient {
         text.put("format", "plain");
         text.put("status", 2);
         text.put("seq", 0);
-        text.put("text", speechText);
+        text.put("text", Base64.getEncoder().encodeToString(speechText.getBytes(StandardCharsets.UTF_8)));
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("text", text);

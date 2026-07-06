@@ -11,4 +11,5 @@ public class StudyMediaProperties {
     private boolean enabled = false;
     private String rootPath = "D:/smartorder-assets";
     private String publicPrefix = "/study-assets";
+    private String ossPrefix = "study-media";
 }

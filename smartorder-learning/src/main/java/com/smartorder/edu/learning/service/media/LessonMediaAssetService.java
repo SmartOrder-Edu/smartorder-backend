@@ -34,11 +34,23 @@ public class LessonMediaAssetService {
     private final TimelineComposer timelineComposer;
 
     public void enrichSession(StudySessionVO session) {
-        if (!isEnabled() || session == null || session.getTimelinesByStepId() == null || session.getTimelinesByStepId().isEmpty()) {
+        if (!isEnabled()) {
+            log.info("[LessonMedia] skipped: study.media.enabled={}, xfyun.super-tts.enabled={}",
+                    mediaProperties.isEnabled(), ttsProperties.isEnabled());
+            return;
+        }
+        if (session == null) {
+            log.info("[LessonMedia] skipped: session is null");
+            return;
+        }
+        if (session.getTimelinesByStepId() == null || session.getTimelinesByStepId().isEmpty()) {
+            log.info("[LessonMedia] skipped: no timelines, bundleId={}, sessionId={}",
+                    session.getLessonBundleId(), session.getSessionId());
             return;
         }
         String lessonBundleId = session.getLessonBundleId();
         if (lessonBundleId == null || lessonBundleId.isBlank()) {
+            log.info("[LessonMedia] skipped: lessonBundleId is blank, sessionId={}", session.getSessionId());
             return;
         }
 
@@ -67,21 +79,26 @@ public class LessonMediaAssetService {
         String displayText = extractDisplayText(scene);
         String speechText = trimSpeechText(extractSpeechText(scene, displayText));
         if (speechText.isBlank()) {
+            log.info("[LessonMedia] skipped: speechText is blank, bundleId={}, sceneId={}", lessonBundleId, sceneId);
             return;
         }
 
         String textHash = hash(speechText, voiceCode(), speed(), volume(), pitch());
         LessonMediaAsset asset = selectByHash(textHash);
-        if (asset != null && "ready".equals(asset.getStatus()) && asset.getAudioUrl() != null) {
+        if (isReusableAsset(asset)) {
+            log.info("[LessonMedia] reuse asset: bundleId={}, sceneId={}, assetId={}, audioUrl={}",
+                    lessonBundleId, sceneId, asset.getId(), asset.getAudioUrl());
             timelineComposer.applyAudioTimeline(timeline, asset.getAudioUrl(), asset.getDurationMs(), speechText);
             return;
         }
 
         asset = asset == null ? createPendingAsset(lessonBundleId, sceneId, displayText, speechText, textHash) : markGenerating(asset);
+        log.info("[LessonMedia] generating asset: bundleId={}, sceneId={}, assetId={}, textLength={}",
+                lessonBundleId, sceneId, asset.getId(), speechText.length());
         try {
             TtsSynthesisResult result = ttsClient.synthesize(speechText).join();
             Long durationMs = timelineComposer.durationFromPhonemeText(result.phonemeText(), speechText);
-            String audioUrl = buildSceneAudioUrl(lessonBundleId, sceneId);
+            String audioUrl = assetStorage.buildLessonSceneAudioUrl(lessonBundleId, sceneId);
             timelineComposer.applyAudioTimeline(timeline, audioUrl, durationMs, speechText);
             String vtt = timelineComposer.buildWebVtt(speechText, durationMs);
             GeneratedSpeechAsset generated = assetStorage.saveLessonSceneAsset(
@@ -106,24 +123,29 @@ public class LessonMediaAssetService {
             asset.setErrorCode(null);
             asset.setErrorMessage(null);
             lessonMediaAssetMapper.updateById(asset);
+            log.info("[LessonMedia] asset ready: bundleId={}, sceneId={}, assetId={}, audioUrl={}",
+                    lessonBundleId, sceneId, asset.getId(), generated.audioUrl());
         } catch (Exception e) {
             asset.setStatus("failed");
             asset.setErrorCode("TTS_GENERATE_FAILED");
             asset.setErrorMessage(e.getMessage());
             lessonMediaAssetMapper.updateById(asset);
+            log.warn("[LessonMedia] asset failed: bundleId={}, sceneId={}, assetId={}, reason={}",
+                    lessonBundleId, sceneId, asset.getId(), e.getMessage());
             throw e;
         }
     }
 
-    private String buildSceneAudioUrl(String lessonBundleId, String sceneId) {
-        String prefix = mediaProperties.getPublicPrefix() == null || mediaProperties.getPublicPrefix().isBlank()
-                ? ""
-                : mediaProperties.getPublicPrefix().replaceAll("/+$", "");
-        return prefix + "/lesson-bundles/" + lessonBundleId + "/" + sceneId + "/audio.mp3";
-    }
-
     private boolean isEnabled() {
         return mediaProperties.isEnabled() && ttsProperties.isEnabled();
+    }
+
+    private boolean isReusableAsset(LessonMediaAsset asset) {
+        if (asset == null || !"ready".equals(asset.getStatus())) {
+            return false;
+        }
+        String audioUrl = asset.getAudioUrl();
+        return audioUrl != null && (audioUrl.startsWith("http://") || audioUrl.startsWith("https://"));
     }
 
     private LessonMediaAsset selectByHash(String textHash) {

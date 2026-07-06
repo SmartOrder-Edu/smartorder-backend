@@ -240,7 +240,7 @@ langchain4j:
 #      model-name: mimo-v2.5-pro
       api-key: sk-00d1dcd9a07048e3906331d6bf085e19
       base-url: https://api.deepseek.com/v1
-      model-name: deepseek-v4-pro
+      model-name: deepseek-v4-flash
       log-requests: true
       log-responses: true
       timeout: PT120S
@@ -252,7 +252,7 @@ langchain4j:
 #      model-name: mimo-v2.5-pro
       api-key: sk-00d1dcd9a07048e3906331d6bf085e19
       base-url: https://api.deepseek.com/v1
-      model-name: deepseek-v4-pro
+      model-name: deepseek-v4-flash
       # 强烈建议在开发阶段开启以下两项日志！
       # 这能让你在控制台清楚地看到发给大模型的 JSON Schema 是什么样的，
       # 以及大模型返回的工具调用指令长什么样，非常有助于排障。
@@ -316,6 +316,7 @@ study:
     enabled: ${STUDY_MEDIA_ENABLED:false}
     root-path: ${STUDY_MEDIA_ROOT_PATH:D:/smartorder-assets}
     public-prefix: ${STUDY_MEDIA_PUBLIC_PREFIX:/study-assets}
+    oss-prefix: ${STUDY_MEDIA_OSS_PREFIX:study-media}
 
 # 讯飞虚拟人交互配置
 xfyun:
@@ -323,8 +324,10 @@ xfyun:
     enabled: ${XFYUN_SUPER_TTS_ENABLED:false}
     app-id: ${XFYUN_SUPER_TTS_APP_ID:}
     api-password: ${XFYUN_SUPER_TTS_API_PASSWORD:}
+    api-key: ${XFYUN_SUPER_TTS_API_KEY:}
+    api-secret: ${XFYUN_SUPER_TTS_API_SECRET:}
     websocket-url: ${XFYUN_SUPER_TTS_WEBSOCKET_URL:wss://cbm01.cn-huabei-1.xf-yun.com/v1/private/mcd9m97e6}
-    voice: ${XFYUN_SUPER_TTS_VOICE:x5_lingfeiyi_flow}
+    voice: ${XFYUN_SUPER_TTS_VOICE:x6_lingfeiyi_pro}
     speed: ${XFYUN_SUPER_TTS_SPEED:50}
     volume: ${XFYUN_SUPER_TTS_VOLUME:50}
     pitch: ${XFYUN_SUPER_TTS_PITCH:50}

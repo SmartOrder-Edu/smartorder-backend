@@ -389,6 +389,29 @@ public class AliOSSUtils {
     }
 
     /**
+     * 按指定 OSS objectKey 上传字节内容，不改写文件名。
+     * 适用于需要稳定访问路径和可复用 URL 的系统生成资源。
+     */
+    public String uploadBytes(byte[] bytes, String objectKey, String contentType) throws IOException {
+        if (objectKey == null || objectKey.isBlank()) {
+            throw new IllegalArgumentException("OSS objectKey 不能为空");
+        }
+        ObjectMetadata metadata = new ObjectMetadata();
+        metadata.setContentLength(bytes == null ? 0 : bytes.length);
+        if (contentType != null && !contentType.isBlank()) {
+            metadata.setContentType(contentType);
+        }
+        try (InputStream inputStream = new ByteArrayInputStream(bytes == null ? new byte[0] : bytes)) {
+            ossClient.putObject(bucketName, objectKey, inputStream, metadata);
+        }
+        return buildObjectUrl(objectKey);
+    }
+
+    public String buildObjectUrl(String objectKey) {
+        return endpoint.split("//")[0] + "//" + bucketName + "." + endpoint.split("//")[1] + "/" + objectKey;
+    }
+
+    /**
      * 获取带5分钟签名的URL
      * @param fileUrl OSS文件访问URL，例如：https://bucket.oss-cn-beijing.aliyuncs.com/teacher/resources/1001/test.pdf
      * @param expiryTime URL有效期（毫秒），例如：5分钟 = 5 * 60 * 1000
