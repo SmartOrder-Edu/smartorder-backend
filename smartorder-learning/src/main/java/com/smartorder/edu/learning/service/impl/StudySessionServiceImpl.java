@@ -32,6 +32,7 @@ import com.smartorder.edu.learning.mapper.StudyTeachingActionMapper;
 import com.smartorder.edu.learning.mapper.TaskMapper;
 import com.smartorder.edu.learning.service.ILessonBundleService;
 import com.smartorder.edu.learning.service.IStudySessionService;
+import com.smartorder.edu.learning.service.media.LessonMediaAssetService;
 import com.smartorder.edu.learning.service.script.LessonScriptContext;
 import com.smartorder.edu.learning.service.script.LessonScriptGenerationService;
 import lombok.RequiredArgsConstructor;
@@ -67,6 +68,7 @@ public class StudySessionServiceImpl implements IStudySessionService {
     private final LessonBundleMapper lessonBundleMapper;
     private final LessonScriptGenerationService lessonScriptGenerationService;
     private final ILessonBundleService lessonBundleService;
+    private final LessonMediaAssetService lessonMediaAssetService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -94,6 +96,7 @@ public class StudySessionServiceImpl implements IStudySessionService {
         session.setSpaceId(entry.spaceId());
         session.setMode(mode);
         session.setStatus("active");
+        lessonMediaAssetService.enrichSession(session);
 
         if (!reusedBundle) {
             persistLessonBundle(userId, entry, mode, bundleId, session);

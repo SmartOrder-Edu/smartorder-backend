@@ -19,6 +19,7 @@ import com.smartorder.edu.learning.mapper.LearningSpaceMapper;
 import com.smartorder.edu.learning.mapper.LessonBundleMapper;
 import com.smartorder.edu.learning.mapper.TaskMapper;
 import com.smartorder.edu.learning.service.ILessonBundleService;
+import com.smartorder.edu.learning.service.media.LessonMediaAssetService;
 import com.smartorder.edu.learning.service.script.LessonScriptContext;
 import com.smartorder.edu.learning.service.script.LessonScriptGenerationService;
 import lombok.RequiredArgsConstructor;
@@ -51,6 +52,7 @@ public class LessonBundleServiceImpl implements ILessonBundleService {
     private final LearningPathNodeMapper learningPathNodeMapper;
     private final LearningPathEdgeMapper learningPathEdgeMapper;
     private final LessonScriptGenerationService lessonScriptGenerationService;
+    private final LessonMediaAssetService lessonMediaAssetService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -62,6 +64,7 @@ public class LessonBundleServiceImpl implements ILessonBundleService {
         if (!forceRegenerate) {
             LessonBundle existed = selectLatestBundle(userId, target.taskId(), target.pathNodeId(), target.spaceId(), mode);
             if (isReusable(existed)) {
+                enrichReusableBundle(existed);
                 return toStatusVO(existed);
             }
         }
@@ -76,6 +79,7 @@ public class LessonBundleServiceImpl implements ILessonBundleService {
         session.setSpaceId(target.spaceId());
         session.setMode(mode);
         session.setStatus("bundle_ready");
+        lessonMediaAssetService.enrichSession(session);
 
         LessonBundle bundle = new LessonBundle();
         bundle.setBundleId(bundleId);
@@ -427,6 +431,21 @@ public class LessonBundleServiceImpl implements ILessonBundleService {
             return false;
         }
         return bundle.getExpiresAt() == null || bundle.getExpiresAt().isAfter(LocalDateTime.now());
+    }
+
+    private void enrichReusableBundle(LessonBundle bundle) {
+        if (bundle == null || bundle.getBundleJson() == null || bundle.getBundleJson().isBlank()) {
+            return;
+        }
+        try {
+            StudySessionVO session = objectMapper.readValue(bundle.getBundleJson(), StudySessionVO.class);
+            lessonMediaAssetService.enrichSession(session);
+            bundle.setBundleJson(toJson(session));
+            lessonBundleMapper.updateById(bundle);
+        } catch (Exception e) {
+            log.warn("[LessonBundle] reusable bundle media enrich skipped: bundleId={}, reason={}",
+                    bundle.getBundleId(), e.getMessage());
+        }
     }
 
     private LessonBundleStatusVO toStatusVO(LessonBundle bundle) {
