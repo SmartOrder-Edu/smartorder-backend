@@ -44,6 +44,11 @@ public class GenerateQuestionVO {
     /** 题目列表 */
     private List<QuestionVO> questions;
 
+    /**
+     * 将「生成请求 + 已生成题目列表」聚合成对外展示视图。
+     *
+     * <p>计算总题数、总分，并按题型维度汇总数量与分值，便于前端展示题库概览。</p>
+     */
     public static GenerateQuestionVO from(GenerateQuestionDTO dto, List<EvaluationQuestion> generatedQuestions) {
         List<EvaluationQuestion> questionList = generatedQuestions == null ? List.of() : generatedQuestions;
 
@@ -66,6 +71,7 @@ public class GenerateQuestionVO {
             questionVOList.add(QuestionVO.from(question));
 
             String questionType = question.getQuestionType();
+            // 按题型聚合：首次出现则创建汇总项，否则累加数量与分值
             QuestionTypeSummaryVO summary = summaryMap.computeIfAbsent(questionType, type -> {
                 QuestionTypeSummaryVO item = new QuestionTypeSummaryVO();
                 item.setQuestionType(type);
@@ -84,6 +90,7 @@ public class GenerateQuestionVO {
         return vo;
     }
 
+    /** 题型编码 → 中文名映射（如 single_choice → 单选题） */
     private static String resolveQuestionTypeName(String questionType) {
         if (questionType == null) {
             return null;
@@ -102,6 +109,12 @@ public class GenerateQuestionVO {
         };
     }
 
+    /**
+     * 从标准答案 JSON 中提取一个友好的展示值。
+     *
+     * <p>不同题型答案结构不同：选择题取 correctOptions、判断题/填空取 correctValue、
+     * 填空题取 blanks、其余取 answer；字段缺失时回退整个 JSON 对象。</p>
+     */
     private static Object resolveStandardAnswer(Map<String, Object> answerJson) {
         if (answerJson == null || answerJson.isEmpty()) {
             return null;

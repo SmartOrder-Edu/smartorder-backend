@@ -3,6 +3,12 @@ package com.smartorder.edu.student.domain.enums;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+/**
+ * 题目生成任务(job)的 SSE 事件类型枚举。
+ *
+ * <p>用于标识向前端推送的进度事件名称(eventName)与中文描述(description)，
+ * persistable 标记该事件是否需持久化记录。</p>
+ */
 @Getter
 @AllArgsConstructor
 public enum QuestionJobPlan {
