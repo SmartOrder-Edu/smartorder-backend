@@ -69,8 +69,19 @@ public class EvaluationQuestionController {
         SseEmitter emitter = new SseEmitter(30 * 60 * 1000L);
 
         // 正常完成或超时后均关闭 SSE 连接，避免资源泄漏
-        emitter.onCompletion(emitter::complete);
-        emitter.onTimeout(emitter::complete);
+        emitter.onCompletion(() -> {
+            log.info("SSE completed");
+        });
+
+        emitter.onTimeout(() -> {
+            log.warn("SSE timeout");
+            emitter.complete();
+        });
+
+        emitter.onError((ex) -> {
+            log.error("SSE error: {}", ex.getMessage(), ex);
+            emitter.completeWithError(ex);
+        });
 
         // 提交生成任务到异步线程，接口立即返回，后续通过 emitter 推送事件
         evaluationQuestionService.generateQuestions(dto, emitter);

@@ -26,7 +26,6 @@ public class EvaluationQuestionGenerationTask {
     /** 主键ID */
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
-
     /** 发起用户ID */
     private Long userId;
     /** 所属学习空间ID */

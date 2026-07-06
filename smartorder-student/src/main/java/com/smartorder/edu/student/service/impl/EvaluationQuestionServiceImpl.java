@@ -100,13 +100,9 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
     @Override
     public void generateQuestions(GenerateQuestionDTO dto, SseEmitter emitter) {
-        // createGenerationContext 内部只抛 BusinessException(RuntimeException)，
-        // TransactionTemplate 遇到 RuntimeException 会自动回滚并向上抛出，
-        // 因此无需 try-catch 包装，也无需 null 检查（execute 不会返回 null）。
-        // 在事务中创建生成任务(task)与生成明细(item)，保证初始数据一致。
+        // 插入题库任务总表以及各个题分表
         GenerationContext context = transactionTemplate.execute(status -> createGenerationContext(dto));
-        log.info("生成问题任务开始: taskId={}, totalCount={}",
-                context.task().getId(), context.task().getTotalCount());
+        log.info("生成问题任务开始: taskId={}, totalCount={}", context.task().getId(), context.task().getTotalCount());
         // SSE 推送「任务开始」事件，便于前端初始化进度条
         sendEvent(emitter, QuestionTaskPlan.QUESTION_TASK_PLAN.getEventName(), Map.of(
                 "taskId", context.task().getId(),
@@ -175,7 +171,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                 .successCount(0)
                 .failedCount(0)
                 .progress(0)
-                .currentStep("running")
+                .currentStep("beginning")
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
@@ -683,7 +679,8 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         try {
             emitter.complete();
         } catch (Exception e) {
-            log.debug("SSE 完成已跳过: {}", e.getMessage());
+            log.warn("SSE 完成已跳过: {}", e.getMessage());
+            emitter.completeWithError(e);
         }
     }
 

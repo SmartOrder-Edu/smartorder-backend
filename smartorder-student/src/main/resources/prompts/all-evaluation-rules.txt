@@ -5,7 +5,7 @@
 - 课程名称：{{courseName}}
 - 知识主题：{{topic}}
 - 题目数量：{{count}}
-- 难度等级：{{difficulty}}
+- 难度等级：{{difficulty}},总共 10 个等级，1 最简单，10 最困难
 - 输出语言：{{language}}
 
 # 通用硬约束
