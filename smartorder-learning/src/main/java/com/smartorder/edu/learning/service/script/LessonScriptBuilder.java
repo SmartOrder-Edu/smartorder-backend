@@ -28,8 +28,9 @@ public class LessonScriptBuilder {
         Map<String, StudyTimelineVO> timelinesByStepId = new LinkedHashMap<>();
         Map<String, StudySceneVO> scenesByStepId = new LinkedHashMap<>();
         for (StudyScriptStepVO node : nodes) {
-            timelinesByStepId.put(node.getId(), timelineBuilder.build(node));
-            scenesByStepId.put(node.getId(), buildScene(node, templateCode));
+            StudySceneVO scene = buildScene(node, templateCode);
+            scenesByStepId.put(node.getId(), scene);
+            timelinesByStepId.put(node.getId(), timelineBuilder.build(node, scene));
         }
 
         StudySessionVO session = new StudySessionVO();
@@ -357,6 +358,16 @@ public class LessonScriptBuilder {
 
     private String teacherTalk(StudyScriptStepVO step, String segmentType, int index) {
         String title = safe(step.getTitle());
+        if (isDataStructureTopic(step)) {
+            return switch (segmentType) {
+                case "board_write" -> "我们用队列状态来观察这一步。先看 front 和 rear 的位置，再看代码为什么只移动 rear。";
+                case "worked_example" -> "这里不要只看结果，要盯住每一步操作改变了哪些位置。数据结构题的关键就是状态变化。";
+                case "diagnosis" -> "如果刚才没跟上，通常不是概念本身难，而是指针、下标或边界位置看错了。";
+                case "mistake_warning" -> "数据结构里最容易错的是边界：空、满、头尾指针和下标是否越界，必须单独检查。";
+                case "summary" -> "最后把这一段压缩成三个问题：结构是什么，操作改了哪里，复杂度为什么是这样。";
+                default -> "我们从结构状态入手学习：" + title + "。先看图，再看代码，最后分析复杂度。";
+            };
+        }
         return switch (segmentType) {
             case "hook" -> "我们先不急着看定义。你可以先想一下，为什么同样是“" + title + "”，有的人一套方法就错？今天我们要解决的就是这个判断问题。";
             case "recall" -> "在正式讲之前，先把前置知识叫醒。后面每一步都不是凭感觉做，而是依赖这些条件来判断。";
@@ -388,6 +399,9 @@ public class LessonScriptBuilder {
     }
 
     private List<Map<String, Object>> boardBlocks(StudyScriptStepVO step, String segmentType, int index) {
+        if (isDataStructureTopic(step)) {
+            return dataStructureBoardBlocks(step, segmentType);
+        }
         return switch (segmentType) {
             case "diagram" -> List.of(boardBlock(
                     "diagram",
@@ -434,6 +448,339 @@ public class LessonScriptBuilder {
         };
     }
 
+    private List<Map<String, Object>> dataStructureBoardBlocks(StudyScriptStepVO step, String segmentType) {
+        return switch (segmentType) {
+            case "board_write" -> List.of(
+                    structureBlock(
+                            "队列当前状态",
+                            "queue",
+                            List.of(10, 20, 30, 40),
+                            new LinkedHashMap<>(Map.of("front", 0, "rear", 4)),
+                            List.of(3),
+                            "front 指向队头元素，rear 指向下一个可插入位置。",
+                            queueEnqueueAnimation()
+                    ),
+                    codeBlock(
+                            "队列入队代码",
+                            "c",
+                            "void enqueue(Queue* q, int val) {\n"
+                                    + "    if (q->rear == q->capacity) return;\n"
+                                    + "    q->data[q->rear++] = val;\n"
+                                    + "}",
+                            List.of(2, 3),
+                            3,
+                            "写入 rear 位置后，rear 后移一格。"
+                    ),
+                    complexityBlock(
+                            "入队复杂度",
+                            "O(1)",
+                            "O(1)",
+                            "入队只判断队满、写入一个位置并移动 rear，不需要遍历队列。"
+                    )
+            );
+            case "worked_example" -> List.of(
+                    treeBlock(
+                            "二叉树遍历状态",
+                            List.of(
+                                    node("A", "A", 0, 0),
+                                    node("B", "B", 1, 0),
+                                    node("C", "C", 1, 1),
+                                    node("D", "D", 2, 0),
+                                    node("E", "E", 2, 1)
+                            ),
+                            List.of(edge("A", "B"), edge("A", "C"), edge("B", "D"), edge("B", "E")),
+                            List.of("B"),
+                            List.of("A"),
+                            List.of("A", "B", "E"),
+                            "遍历树时要分清当前节点、已经访问的节点，以及接下来要走的路径。"
+                    ),
+                    heapBlock(
+                            "最大堆的数组映射",
+                            List.of(90, 72, 65, 44, 18, 31),
+                            List.of(1, 4),
+                            List.of("1", "4"),
+                            "堆本质上常用数组存储，父子关系由下标计算得到。"
+                    ),
+                    traceBlock(
+                            "排序过程：比较相邻元素",
+                            "bubble_sort",
+                            List.of(5, 2, 8, 1),
+                            List.of(0, 1),
+                            List.of(3, 3),
+                            "compare",
+                            "比较 5 和 2，发现顺序不对，下一步需要交换。"
+                    ),
+                    structureBlock(
+                            "链表节点关系",
+                            "linked_list",
+                            List.of(12, 24, 36),
+                            new LinkedHashMap<>(Map.of("head", 0)),
+                            List.of(1),
+                            "链表查找时需要沿 next 指针逐个访问，不能像数组一样直接按下标跳转。"
+                    )
+            );
+            case "diagnosis", "mistake_warning" -> List.of(boardBlock(
+                    "callout",
+                    "边界检查",
+                    null,
+                    "- 空结构：front == rear 或 top == -1\n"
+                            + "- 满结构：rear 到达 capacity 或栈顶到达容量上限\n"
+                            + "- 指针移动：先读写，再移动，顺序必须明确",
+                    "warning"
+            ));
+            case "summary", "transition" -> List.of(
+                    graphBlock(
+                            "图遍历状态",
+                            List.of(
+                                    node("A", "A", 0, 0),
+                                    node("B", "B", 0, 0),
+                                    node("C", "C", 0, 0),
+                                    node("D", "D", 0, 0)
+                            ),
+                            List.of(edge("A", "B"), edge("A", "C"), edge("B", "D"), edge("C", "D")),
+                            List.of("B"),
+                            List.of("A"),
+                            List.of("C"),
+                            List.of("A", "B", "D"),
+                            false,
+                            "图遍历时要同时维护已访问集合和待访问集合，避免重复访问。"
+                    ),
+                    complexityBlock(
+                            "方法总结",
+                            "看具体操作",
+                            "看额外存储",
+                            "判断复杂度时先问：有没有遍历元素？有没有额外开数组、栈或队列？"
+                    ),
+                    boardBlock(
+                            "markdown",
+                            "复盘清单",
+                            null,
+                            "1. 先画结构状态\n2. 再标出关键指针或下标\n3. 最后解释代码和复杂度",
+                            "success"
+                    )
+            );
+            case "teacher_question", "student_try" -> List.of(boardBlock(
+                    "callout",
+                    "课堂提问",
+                    null,
+                    "如果执行一次入队，真正发生变化的是元素区、front，还是 rear？",
+                    "info"
+            ));
+            default -> List.of(boardBlock(
+                    "markdown",
+                    "结构化理解",
+                    null,
+                    "学习 `" + safe(step.getTitle()) + "` 时，先画出结构状态，再分析每一步操作改变了什么。",
+                    "info"
+            ));
+        };
+    }
+
+    private Map<String, Object> codeBlock(String title, String language, String content,
+                                          List<Integer> highlights, int focusLine, String caption) {
+        Map<String, Object> block = boardBlock("code", title, language, content, "info");
+        block.put("highlights", highlights);
+        block.put("focusLine", focusLine);
+        block.put("caption", caption);
+        return block;
+    }
+
+    private Map<String, Object> structureBlock(String title, String structureType, List<?> items,
+                                               Map<String, ?> pointers, List<Integer> activeIndices,
+                                               String caption) {
+        return structureBlock(title, structureType, items, pointers, activeIndices, caption, null);
+    }
+
+    private Map<String, Object> structureBlock(String title, String structureType, List<?> items,
+                                               Map<String, ?> pointers, List<Integer> activeIndices,
+                                               String caption, Map<String, Object> animation) {
+        Map<String, Object> block = boardBlock("structure", title, null, caption, "info");
+        block.put("structureType", structureType);
+        block.put("items", items);
+        block.put("pointers", pointers);
+        block.put("activeIndices", activeIndices);
+        block.put("caption", caption);
+        if (animation != null && !animation.isEmpty()) {
+            block.put("animation", animation);
+        }
+        return block;
+    }
+
+    private Map<String, Object> queueEnqueueAnimation() {
+        Map<String, Object> animation = new LinkedHashMap<>();
+        animation.put("action", "enqueue");
+        animation.put("durationMs", 2200);
+        animation.put("movingItem", 40);
+        animation.put("from", "rear");
+        animation.put("to", 3);
+        animation.put("previous", queueState(List.of(10, 20, 30), 0, 3));
+        animation.put("next", queueState(List.of(10, 20, 30, 40), 0, 4));
+        animation.put("phases", List.of(
+                queuePhase(
+                        "before",
+                        0,
+                        List.of(10, 20, 30),
+                        0,
+                        3,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "入队前：front 指向队头，rear 指向下一个可插入位置。"
+                ),
+                queuePhase(
+                        "moving",
+                        0.34,
+                        List.of(10, 20, 30),
+                        0,
+                        3,
+                        40,
+                        3,
+                        null,
+                        List.of("rear"),
+                        "写入：把 40 放到 rear 指向的位置。"
+                ),
+                queuePhase(
+                        "after",
+                        0.72,
+                        List.of(10, 20, 30, 40),
+                        0,
+                        4,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "入队后：rear 后移一格，继续指向下一个可插入位置。"
+                )
+        ));
+        return animation;
+    }
+
+    private Map<String, Object> queueState(List<?> items, int front, int rear) {
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("items", items);
+        state.put("pointers", queuePointers(front, rear));
+        return state;
+    }
+
+    private Map<String, Object> queuePointers(int front, int rear) {
+        Map<String, Object> pointers = new LinkedHashMap<>();
+        pointers.put("front", front);
+        pointers.put("rear", rear);
+        return pointers;
+    }
+
+    private Map<String, Object> queuePhase(String name, double startRatio, List<?> items,
+                                           int front, int rear, Object movingItem,
+                                           Integer targetIndex, Integer sourceIndex,
+                                           List<String> highlightPointers, String narrationHint) {
+        Map<String, Object> phase = new LinkedHashMap<>();
+        phase.put("name", name);
+        phase.put("startRatio", startRatio);
+        phase.put("items", items);
+        phase.put("pointers", queuePointers(front, rear));
+        if (movingItem != null) {
+            phase.put("movingItem", movingItem);
+        }
+        if (targetIndex != null) {
+            phase.put("targetIndex", targetIndex);
+        }
+        if (sourceIndex != null) {
+            phase.put("sourceIndex", sourceIndex);
+        }
+        if (highlightPointers != null && !highlightPointers.isEmpty()) {
+            phase.put("highlightPointers", highlightPointers);
+        }
+        phase.put("narrationHint", narrationHint);
+        return phase;
+    }
+
+    private Map<String, Object> treeBlock(String title, List<Map<String, Object>> nodes,
+                                          List<Map<String, Object>> edges, List<String> activeIds,
+                                          List<String> visitedIds, List<String> pathIds, String caption) {
+        Map<String, Object> block = boardBlock("structure", title, null, caption, "info");
+        block.put("structureType", "tree");
+        block.put("nodes", nodes);
+        block.put("edges", edges);
+        block.put("activeIds", activeIds);
+        block.put("visitedIds", visitedIds);
+        block.put("pathIds", pathIds);
+        block.put("caption", caption);
+        return block;
+    }
+
+    private Map<String, Object> heapBlock(String title, List<?> items, List<Integer> activeIndices,
+                                          List<String> compareIds, String caption) {
+        Map<String, Object> block = boardBlock("structure", title, null, caption, "info");
+        block.put("structureType", "heap");
+        block.put("items", items);
+        block.put("activeIndices", activeIndices);
+        block.put("compareIds", compareIds);
+        block.put("caption", caption);
+        return block;
+    }
+
+    private Map<String, Object> graphBlock(String title, List<Map<String, Object>> nodes,
+                                           List<Map<String, Object>> edges, List<String> activeIds,
+                                           List<String> visitedIds, List<String> frontierIds,
+                                           List<String> pathIds, boolean directed, String caption) {
+        Map<String, Object> block = boardBlock("structure", title, null, caption, "info");
+        block.put("structureType", "graph");
+        block.put("nodes", nodes);
+        block.put("edges", edges);
+        block.put("activeIds", activeIds);
+        block.put("visitedIds", visitedIds);
+        block.put("frontierIds", frontierIds);
+        block.put("pathIds", pathIds);
+        block.put("directed", directed);
+        block.put("caption", caption);
+        return block;
+    }
+
+    private Map<String, Object> node(String id, String label, int depth, int order) {
+        return new LinkedHashMap<>(Map.of(
+                "id", id,
+                "label", label,
+                "depth", depth,
+                "order", order
+        ));
+    }
+
+    private Map<String, Object> edge(String from, String to) {
+        return new LinkedHashMap<>(Map.of(
+                "from", from,
+                "to", to
+        ));
+    }
+
+    private Map<String, Object> traceBlock(String title, String algorithm, List<?> items,
+                                           List<Integer> activeIndices, List<Integer> processedRange,
+                                           String action, String explanation) {
+        Map<String, Object> block = boardBlock("trace", title, null, explanation, "info");
+        block.put("algorithm", algorithm);
+        block.put("items", items);
+        block.put("activeIndices", activeIndices);
+        block.put("processedRange", processedRange);
+        block.put("action", action);
+        block.put("explanation", explanation);
+        return block;
+    }
+
+    private Map<String, Object> complexityBlock(String title, String time, String space, String reason) {
+        Map<String, Object> block = boardBlock("complexity", title, null, reason, "info");
+        block.put("time", time);
+        block.put("space", space);
+        block.put("cases", List.of(
+                new LinkedHashMap<>(Map.of(
+                        "label", "核心判断",
+                        "value", time,
+                        "description", reason
+                ))
+        ));
+        block.put("reason", reason);
+        return block;
+    }
+
     private Map<String, Object> boardBlock(String type, String title, String language, String content, String tone) {
         Map<String, Object> block = new LinkedHashMap<>();
         block.put("type", type);
@@ -444,6 +791,24 @@ public class LessonScriptBuilder {
         block.put("content", content);
         block.put("tone", tone);
         return block;
+    }
+
+    private boolean isDataStructureTopic(StudyScriptStepVO step) {
+        String text = (safe(step.getTitle()) + " " + safe(step.getSubtitle()) + " " + safe(step.getNodeType())).toLowerCase();
+        String[] keywords = {
+                "数据结构", "算法", "数组", "顺序表", "链表", "单链表", "双链表",
+                "栈", "队列", "树", "二叉树", "堆", "图", "哈希", "散列",
+                "排序", "查找", "遍历", "递归", "动态规划",
+                "data structure", "algorithm", "array", "list", "linked list",
+                "stack", "queue", "tree", "heap", "graph", "hash",
+                "sort", "search", "traversal", "recursion"
+        };
+        for (String keyword : keywords) {
+            if (text.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String teachingIntent(String segmentType) {

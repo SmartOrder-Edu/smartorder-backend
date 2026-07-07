@@ -56,7 +56,7 @@ public class LlmLessonScriptGenerator {
             StudyScriptStepVO step = steps.get(i);
             StudySceneVO scene = buildScene(step, rawSteps.path(i));
             scenesByStepId.put(step.getId(), scene);
-            timelinesByStepId.put(step.getId(), timelineBuilder.build(step, segmentTypesFromScene(scene)));
+            timelinesByStepId.put(step.getId(), timelineBuilder.build(step, scene));
         }
 
         StudySessionVO session = new StudySessionVO();
@@ -198,13 +198,21 @@ public class LlmLessonScriptGenerator {
                     errors.add("step " + stepIndex + " segment " + segmentIndex
                             + " boardBlocks[" + blockIndex + "] type is invalid: " + type);
                 }
-                if (content.isBlank()) {
+                if (!hasMeaningfulBoardBlock(block)) {
                     errors.add("step " + stepIndex + " segment " + segmentIndex
-                            + " boardBlocks[" + blockIndex + "] content is blank");
+                            + " boardBlocks[" + blockIndex + "] content or structured fields are blank");
                 }
                 if ("code".equals(type) && text(block, "language", "").isBlank()) {
                     errors.add("step " + stepIndex + " segment " + segmentIndex
                             + " boardBlocks[" + blockIndex + "] code language is required");
+                }
+                if ("code".equals(type) && content.isBlank()) {
+                    errors.add("step " + stepIndex + " segment " + segmentIndex
+                            + " boardBlocks[" + blockIndex + "] code content is required");
+                }
+                if ("structure".equals(type) && text(block, "structureType", "").isBlank()) {
+                    errors.add("step " + stepIndex + " segment " + segmentIndex
+                            + " boardBlocks[" + blockIndex + "] structureType is required");
                 }
             }
         }
@@ -216,7 +224,7 @@ public class LlmLessonScriptGenerator {
             return false;
         }
         for (JsonNode block : blocksNode) {
-            if (!text(block, "content", "").isBlank()) {
+            if (hasMeaningfulBoardBlock(block)) {
                 return true;
             }
         }
@@ -225,9 +233,37 @@ public class LlmLessonScriptGenerator {
 
     private boolean isAllowedBoardBlockType(String type) {
         return switch (safe(type, "markdown").toLowerCase()) {
-            case "markdown", "code", "formula", "list", "quote", "diagram", "callout" -> true;
+            case "markdown", "code", "formula", "list", "quote", "diagram", "callout",
+                    "structure", "trace", "complexity" -> true;
             default -> false;
         };
+    }
+
+    private boolean hasMeaningfulBoardBlock(JsonNode block) {
+        if (block == null || !block.isObject()) {
+            return false;
+        }
+        String type = text(block, "type", "markdown").toLowerCase();
+        if (!text(block, "content", "").isBlank()) {
+            return true;
+        }
+        return switch (type) {
+            case "structure" -> !text(block, "structureType", "").isBlank()
+                    || nonEmptyArray(block.path("items"))
+                    || nonEmptyArray(block.path("nodes"));
+            case "trace" -> nonEmptyArray(block.path("items"))
+                    || !text(block, "action", "").isBlank()
+                    || !text(block, "explanation", "").isBlank();
+            case "complexity" -> !text(block, "time", "").isBlank()
+                    || !text(block, "space", "").isBlank()
+                    || nonEmptyArray(block.path("cases"))
+                    || !text(block, "reason", "").isBlank();
+            default -> false;
+        };
+    }
+
+    private boolean nonEmptyArray(JsonNode node) {
+        return node != null && node.isArray() && !node.isEmpty();
     }
 
     private boolean containsSegmentQuiz(JsonNode segmentsNode) {
@@ -266,6 +302,22 @@ public class LlmLessonScriptGenerator {
             for (JsonNode block : blocks) {
                 builder.append(text(block, "title", ""));
                 builder.append(text(block, "content", ""));
+                builder.append(text(block, "caption", ""));
+                builder.append(text(block, "structureType", ""));
+                builder.append(text(block, "action", ""));
+                builder.append(text(block, "explanation", ""));
+                builder.append(text(block, "time", ""));
+                builder.append(text(block, "space", ""));
+                builder.append(text(block, "reason", ""));
+                if (block.has("items")) {
+                    builder.append(block.path("items"));
+                }
+                if (block.has("nodes")) {
+                    builder.append(block.path("nodes"));
+                }
+                if (block.has("cases")) {
+                    builder.append(block.path("cases"));
+                }
             }
         }
         return builder.toString();
@@ -471,15 +523,55 @@ public class LlmLessonScriptGenerator {
             return null;
         }
         String content = text(blockNode, "content", "");
-        if (content.isBlank()) {
+        String type = normalizeBoardBlockType(text(blockNode, "type", inferBoardBlockType(content, segmentType)));
+        if (!hasMeaningfulBoardBlock(blockNode) && content.isBlank()) {
             return null;
         }
-        String type = normalizeBoardBlockType(text(blockNode, "type", inferBoardBlockType(content, segmentType)));
         String language = text(blockNode, "language", "code".equals(type) ? inferCodeLanguage(content) : "");
         String title = text(blockNode, "title", defaultBoardBlockTitle(type));
         String tone = text(blockNode, "tone", defaultBoardTone(segmentType));
         String id = text(blockNode, "id", "board-block-" + index);
-        return boardBlock(type, title, language, content, tone, id);
+        Map<String, Object> block = boardBlock(type, title, language, content, tone, id);
+        copyBoardBlockField(blockNode, block, "caption");
+        copyBoardBlockField(blockNode, block, "highlights");
+        copyBoardBlockField(blockNode, block, "focusLine");
+        copyBoardBlockField(blockNode, block, "errorLines");
+        copyBoardBlockField(blockNode, block, "noteLines");
+        copyBoardBlockField(blockNode, block, "structureType");
+        copyBoardBlockField(blockNode, block, "items");
+        copyBoardBlockField(blockNode, block, "nodes");
+        copyBoardBlockField(blockNode, block, "edges");
+        copyBoardBlockField(blockNode, block, "pointers");
+        copyBoardBlockField(blockNode, block, "activeIndices");
+        copyBoardBlockField(blockNode, block, "activeIds");
+        copyBoardBlockField(blockNode, block, "visitedIds");
+        copyBoardBlockField(blockNode, block, "frontierIds");
+        copyBoardBlockField(blockNode, block, "pathIds");
+        copyBoardBlockField(blockNode, block, "compareIds");
+        copyBoardBlockField(blockNode, block, "rootId");
+        copyBoardBlockField(blockNode, block, "directed");
+        copyBoardBlockField(blockNode, block, "layout");
+        copyBoardBlockField(blockNode, block, "animation");
+        copyBoardBlockField(blockNode, block, "algorithm");
+        copyBoardBlockField(blockNode, block, "processedRange");
+        copyBoardBlockField(blockNode, block, "action");
+        copyBoardBlockField(blockNode, block, "explanation");
+        copyBoardBlockField(blockNode, block, "time");
+        copyBoardBlockField(blockNode, block, "space");
+        copyBoardBlockField(blockNode, block, "cases");
+        copyBoardBlockField(blockNode, block, "reason");
+        return block;
+    }
+
+    private void copyBoardBlockField(JsonNode source, Map<String, Object> target, String field) {
+        JsonNode value = source.path(field);
+        if (value.isMissingNode() || value.isNull()) {
+            return;
+        }
+        if (value.isTextual() && value.asText().isBlank()) {
+            return;
+        }
+        target.put(field, toPlainObject(value));
     }
 
     private Map<String, Object> boardBlock(String type, String title, String language, String content, String tone) {
@@ -496,7 +588,9 @@ public class LlmLessonScriptGenerator {
         if (language != null && !language.isBlank()) {
             block.put("language", language);
         }
-        block.put("content", stripMarkdownFence(content));
+        if (content != null && !content.isBlank()) {
+            block.put("content", stripMarkdownFence(content));
+        }
         block.put("tone", tone == null || tone.isBlank() ? "info" : tone);
         return block;
     }
@@ -508,6 +602,10 @@ public class LlmLessonScriptGenerator {
             String content = String.valueOf(block.getOrDefault("content", ""));
             String language = String.valueOf(block.getOrDefault("language", ""));
             if (content.isBlank()) {
+                String summary = structuredBoardBlockSummary(block);
+                if (!summary.isBlank()) {
+                    markdownBlocks.add(summary);
+                }
                 continue;
             }
             if ("code".equals(type)) {
@@ -519,6 +617,26 @@ public class LlmLessonScriptGenerator {
             }
         }
         return String.join("\n\n", markdownBlocks);
+    }
+
+    private String structuredBoardBlockSummary(Map<String, Object> block) {
+        String type = String.valueOf(block.getOrDefault("type", "markdown"));
+        String title = String.valueOf(block.getOrDefault("title", ""));
+        return switch (type) {
+            case "structure" -> title + "\n\n"
+                    + "- 类型：" + block.getOrDefault("structureType", "数据结构") + "\n"
+                    + "- 元素：" + block.getOrDefault("items", block.getOrDefault("nodes", List.of())) + "\n"
+                    + "- 指针：" + block.getOrDefault("pointers", Map.of());
+            case "trace" -> title + "\n\n"
+                    + "- 动作：" + block.getOrDefault("action", "标记") + "\n"
+                    + "- 当前序列：" + block.getOrDefault("items", List.of()) + "\n"
+                    + "- 说明：" + block.getOrDefault("explanation", "");
+            case "complexity" -> title + "\n\n"
+                    + "- 时间复杂度：" + block.getOrDefault("time", "待分析") + "\n"
+                    + "- 空间复杂度：" + block.getOrDefault("space", "待分析") + "\n"
+                    + "- 原因：" + block.getOrDefault("reason", "");
+            default -> "";
+        };
     }
 
     private String inferBoardBlockType(String content, String segmentType) {
@@ -539,7 +657,8 @@ public class LlmLessonScriptGenerator {
 
     private String normalizeBoardBlockType(String type) {
         return switch (safe(type, "markdown").toLowerCase()) {
-            case "code", "formula", "list", "quote", "diagram", "callout" -> type.toLowerCase();
+            case "code", "formula", "list", "quote", "diagram", "callout",
+                    "structure", "trace", "complexity" -> type.toLowerCase();
             default -> "markdown";
         };
     }
@@ -550,6 +669,9 @@ public class LlmLessonScriptGenerator {
             case "formula" -> "关键公式";
             case "diagram" -> "结构图";
             case "callout" -> "提示";
+            case "structure" -> "数据结构状态";
+            case "trace" -> "算法过程";
+            case "complexity" -> "复杂度分析";
             default -> "板书";
         };
     }
@@ -850,7 +972,13 @@ public class LlmLessonScriptGenerator {
                           "type": "hook|recall|explain|analogy|board_write|diagram|worked_example|teacher_question|student_try|diagnosis|mistake_warning|summary|transition|quiz|formula",
                           "teacherTalk": "老师真实会说出口的话，像面对学生讲课，不要写成资料摘要",
                           "boardContent": "兼容字段：黑板/画布上逐步出现的 Markdown 内容",
-                          "boardBlocks": [{"type": "markdown|code|formula|list|quote|diagram|callout", "title": "板书块标题", "language": "代码语言，仅 type=code 时填写，例如 c/java/python/javascript", "content": "纯内容。code 不要包含 Markdown 代码围栏，diagram 不要包含 ```mermaid", "tone": "info|warning|success|error"}],
+                          "boardBlocks": [
+                            {"type": "markdown|code|formula|list|quote|diagram|callout|structure|trace|complexity", "title": "板书块标题", "content": "普通文本或代码纯内容", "caption": "简短说明", "tone": "info|warning|success|error"},
+                            {"type": "code", "title": "代码标题", "language": "c|cpp|java|python|javascript|typescript|go|rust|sql", "content": "纯代码，不要包含 Markdown 代码围栏", "highlights": [2, 3], "focusLine": 3},
+                            {"type": "structure", "structureType": "array|stack|queue|linked_list|tree|heap|graph", "title": "结构状态标题", "items": [1, 2, 3], "nodes": [{"id": "A", "label": "A", "depth": 0, "order": 0}], "edges": [{"from": "A", "to": "B", "label": "可选边权"}], "pointers": {"front": 0, "rear": 3, "top": 2}, "activeIndices": [0], "activeIds": ["A"], "visitedIds": ["A"], "frontierIds": ["B"], "pathIds": ["A", "B"], "compareIds": ["1", "4"], "directed": false, "animation": {"action": "enqueue|dequeue|push|pop|compare|swap", "durationMs": 1800, "movingItem": 4, "from": "rear", "to": 3, "previous": {"items": [1, 2, 3], "pointers": {"front": 0, "rear": 3}}, "next": {"items": [1, 2, 3, 4], "pointers": {"front": 0, "rear": 4}}, "phases": [{"name": "before", "startRatio": 0, "items": [1, 2, 3], "pointers": {"front": 0, "rear": 3}, "narrationHint": "入队前"}, {"name": "moving", "startRatio": 0.34, "items": [1, 2, 3], "pointers": {"front": 0, "rear": 3}, "movingItem": 4, "targetIndex": 3, "highlightPointers": ["rear"], "narrationHint": "写入 rear 位置"}, {"name": "after", "startRatio": 0.72, "items": [1, 2, 3, 4], "pointers": {"front": 0, "rear": 4}, "narrationHint": "rear 后移"}]}},
+                            {"type": "trace", "algorithm": "bubble_sort|binary_search|dfs|bfs|...", "title": "过程标题", "items": [5, 2, 8], "activeIndices": [0, 1], "processedRange": [2, 2], "action": "compare|swap|insert|delete|visit|mark", "explanation": "当前步骤解释"},
+                            {"type": "complexity", "title": "复杂度标题", "time": "O(n)", "space": "O(1)", "cases": [{"label": "最坏情况", "value": "O(n)", "description": "原因"}], "reason": "复杂度原因"}
+                          ],
                           "markdown": "兼容字段，通常等于 boardContent 或本段展示内容",
                           "teachingIntent": "说明本段为什么这样讲",
                           "emotionTone": "curious|encourage|serious|warning|summary",
@@ -878,7 +1006,15 @@ public class LlmLessonScriptGenerator {
                 9. 至少包含 1 个 mistake_warning 或 diagnosis，像老师一样指出常见误区并纠正。
                 10. teacherTalk 用自然口语，boardBlocks/boardContent 用精炼板书；不要把长篇资料一口气塞进同一段。
                 11. 每个 teachingSegment 优先输出 boardBlocks。普通板书用 type=markdown；算法/程序代码必须用 type=code，并填写 language；公式用 type=formula；常见误区或提示用 type=callout。
-                12. boardBlocks[*].content 必须是纯内容：代码不要包 ```，Mermaid 图不要包 ```mermaid；前端会根据 type 和 language 负责渲染。
+                12. 如果知识点属于数据结构或算法，必须优先使用结构化板书：结构状态用 type=structure，排序/查找/遍历过程用 type=trace，复杂度结论用 type=complexity。
+                13. structure 当前线性结构优先使用 structureType=array|stack|queue|linked_list，items 表示元素，pointers 表示 front/rear/top/head 等指针，activeIndices 表示当前高亮下标。
+                14. structureType=tree 时使用 nodes、edges、activeIds、visitedIds、pathIds；nodes 可带 id、label、depth、order。
+                15. structureType=heap 时使用 items、activeIndices、compareIds；items 是堆的数组存储顺序。
+                16. structureType=graph 时使用 nodes、edges、activeIds、visitedIds、frontierIds、pathIds、directed；edges 使用 from/to/label。
+                17. 讲解队列入队/出队时，structureType=queue 必须优先提供 animation.phases，至少包含 before、moving、after 三个阶段；前端会按阶段渲染旧状态、动作中状态和最终状态，不能一开始就只给最终状态。
+                18. trace 当前优先用 items、activeIndices、processedRange、action、explanation 表示算法执行过程。
+                19. complexity 使用 time、space、cases、reason，不要把复杂度结论只写在普通段落里。
+                20. boardBlocks[*].content 必须是纯内容：代码不要包 ```，Mermaid 图不要包 ```mermaid；前端会根据 type 和 language 负责渲染。
 
                 学习上下文：
                 - 学习空间：%s
@@ -921,8 +1057,12 @@ public class LlmLessonScriptGenerator {
                 - canvasType 只能是 concept、example、practice、assessment、derivation、summary。
                 - teachingSegments[*].type 只能是 hook、recall、explain、analogy、board_write、diagram、worked_example、teacher_question、student_try、diagnosis、mistake_warning、summary、transition、quiz、formula。
                 - 每个 teachingSegment 必须有 teacherTalk、boardBlocks、boardContent 或 markdown 之一。
-                - 每个 teachingSegment 应优先提供 boardBlocks；boardBlocks[*].type 只能是 markdown、code、formula、list、quote、diagram、callout。
+                - 每个 teachingSegment 应优先提供 boardBlocks；boardBlocks[*].type 只能是 markdown、code、formula、list、quote、diagram、callout、structure、trace、complexity。
                 - 代码必须放入 {"type":"code","language":"c|java|python|javascript|...","content":"纯代码"}，content 不要包含 Markdown 代码围栏。
+                - 数据结构状态必须优先使用 {"type":"structure","structureType":"array|stack|queue|linked_list|tree|heap|graph","items":[...],"nodes":[...],"edges":[...],"pointers":{...},"activeIndices":[...],"activeIds":[...],"visitedIds":[...],"frontierIds":[...],"pathIds":[...],"compareIds":[...],"directed":false,"animation":{...}}。
+                - 队列入队/出队讲解应保留 animation.phases，至少包含 before、moving、after；before 使用操作前 items/pointers，moving 使用旧 items/pointers 加 movingItem/targetIndex 或 sourceIndex，after 使用操作后 items/pointers。
+                - 算法推演必须优先使用 {"type":"trace","algorithm":"算法名","items":[...],"activeIndices":[...],"processedRange":[start,end],"action":"compare|swap|insert|delete|visit|mark","explanation":"说明"}。
+                - 复杂度分析必须优先使用 {"type":"complexity","time":"O(...)","space":"O(...)","cases":[...],"reason":"原因"}。
                 - quiz.answerType 只能是 text、single_select、multi_select、number。
                 - 当 quiz.answerType 为 single_select 或 multi_select 时，quiz.options 必须是数组，且每项包含 label 和 value；correctAnswer 必须填写选项 value。
                 - answer 和 correctAnswer 都必须有值。
