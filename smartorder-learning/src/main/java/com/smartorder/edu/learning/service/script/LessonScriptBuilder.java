@@ -28,8 +28,9 @@ public class LessonScriptBuilder {
         Map<String, StudyTimelineVO> timelinesByStepId = new LinkedHashMap<>();
         Map<String, StudySceneVO> scenesByStepId = new LinkedHashMap<>();
         for (StudyScriptStepVO node : nodes) {
-            timelinesByStepId.put(node.getId(), timelineBuilder.build(node));
-            scenesByStepId.put(node.getId(), buildScene(node, templateCode));
+            StudySceneVO scene = buildScene(node, templateCode);
+            scenesByStepId.put(node.getId(), scene);
+            timelinesByStepId.put(node.getId(), timelineBuilder.build(node, scene));
         }
 
         StudySessionVO session = new StudySessionVO();

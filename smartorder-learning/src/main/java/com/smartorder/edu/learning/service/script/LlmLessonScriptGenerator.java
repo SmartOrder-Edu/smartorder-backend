@@ -56,7 +56,7 @@ public class LlmLessonScriptGenerator {
             StudyScriptStepVO step = steps.get(i);
             StudySceneVO scene = buildScene(step, rawSteps.path(i));
             scenesByStepId.put(step.getId(), scene);
-            timelinesByStepId.put(step.getId(), timelineBuilder.build(step, segmentTypesFromScene(scene)));
+            timelinesByStepId.put(step.getId(), timelineBuilder.build(step, scene));
         }
 
         StudySessionVO session = new StudySessionVO();

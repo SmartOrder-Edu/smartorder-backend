@@ -226,9 +226,12 @@ public class LessonMediaAssetService {
             if (!(item instanceof Map<?, ?> segment)) {
                 continue;
             }
+            Object teacherTalk = segment.get("teacherTalk");
             Object commentary = segment.get("agentCommentary");
             Object markdown = segment.get("markdown");
-            if (preferCommentary && commentary instanceof String text && !text.isBlank()) {
+            if (preferCommentary && teacherTalk instanceof String text && !text.isBlank()) {
+                parts.add(text);
+            } else if (preferCommentary && commentary instanceof String text && !text.isBlank()) {
                 parts.add(text);
             } else if (markdown instanceof String text && !text.isBlank()) {
                 parts.add(text);
