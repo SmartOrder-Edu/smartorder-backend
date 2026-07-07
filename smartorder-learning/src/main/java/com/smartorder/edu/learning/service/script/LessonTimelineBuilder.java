@@ -200,6 +200,7 @@ public class LessonTimelineBuilder {
             copyPayloadField(block, payload, "rootId", "rootId");
             copyPayloadField(block, payload, "directed", "directed");
             copyPayloadField(block, payload, "layout", "layout");
+            copyPayloadField(block, payload, "animation", "animation");
             copyPayloadField(block, payload, "algorithm", "algorithm");
             copyPayloadField(block, payload, "processedRange", "processedRange");
             copyPayloadField(block, payload, "action", "action");

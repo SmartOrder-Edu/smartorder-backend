@@ -454,10 +454,11 @@ public class LessonScriptBuilder {
                     structureBlock(
                             "队列当前状态",
                             "queue",
-                            List.of(10, 20, 30),
-                            new LinkedHashMap<>(Map.of("front", 0, "rear", 3)),
-                            List.of(0),
-                            "front 指向队头元素，rear 指向下一个可插入位置。"
+                            List.of(10, 20, 30, 40),
+                            new LinkedHashMap<>(Map.of("front", 0, "rear", 4)),
+                            List.of(3),
+                            "front 指向队头元素，rear 指向下一个可插入位置。",
+                            queueEnqueueAnimation()
                     ),
                     codeBlock(
                             "队列入队代码",
@@ -587,13 +588,111 @@ public class LessonScriptBuilder {
     private Map<String, Object> structureBlock(String title, String structureType, List<?> items,
                                                Map<String, ?> pointers, List<Integer> activeIndices,
                                                String caption) {
+        return structureBlock(title, structureType, items, pointers, activeIndices, caption, null);
+    }
+
+    private Map<String, Object> structureBlock(String title, String structureType, List<?> items,
+                                               Map<String, ?> pointers, List<Integer> activeIndices,
+                                               String caption, Map<String, Object> animation) {
         Map<String, Object> block = boardBlock("structure", title, null, caption, "info");
         block.put("structureType", structureType);
         block.put("items", items);
         block.put("pointers", pointers);
         block.put("activeIndices", activeIndices);
         block.put("caption", caption);
+        if (animation != null && !animation.isEmpty()) {
+            block.put("animation", animation);
+        }
         return block;
+    }
+
+    private Map<String, Object> queueEnqueueAnimation() {
+        Map<String, Object> animation = new LinkedHashMap<>();
+        animation.put("action", "enqueue");
+        animation.put("durationMs", 2200);
+        animation.put("movingItem", 40);
+        animation.put("from", "rear");
+        animation.put("to", 3);
+        animation.put("previous", queueState(List.of(10, 20, 30), 0, 3));
+        animation.put("next", queueState(List.of(10, 20, 30, 40), 0, 4));
+        animation.put("phases", List.of(
+                queuePhase(
+                        "before",
+                        0,
+                        List.of(10, 20, 30),
+                        0,
+                        3,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "入队前：front 指向队头，rear 指向下一个可插入位置。"
+                ),
+                queuePhase(
+                        "moving",
+                        0.34,
+                        List.of(10, 20, 30),
+                        0,
+                        3,
+                        40,
+                        3,
+                        null,
+                        List.of("rear"),
+                        "写入：把 40 放到 rear 指向的位置。"
+                ),
+                queuePhase(
+                        "after",
+                        0.72,
+                        List.of(10, 20, 30, 40),
+                        0,
+                        4,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "入队后：rear 后移一格，继续指向下一个可插入位置。"
+                )
+        ));
+        return animation;
+    }
+
+    private Map<String, Object> queueState(List<?> items, int front, int rear) {
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("items", items);
+        state.put("pointers", queuePointers(front, rear));
+        return state;
+    }
+
+    private Map<String, Object> queuePointers(int front, int rear) {
+        Map<String, Object> pointers = new LinkedHashMap<>();
+        pointers.put("front", front);
+        pointers.put("rear", rear);
+        return pointers;
+    }
+
+    private Map<String, Object> queuePhase(String name, double startRatio, List<?> items,
+                                           int front, int rear, Object movingItem,
+                                           Integer targetIndex, Integer sourceIndex,
+                                           List<String> highlightPointers, String narrationHint) {
+        Map<String, Object> phase = new LinkedHashMap<>();
+        phase.put("name", name);
+        phase.put("startRatio", startRatio);
+        phase.put("items", items);
+        phase.put("pointers", queuePointers(front, rear));
+        if (movingItem != null) {
+            phase.put("movingItem", movingItem);
+        }
+        if (targetIndex != null) {
+            phase.put("targetIndex", targetIndex);
+        }
+        if (sourceIndex != null) {
+            phase.put("sourceIndex", sourceIndex);
+        }
+        if (highlightPointers != null && !highlightPointers.isEmpty()) {
+            phase.put("highlightPointers", highlightPointers);
+        }
+        phase.put("narrationHint", narrationHint);
+        return phase;
     }
 
     private Map<String, Object> treeBlock(String title, List<Map<String, Object>> nodes,
