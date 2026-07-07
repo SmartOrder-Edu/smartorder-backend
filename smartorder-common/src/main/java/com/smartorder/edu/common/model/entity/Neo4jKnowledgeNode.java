@@ -45,6 +45,15 @@ public class Neo4jKnowledgeNode {
     @Property("knowledge_base_id")
     private Long knowledgeBaseId;
 
+    @Property("source_chunk_ids")
+    private String sourceChunkIds;
+
+    @Property("source_chunk_indexes")
+    private String sourceChunkIndexes;
+
+    @Property("source_title_paths")
+    private String sourceTitlePaths;
+
     @Relationship(type = "PREREQUISITE_OF", direction = Relationship.Direction.OUTGOING)
     private Set<Neo4jKnowledgeRelation> prerequisites = new HashSet<>();
 
