@@ -193,6 +193,13 @@ public class LessonTimelineBuilder {
             copyPayloadField(block, payload, "pointers", "pointers");
             copyPayloadField(block, payload, "activeIndices", "activeIndices");
             copyPayloadField(block, payload, "activeIds", "activeIds");
+            copyPayloadField(block, payload, "visitedIds", "visitedIds");
+            copyPayloadField(block, payload, "frontierIds", "frontierIds");
+            copyPayloadField(block, payload, "pathIds", "pathIds");
+            copyPayloadField(block, payload, "compareIds", "compareIds");
+            copyPayloadField(block, payload, "rootId", "rootId");
+            copyPayloadField(block, payload, "directed", "directed");
+            copyPayloadField(block, payload, "layout", "layout");
             copyPayloadField(block, payload, "algorithm", "algorithm");
             copyPayloadField(block, payload, "processedRange", "processedRange");
             copyPayloadField(block, payload, "action", "action");

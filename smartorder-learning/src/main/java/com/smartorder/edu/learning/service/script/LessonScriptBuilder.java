@@ -478,6 +478,28 @@ public class LessonScriptBuilder {
                     )
             );
             case "worked_example" -> List.of(
+                    treeBlock(
+                            "二叉树遍历状态",
+                            List.of(
+                                    node("A", "A", 0, 0),
+                                    node("B", "B", 1, 0),
+                                    node("C", "C", 1, 1),
+                                    node("D", "D", 2, 0),
+                                    node("E", "E", 2, 1)
+                            ),
+                            List.of(edge("A", "B"), edge("A", "C"), edge("B", "D"), edge("B", "E")),
+                            List.of("B"),
+                            List.of("A"),
+                            List.of("A", "B", "E"),
+                            "遍历树时要分清当前节点、已经访问的节点，以及接下来要走的路径。"
+                    ),
+                    heapBlock(
+                            "最大堆的数组映射",
+                            List.of(90, 72, 65, 44, 18, 31),
+                            List.of(1, 4),
+                            List.of("1", "4"),
+                            "堆本质上常用数组存储，父子关系由下标计算得到。"
+                    ),
                     traceBlock(
                             "排序过程：比较相邻元素",
                             "bubble_sort",
@@ -506,6 +528,22 @@ public class LessonScriptBuilder {
                     "warning"
             ));
             case "summary", "transition" -> List.of(
+                    graphBlock(
+                            "图遍历状态",
+                            List.of(
+                                    node("A", "A", 0, 0),
+                                    node("B", "B", 0, 0),
+                                    node("C", "C", 0, 0),
+                                    node("D", "D", 0, 0)
+                            ),
+                            List.of(edge("A", "B"), edge("A", "C"), edge("B", "D"), edge("C", "D")),
+                            List.of("B"),
+                            List.of("A"),
+                            List.of("C"),
+                            List.of("A", "B", "D"),
+                            false,
+                            "图遍历时要同时维护已访问集合和待访问集合，避免重复访问。"
+                    ),
                     complexityBlock(
                             "方法总结",
                             "看具体操作",
@@ -556,6 +594,64 @@ public class LessonScriptBuilder {
         block.put("activeIndices", activeIndices);
         block.put("caption", caption);
         return block;
+    }
+
+    private Map<String, Object> treeBlock(String title, List<Map<String, Object>> nodes,
+                                          List<Map<String, Object>> edges, List<String> activeIds,
+                                          List<String> visitedIds, List<String> pathIds, String caption) {
+        Map<String, Object> block = boardBlock("structure", title, null, caption, "info");
+        block.put("structureType", "tree");
+        block.put("nodes", nodes);
+        block.put("edges", edges);
+        block.put("activeIds", activeIds);
+        block.put("visitedIds", visitedIds);
+        block.put("pathIds", pathIds);
+        block.put("caption", caption);
+        return block;
+    }
+
+    private Map<String, Object> heapBlock(String title, List<?> items, List<Integer> activeIndices,
+                                          List<String> compareIds, String caption) {
+        Map<String, Object> block = boardBlock("structure", title, null, caption, "info");
+        block.put("structureType", "heap");
+        block.put("items", items);
+        block.put("activeIndices", activeIndices);
+        block.put("compareIds", compareIds);
+        block.put("caption", caption);
+        return block;
+    }
+
+    private Map<String, Object> graphBlock(String title, List<Map<String, Object>> nodes,
+                                           List<Map<String, Object>> edges, List<String> activeIds,
+                                           List<String> visitedIds, List<String> frontierIds,
+                                           List<String> pathIds, boolean directed, String caption) {
+        Map<String, Object> block = boardBlock("structure", title, null, caption, "info");
+        block.put("structureType", "graph");
+        block.put("nodes", nodes);
+        block.put("edges", edges);
+        block.put("activeIds", activeIds);
+        block.put("visitedIds", visitedIds);
+        block.put("frontierIds", frontierIds);
+        block.put("pathIds", pathIds);
+        block.put("directed", directed);
+        block.put("caption", caption);
+        return block;
+    }
+
+    private Map<String, Object> node(String id, String label, int depth, int order) {
+        return new LinkedHashMap<>(Map.of(
+                "id", id,
+                "label", label,
+                "depth", depth,
+                "order", order
+        ));
+    }
+
+    private Map<String, Object> edge(String from, String to) {
+        return new LinkedHashMap<>(Map.of(
+                "from", from,
+                "to", to
+        ));
     }
 
     private Map<String, Object> traceBlock(String title, String algorithm, List<?> items,

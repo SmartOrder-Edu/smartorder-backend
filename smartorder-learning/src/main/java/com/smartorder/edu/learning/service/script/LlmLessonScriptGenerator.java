@@ -544,6 +544,13 @@ public class LlmLessonScriptGenerator {
         copyBoardBlockField(blockNode, block, "pointers");
         copyBoardBlockField(blockNode, block, "activeIndices");
         copyBoardBlockField(blockNode, block, "activeIds");
+        copyBoardBlockField(blockNode, block, "visitedIds");
+        copyBoardBlockField(blockNode, block, "frontierIds");
+        copyBoardBlockField(blockNode, block, "pathIds");
+        copyBoardBlockField(blockNode, block, "compareIds");
+        copyBoardBlockField(blockNode, block, "rootId");
+        copyBoardBlockField(blockNode, block, "directed");
+        copyBoardBlockField(blockNode, block, "layout");
         copyBoardBlockField(blockNode, block, "algorithm");
         copyBoardBlockField(blockNode, block, "processedRange");
         copyBoardBlockField(blockNode, block, "action");
@@ -967,7 +974,7 @@ public class LlmLessonScriptGenerator {
                           "boardBlocks": [
                             {"type": "markdown|code|formula|list|quote|diagram|callout|structure|trace|complexity", "title": "板书块标题", "content": "普通文本或代码纯内容", "caption": "简短说明", "tone": "info|warning|success|error"},
                             {"type": "code", "title": "代码标题", "language": "c|cpp|java|python|javascript|typescript|go|rust|sql", "content": "纯代码，不要包含 Markdown 代码围栏", "highlights": [2, 3], "focusLine": 3},
-                            {"type": "structure", "structureType": "array|stack|queue|linked_list|tree|heap|graph", "title": "结构状态标题", "items": [1, 2, 3], "pointers": {"front": 0, "rear": 3, "top": 2}, "activeIndices": [0]},
+                            {"type": "structure", "structureType": "array|stack|queue|linked_list|tree|heap|graph", "title": "结构状态标题", "items": [1, 2, 3], "nodes": [{"id": "A", "label": "A", "depth": 0, "order": 0}], "edges": [{"from": "A", "to": "B", "label": "可选边权"}], "pointers": {"front": 0, "rear": 3, "top": 2}, "activeIndices": [0], "activeIds": ["A"], "visitedIds": ["A"], "frontierIds": ["B"], "pathIds": ["A", "B"], "compareIds": ["1", "4"], "directed": false},
                             {"type": "trace", "algorithm": "bubble_sort|binary_search|dfs|bfs|...", "title": "过程标题", "items": [5, 2, 8], "activeIndices": [0, 1], "processedRange": [2, 2], "action": "compare|swap|insert|delete|visit|mark", "explanation": "当前步骤解释"},
                             {"type": "complexity", "title": "复杂度标题", "time": "O(n)", "space": "O(1)", "cases": [{"label": "最坏情况", "value": "O(n)", "description": "原因"}], "reason": "复杂度原因"}
                           ],
@@ -999,10 +1006,13 @@ public class LlmLessonScriptGenerator {
                 10. teacherTalk 用自然口语，boardBlocks/boardContent 用精炼板书；不要把长篇资料一口气塞进同一段。
                 11. 每个 teachingSegment 优先输出 boardBlocks。普通板书用 type=markdown；算法/程序代码必须用 type=code，并填写 language；公式用 type=formula；常见误区或提示用 type=callout。
                 12. 如果知识点属于数据结构或算法，必须优先使用结构化板书：结构状态用 type=structure，排序/查找/遍历过程用 type=trace，复杂度结论用 type=complexity。
-                13. structure 当前优先使用 structureType=array|stack|queue|linked_list，items 表示元素，pointers 表示 front/rear/top/head 等指针，activeIndices 表示当前高亮下标。
-                14. trace 当前优先用 items、activeIndices、processedRange、action、explanation 表示算法执行过程。
-                15. complexity 使用 time、space、cases、reason，不要把复杂度结论只写在普通段落里。
-                16. boardBlocks[*].content 必须是纯内容：代码不要包 ```，Mermaid 图不要包 ```mermaid；前端会根据 type 和 language 负责渲染。
+                13. structure 当前线性结构优先使用 structureType=array|stack|queue|linked_list，items 表示元素，pointers 表示 front/rear/top/head 等指针，activeIndices 表示当前高亮下标。
+                14. structureType=tree 时使用 nodes、edges、activeIds、visitedIds、pathIds；nodes 可带 id、label、depth、order。
+                15. structureType=heap 时使用 items、activeIndices、compareIds；items 是堆的数组存储顺序。
+                16. structureType=graph 时使用 nodes、edges、activeIds、visitedIds、frontierIds、pathIds、directed；edges 使用 from/to/label。
+                17. trace 当前优先用 items、activeIndices、processedRange、action、explanation 表示算法执行过程。
+                18. complexity 使用 time、space、cases、reason，不要把复杂度结论只写在普通段落里。
+                19. boardBlocks[*].content 必须是纯内容：代码不要包 ```，Mermaid 图不要包 ```mermaid；前端会根据 type 和 language 负责渲染。
 
                 学习上下文：
                 - 学习空间：%s
@@ -1047,7 +1057,7 @@ public class LlmLessonScriptGenerator {
                 - 每个 teachingSegment 必须有 teacherTalk、boardBlocks、boardContent 或 markdown 之一。
                 - 每个 teachingSegment 应优先提供 boardBlocks；boardBlocks[*].type 只能是 markdown、code、formula、list、quote、diagram、callout、structure、trace、complexity。
                 - 代码必须放入 {"type":"code","language":"c|java|python|javascript|...","content":"纯代码"}，content 不要包含 Markdown 代码围栏。
-                - 数据结构状态必须优先使用 {"type":"structure","structureType":"array|stack|queue|linked_list|tree|heap|graph","items":[...],"pointers":{...},"activeIndices":[...]}。
+                - 数据结构状态必须优先使用 {"type":"structure","structureType":"array|stack|queue|linked_list|tree|heap|graph","items":[...],"nodes":[...],"edges":[...],"pointers":{...},"activeIndices":[...],"activeIds":[...],"visitedIds":[...],"frontierIds":[...],"pathIds":[...],"compareIds":[...],"directed":false}。
                 - 算法推演必须优先使用 {"type":"trace","algorithm":"算法名","items":[...],"activeIndices":[...],"processedRange":[start,end],"action":"compare|swap|insert|delete|visit|mark","explanation":"说明"}。
                 - 复杂度分析必须优先使用 {"type":"complexity","time":"O(...)","space":"O(...)","cases":[...],"reason":"原因"}。
                 - quiz.answerType 只能是 text、single_select、multi_select、number。
