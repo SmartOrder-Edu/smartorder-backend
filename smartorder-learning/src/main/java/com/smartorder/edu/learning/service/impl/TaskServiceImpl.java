@@ -1,6 +1,7 @@
 package com.smartorder.edu.learning.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.learning.domain.entity.Task;
 import com.smartorder.edu.learning.mapper.TaskMapper;
 import com.smartorder.edu.learning.service.ITaskService;
@@ -9,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Slf4j
@@ -86,5 +88,20 @@ public class TaskServiceImpl implements ITaskService {
         qw.eq("space_id", spaceId).eq("user_id", userId).eq("is_deleted", 0)
                 .lt("due_date", LocalDate.now()).in("status", "pending", "doing").orderByAsc("due_date");
         return taskMapper.selectList(qw);
+    }
+
+    @Override
+    public void completeTask(Long taskId, Long userId) {
+        Task task = taskMapper.selectById(taskId);
+        if (task == null || (task.getIsDeleted() != null && task.getIsDeleted() == 1)) {
+            throw new BusinessException("任务不存在");
+        }
+        if (!task.getUserId().equals(userId)) {
+            throw new BusinessException("无权操作此任务");
+        }
+        task.setStatus("completed");
+        task.setCompletedAt(LocalDateTime.now());
+        task.setUpdateTime(LocalDateTime.now());
+        taskMapper.updateById(task);
     }
 }

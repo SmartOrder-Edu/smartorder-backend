@@ -47,8 +47,8 @@ public class EvaluationAnswerRecord {
     private Map<String, Object> userAnswer;
 
     /** 标准答案快照JSON */
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> standardAnswer;
+    @TableField(value = "correct_answer", typeHandler = JacksonTypeHandler.class)
+    private Map<String, Object> correctAnswer;
 
     /** 是否正确：1正确，0错误 */
     private Integer isCorrect;
@@ -57,7 +57,7 @@ public class EvaluationAnswerRecord {
     private BigDecimal score;
 
     /** 作答耗时（秒） */
-    private Integer answerDurationSeconds;
+    private Integer duration;
 
     /** 是否使用提示：0否，1是 */
     private Integer usedHint;

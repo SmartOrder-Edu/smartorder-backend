@@ -14,16 +14,17 @@ import com.smartorder.edu.student.domain.dto.GenerateQuestionDTO;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestion;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationItem;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationTask;
+import com.smartorder.edu.student.domain.entity.EvaluationSession;
 import com.smartorder.edu.student.domain.enums.PromptFile;
 import com.smartorder.edu.student.domain.enums.QuestionTaskPlan;
 import com.smartorder.edu.student.domain.enums.QuestionScore;
 import com.smartorder.edu.student.domain.vo.EvaluationQuestionVO;
 import com.smartorder.edu.student.domain.vo.EvaluationTaskVO;
-import com.smartorder.edu.student.domain.vo.GenerateQuestionVO;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationItemMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationTaskMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
 import com.smartorder.edu.student.service.IEvaluationQuestionService;
+import com.smartorder.edu.student.service.IEvaluationSessionService;
 import com.smartorder.edu.student.util.StudentPromptFileLoader;
 import dev.langchain4j.model.input.PromptTemplate;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +46,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 import static com.smartorder.edu.common.util.ThreadLocalUtils.getCurrentUserId;
 
@@ -84,6 +86,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     private final EvaluationQuestionGenerationItemMapper generationItemMapper;
     private final TransactionTemplate transactionTemplate;
     private final QuestionAiService questionAiService;
+    private final IEvaluationSessionService sessionService;
 
     /** 每题型默认生成数量 */
     private static final int DEFAULT_COUNT = 3;
@@ -270,6 +273,22 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
             updateTaskFinished(context.task().getId(), "success", successCount.get(), 0, null);
             log.info("生成问题任务完成: taskId={}, successCount={}, failedCount=0",
                     context.task().getId(), successCount.get());
+
+            // 出题完成后自动创建测评会话，并通过 SSE 推送给前端
+            try {
+                var session = createEvaluationSession(context);
+                sendEvent(emitter, "session-created", Map.of(
+                        "sessionId", session.getId(),
+                        "title", session.getTitle(),
+                        "totalQuestionCount", session.getTotalQuestionCount(),
+                        "totalScore", session.getTotalScore()
+                ));
+                log.info("测评会话已创建并推送: sessionId={}, taskId={}",
+                        session.getId(), context.task().getId());
+            } catch (Exception e) {
+                log.error("创建测评会话失败: taskId={}", context.task().getId(), e);
+                sendEvent(emitter, "session-error", Map.of("message", "会话创建失败: " + e.getMessage()));
+            }
 
             completeEmitter(emitter);
 
@@ -1031,6 +1050,58 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         }
 
         return text;
+    }
+
+    /**
+     * 根据生成结果创建测评会话。
+     * <p>从 generation_item 表中反查所有成功生成的题目ID，计算总分，创建 session。</p>
+     */
+    private EvaluationSession createEvaluationSession(GenerationContext context) {
+        // 从数据库反查所有成功生成的 item（markItemSuccess 已将 questionId 写入 DB）
+        LambdaQueryWrapper<EvaluationQuestionGenerationItem> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(EvaluationQuestionGenerationItem::getTaskId, context.task().getId())
+                .eq(EvaluationQuestionGenerationItem::getStatus, "success")
+                .isNotNull(EvaluationQuestionGenerationItem::getQuestionId);
+        List<EvaluationQuestionGenerationItem> successItems = generationItemMapper.selectList(wrapper);
+
+        List<Long> questionIds = successItems.stream()
+                .map(EvaluationQuestionGenerationItem::getQuestionId)
+                .toList();
+
+        if (questionIds.isEmpty()) {
+            throw new BusinessException("没有成功生成的题目，无法创建会话");
+        }
+
+        // 查询题目实体获取分值信息
+        List<EvaluationQuestion> questions = evaluationQuestionMapper.selectBatchIds(questionIds);
+        BigDecimal totalScore = questions.stream()
+                .map(q -> {
+                    BigDecimal score = q.getScore();
+                    if (score != null && score.compareTo(BigDecimal.ZERO) > 0) {
+                        return score;
+                    }
+                    return QuestionScore.fromCode(q.getQuestionType()).getDefaultScore();
+                })
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // 构建难度分布
+        Map<String, Object> difficultyDistribution = new LinkedHashMap<>();
+        Map<Integer, Long> difficultyCount = questions.stream()
+                .collect(Collectors.groupingBy(
+                        q -> q.getDifficulty() != null ? q.getDifficulty() : 3,
+                        Collectors.counting()));
+        difficultyDistribution.put("levels", difficultyCount);
+
+        String title = (context.topic() != null ? context.topic() : context.courseName()) + "测评";
+
+        return sessionService.createSession(
+                context.dto().getLearningSpaceId(),
+                context.task().getUserId(),
+                title,
+                questionIds,
+                totalScore,
+                difficultyDistribution
+        );
     }
 
     /** 生成上下文：贯穿一次生成任务的请求参数、课程/主题、任务(task)与明细(item)集合 */
