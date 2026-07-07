@@ -43,7 +43,7 @@ public class EvaluationQuestion {
     /** 题型：single_choice/multiple_choice/judge/fill_blank/short_answer/code/scenario/sql/multimodal */
     private String questionType;
 
-    /** 难度等级：1-10 */
+    /** 难度等级：1-5 */
     private Integer difficulty;
 
     /** 题目分值 */

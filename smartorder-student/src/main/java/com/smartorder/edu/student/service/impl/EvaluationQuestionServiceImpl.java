@@ -87,8 +87,8 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
     /** 每题型默认生成数量 */
     private static final int DEFAULT_COUNT = 3;
-    /** 默认难度等级（1-10） */
-    private static final int DEFAULT_DIFFICULTY = 5;
+    /** 默认难度等级（1-5） */
+    private static final int DEFAULT_DIFFICULTY = 3;
     /** 选择题默认选项数 */
     private static final int DEFAULT_OPTION_COUNT = 4;
     /** 单条明细最大重试次数 */
@@ -556,7 +556,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         JsonNode analysisNode = q.get("analysis");
         if (analysisNode != null && analysisNode.isObject()) {
             question.setAnalysisJson(objectMapper.convertValue(analysisNode, Map.class));
-            question.setExplanation(readText(analysisNode, "correct_reason", ""));
+            question.setExplanation(parseCorrectReason(analysisNode));
             question.setCommonMistakesJson(parseWrongReason(analysisNode));
         } else {
             question.setExplanation("");
@@ -678,6 +678,33 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                 yield objectMapper.convertValue(answerNode, Map.class);
             }
         };
+    }
+
+    /** 新格式 analysis.correct_reason：
+     *  <ul>
+     *    <li>字符串 → 直接返回（判断题/填空题等）</li>
+     *    <li>对象（如 {"B":"依据"}）→ 提取各 value 拼接</li>
+     *  </ul>
+     */
+    private String parseCorrectReason(JsonNode analysisNode) {
+        JsonNode correctReason = analysisNode.get("correct_reason");
+        if (correctReason == null || correctReason.isNull()) {
+            return "";
+        }
+        if (correctReason.isTextual()) {
+            return correctReason.asText();
+        }
+        if (correctReason.isObject()) {
+            StringBuilder sb = new StringBuilder();
+            correctReason.fields().forEachRemaining(entry -> {
+                if (!sb.isEmpty()) {
+                    sb.append("；");
+                }
+                sb.append(entry.getKey()).append("：").append(entry.getValue().asText());
+            });
+            return sb.toString();
+        }
+        return "";
     }
 
     /** 新格式 analysis.wrong_reason（{A:"原因", C:"原因"}）→ 旧格式 [{option:"A", reason:"..."}] */

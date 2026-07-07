@@ -44,9 +44,9 @@ public class GenerateQuestionDTO {
         @Min(value = 1, message = "题目数量不能小于1")
         @Max(value = 10, message = "题目数量不能大于10")
         private Integer count;
-        /** 难度等级：1-10 */
+        /** 难度等级：1-5 */
         @Min(value = 1, message = "难度不能小于1")
-        @Max(value = 10, message = "难度不能大于10")
+        @Max(value = 5, message = "难度不能大于5")
         private Integer difficulty;
 
         /** 选项数量（仅选择题有效，默认4） */

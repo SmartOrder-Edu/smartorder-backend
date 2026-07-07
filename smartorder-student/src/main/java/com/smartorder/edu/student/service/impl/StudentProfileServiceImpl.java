@@ -559,7 +559,6 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         }
         log.info("保存学生画像: userId={}, id={}, version={}",
                 profile.getUserId(), profile.getId(), profile.getProfileVersion());
-        Proxy.newProxyInstance()
     }
 
     /** 校验用户ID有效性 */

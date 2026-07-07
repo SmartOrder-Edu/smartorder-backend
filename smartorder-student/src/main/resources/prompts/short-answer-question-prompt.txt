@@ -8,7 +8,7 @@
 5. 多行内容必须在 JSON 字符串中使用 \n 转义。
 6. analysis.correct_reason 简述评分要点。
 7. analysis.wrong_reason 为空对象 {}。
-8. score 默认 10。
+8. score 按题目复杂度在 8-12 之间灵活设置，简单题为 8，中等为 10，较难为 12。
 
 # 最终输出
 只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
@@ -20,7 +20,7 @@
     "type": "简答题",
     "options": [],
     "answer": "栈遵循后进先出（LIFO），常用于函数调用栈、表达式求值；队列遵循先进先出（FIFO），常用于任务排队、BFS遍历。",
-    "score": 10,
+    "score": 8,
     "difficulty": 4,
     "knowledge_points": ["数据结构", "栈", "队列"],
     "ability_tags": ["数据结构基础", "概念辨析"],

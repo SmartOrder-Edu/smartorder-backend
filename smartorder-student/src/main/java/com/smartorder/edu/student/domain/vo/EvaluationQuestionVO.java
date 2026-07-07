@@ -38,7 +38,7 @@ public class EvaluationQuestionVO {
     /** 题型中文名 */
     private String questionTypeName;
 
-    /** 难度等级：1-10 */
+    /** 难度等级：1-5 */
     private Integer difficulty;
 
     /** 题目分值 */
