@@ -68,6 +68,23 @@ public class SelfManagedReActEngine {
     private final PromptLoader promptLoader;
 
     /**
+     * 为当前 ReAct 请求构建仅包含实际可用工具描述的系统提示词。
+     */
+    private SystemMessage buildReActSystemPrompt(List<String> toolNames) {
+        Map<String, String> nameToDesc = new LinkedHashMap<>();
+        for (String name : toolNames) {
+            try {
+                var handler = toolAdapter.getToolRegistry().get(name);
+                nameToDesc.put(name, handler.description());
+            } catch (IllegalArgumentException e) {
+                log.warn("[ReAct] 工具未在 ToolRegistry 中注册，跳过: {}", name);
+            }
+        }
+        String prompt = promptLoader.buildPromptWithTools("system/main-agent.md", nameToDesc);
+        return SystemMessage.from(prompt);
+    }
+
+    /**
      * 执行 ReAct 循环
      */
     public void execute(
@@ -97,7 +114,10 @@ public class SelfManagedReActEngine {
             log.info("[SelfManagedReActEngine] 注入强制 ragRetrieve 指令");
         }
 
-        // 2. 构建工具规范
+        // 2. 替换系统提示词为仅包含当前可用工具的版本
+        messages.set(0, buildReActSystemPrompt(routeResult.getRequiredTools()));
+
+        // 3. 构建工具规范
         List<ToolSpecification> tools = toolAdapter.buildToolSpecifications(routeResult.getRequiredTools());
 
         runReActLoop(request, routeResult, runtimeContext, emitter, messages, tools,
@@ -161,7 +181,10 @@ public class SelfManagedReActEngine {
         // 当前任务作为用户消息
         messages.add(UserMessage.from(request.getMessage()));
 
-        // 2. 构建工具规范
+        // 2. 替换系统提示词为仅包含当前可用工具的版本
+        messages.set(0, buildReActSystemPrompt(routeResult.getRequiredTools()));
+
+        // 3. 构建工具规范
         List<ToolSpecification> tools = toolAdapter.buildToolSpecifications(routeResult.getRequiredTools());
 
         return runReActLoop(request, routeResult, runtimeContext, emitter, messages, tools,
@@ -184,6 +207,10 @@ public class SelfManagedReActEngine {
             boolean confirmationGranted
     ) {
         List<ChatMessage> messages = buildTaskMessages(request, runtimeContext, taskSystemMessage, previousOutputs);
+
+        // 替换系统提示词为仅包含当前可用工具的版本
+        messages.set(0, buildReActSystemPrompt(routeResult.getRequiredTools()));
+
         List<ToolSpecification> tools = toolAdapter.buildToolSpecifications(routeResult.getRequiredTools());
 
         return runReActLoop(request, routeResult, runtimeContext, emitter, messages, tools,
@@ -336,6 +363,20 @@ public class SelfManagedReActEngine {
                             finalSeg.put("thinkingText", currentThinkingBuilder.toString());
                             reasoningSegments.add(finalSeg);
                             currentThinkingBuilder.setLength(0);
+                        }
+
+                        // 保存澄清问题作为 assistant 消息，防止 supervisor 生成兜底回复
+                        if (options.saveAssistantMessage()) {
+                            String clarificationText = (String) clarificationPayload.get("question");
+                            String reasoningContent = allThinkingBuilder.length() > 0
+                                    ? allThinkingBuilder.toString() : null;
+                            String segmentsJson = reasoningSegments.isEmpty() ? null
+                                    : JSON.toJSONString(reasoningSegments);
+                            memoryService.saveAssistantMessage(
+                                    runtimeContext.getConversationId(), request.getUserId(),
+                                    clarificationText, reasoningContent,
+                                    runtimeContext.getTraceId(), segmentsJson);
+                            runtimeContext.setAssistantMessageSaved(true);
                         }
 
                         log.info("[ReAct] askUser 工具被调用，暂停循环: slotKey={}, answerType={}",

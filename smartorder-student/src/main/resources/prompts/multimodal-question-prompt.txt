@@ -1,13 +1,15 @@
-生成多模态题，题型代码固定为 multimodal。
+生成多模态题，type 固定为 "多模态题"。
 
 约束：
-1. optionsJson 必须是空数组 []。
-2. stem 必须包含可用文本表达的素材信息，如图表数据、流程描述、代码片段、实验现象、日志片段或界面截图描述。
+1. options 必须是空数组 []。
+2. question 必须包含可用文本表达的素材信息，如图表数据、流程描述、代码片段、实验现象、日志片段或界面截图描述。
 3. 素材描述必须完整到足以独立作答，不依赖真实图片文件或外部链接。
 4. 题目要求学生结合素材观察、分析、判断或解释。
-5. answerJson 格式：{"referenceAnswer":"标准分析或结论","scoringPoints":[{"point":"评分点","scoreRatio":0.5}],"mediaElements":[{"type":"素材类型","description":"关键信息"}]}。
-6. scoringPoints 中每个评分点可独立判分，scoreRatio 总和必须等于 1.0。
-7. 多行素材、代码和表格必须在 JSON 字符串中使用 \n 转义。
+5. answer 格式：精炼的参考答案文本字符串。
+6. 多行素材、代码和表格必须在 JSON 字符串中使用 \n 转义。
+7. analysis.correct_reason 简述评分要点。
+8. analysis.wrong_reason 为空对象 {}。
+9. score 默认 15。
 
 # 最终输出
 只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
@@ -15,14 +17,17 @@
 # 短示例
 {
   "questions": [{
-    "questionType": "multimodal",
+    "question": "阅读栈操作序列图表描述：容量为 3，操作依次为 push A、push B、pop、push C。请写出每步后栈内元素和最终栈顶。",
+    "type": "多模态题",
+    "options": [],
+    "answer": "push A 后 [A]；push B 后 [A,B]；pop 弹出 B 后 [A]；push C 后 [A,C]，最终栈顶为 C。",
+    "score": 15,
     "difficulty": 5,
-    "abilityDimension": "analysis",
-    "stem": "阅读栈操作序列图表描述：容量为 3，操作依次为 push A、push B、pop、push C。请写出每步后栈内元素和最终栈顶。",
-    "optionsJson": [],
-    "answerJson": {"referenceAnswer":"push A 后 [A]；push B 后 [A,B]；pop 弹出 B 后 [A]；push C 后 [A,C]，最终栈顶为 C。","scoringPoints":[{"point":"正确处理 pop 弹出 B","scoreRatio":0.4},{"point":"给出最终栈顶 C","scoreRatio":0.3},{"point":"步骤顺序完整","scoreRatio":0.3}],"mediaElements":[{"type":"sequence","description":"push A, push B, pop, push C"}]},
-    "explanation": "栈是后进先出，pop 删除最近入栈的 B。",
-    "commonMistakesJson": [{"reason":"把栈当队列处理","example":"pop 时错误弹出 A"}],
-    "tagsJson": ["数据结构","栈","multimodal"]
+    "knowledge_points": ["数据结构", "栈"],
+    "ability_tags": ["综合分析", "数据结构理解"],
+    "analysis": {
+      "correct_reason": "栈是后进先出，pop 删除最近入栈的 B，最终栈顶为 C。",
+      "wrong_reason": {}
+    }
   }]
 }

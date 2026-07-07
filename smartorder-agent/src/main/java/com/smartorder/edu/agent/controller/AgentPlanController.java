@@ -1,6 +1,10 @@
 package com.smartorder.edu.agent.controller;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import com.smartorder.edu.agent.clarification.ClarificationService;
+import com.smartorder.edu.agent.mapper.AgentPlanDraftMapper;
 import com.smartorder.edu.agent.mapper.AgentTraceEventMapper;
 import com.smartorder.edu.agent.model.dto.ExecutionPlan;
 import com.smartorder.edu.agent.model.dto.ExecutionStep;
@@ -9,6 +13,7 @@ import com.smartorder.edu.agent.model.entity.AgentClarification;
 import com.smartorder.edu.agent.model.entity.AgentPlanDraft;
 import com.smartorder.edu.agent.model.entity.AgentTraceEvent;
 import com.smartorder.edu.agent.model.vo.ActiveRunVO;
+import com.smartorder.edu.agent.model.vo.PlanningSnapshotVO;
 import com.smartorder.edu.agent.model.vo.TimelineEventVO;
 import com.smartorder.edu.agent.model.entity.AgentRunState;
 import com.smartorder.edu.agent.orchestrator.PlanAndExecuteEngine;
@@ -57,6 +62,7 @@ public class AgentPlanController {
     private final TraceEventDispatcher dispatcher;
     private final ExecutorService executor;
     private final AgentRunStateService runStateService;
+    private final AgentPlanDraftMapper draftMapper;
 
     public AgentPlanController(PlanConfirmService planConfirmService,
                                PlanDraftService planDraftService,
@@ -65,7 +71,8 @@ public class AgentPlanController {
                                AgentTraceEventMapper traceEventMapper,
                                TraceEventDispatcher dispatcher,
                                @org.springframework.beans.factory.annotation.Qualifier("agentPlanExecutor") ExecutorService executor,
-                               AgentRunStateService runStateService) {
+                               AgentRunStateService runStateService,
+                               AgentPlanDraftMapper draftMapper) {
         this.planConfirmService = planConfirmService;
         this.planDraftService = planDraftService;
         this.planAndExecuteEngine = planAndExecuteEngine;
@@ -74,6 +81,7 @@ public class AgentPlanController {
         this.dispatcher = dispatcher;
         this.executor = executor;
         this.runStateService = runStateService;
+        this.draftMapper = draftMapper;
     }
 
     @PostMapping(value = "/plan/confirm", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -90,6 +98,7 @@ public class AgentPlanController {
         log.info("[PlanConfirm] 开始执行规划: userId={}, draftId={}", userId, draftId);
 
         executor.execute(() -> {
+            try {
             // 先按草稿类型路由（保持 EXECUTION_PLAN 链路不变）
             AgentPlanDraft draft = planDraftService.getByDraftId(draftId);
             if (draft == null) {
@@ -154,6 +163,11 @@ public class AgentPlanController {
                             "DRAFT_WRONG_STATUS", result.message());
                     return;
             }
+            } catch (Exception e) {
+                log.error("[PlanConfirm] 执行规划异常: userId={}, draftId={}", userId, draftId, e);
+                emitErrorAndClose(emitter, conversationId, userId, traceId,
+                        "PLAN_CONFIRM_FAILED", e.getMessage() != null ? e.getMessage() : "规划执行失败");
+            }
         });
 
         emitter.onTimeout(() -> {
@@ -195,9 +209,17 @@ public class AgentPlanController {
         log.info("[ClarificationAnswer] 提交澄清回答: userId={}, draftId={}, clarId={}", userId, draftId, clarificationId);
 
         executor.execute(() -> {
-            planAndExecuteEngine.resumeAfterClarification(
-                    draftId, clarificationId, request.getAnswer(), request.getDisplayAnswer(),
-                    userId, request.getConversationId(), emitter, traceId);
+            try {
+                planAndExecuteEngine.resumeAfterClarification(
+                        draftId, clarificationId, request.getAnswer(), request.getDisplayAnswer(),
+                        userId, request.getConversationId(), emitter, traceId);
+            } catch (Exception e) {
+                log.error("[ClarificationAnswer] 恢复执行异常: userId={}, draftId={}, clarId={}",
+                        userId, draftId, clarificationId, e);
+                emitErrorAndClose(emitter, request.getConversationId(), userId, traceId,
+                        "CLARIFICATION_RESUME_FAILED",
+                        e.getMessage() != null ? e.getMessage() : "澄清恢复执行失败");
+            }
         });
 
         emitter.onTimeout(() -> {
@@ -226,8 +248,15 @@ public class AgentPlanController {
         log.info("[ConfirmGate] 确认确认门: userId={}, draftId={}", userId, draftId);
 
         executor.execute(() -> {
-            planAndExecuteEngine.resumeAfterConfirmation(
-                    draftId, userId, conversationId, emitter, traceId);
+            try {
+                planAndExecuteEngine.resumeAfterConfirmation(
+                        draftId, userId, conversationId, emitter, traceId);
+            } catch (Exception e) {
+                log.error("[ConfirmGate] 恢复执行异常: userId={}, draftId={}", userId, draftId, e);
+                emitErrorAndClose(emitter, conversationId, userId, traceId,
+                        "CONFIRMATION_RESUME_FAILED",
+                        e.getMessage() != null ? e.getMessage() : "确认门恢复执行失败");
+            }
         });
 
         emitter.onTimeout(() -> {
@@ -260,7 +289,18 @@ public class AgentPlanController {
     public Result<ActiveRunVO> getActiveRun(@PathVariable String conversationId) {
         Long userId = getCurrentUserId();
         AgentPlanDraft draft = planDraftService.getActiveExecutionPlanDraft(conversationId);
+
+        // 无活跃 EXECUTION_PLAN 时，仍尝试查找已确认的 LEARNING_PLAN 中已创建的学习空间信息
         if (draft == null || !"EXECUTION_PLAN".equals(draft.getPlanType())) {
+            ActiveRunVO.SpaceCreatedVO spaceCreated = findSpaceCreatedForConversation(conversationId);
+            if (spaceCreated != null) {
+                ActiveRunVO vo = ActiveRunVO.builder()
+                        .planType("EXECUTION_PLAN")
+                        .status("COMPLETED")
+                        .spaceCreated(spaceCreated)
+                        .build();
+                return Result.success(vo);
+            }
             return Result.success(null);
         }
 
@@ -281,8 +321,19 @@ public class AgentPlanController {
             planStatus = runState.getStatus();
         }
 
-        // 只返回非终态的计划
+        // 对于终态计划，仍尝试查找关联的已创建学习空间信息
         if ("COMPLETED".equals(planStatus) || "FAILED".equals(planStatus) || "CANCELLED".equals(planStatus)) {
+            ActiveRunVO.SpaceCreatedVO spaceCreated = findSpaceCreatedForConversation(conversationId);
+            if (spaceCreated != null) {
+                // 构造最小 ActiveRunVO，仅携带 spaceCreated 供前端恢复 banner
+                ActiveRunVO vo = ActiveRunVO.builder()
+                        .draftId(draft.getDraftId())
+                        .planType("EXECUTION_PLAN")
+                        .status(planStatus)
+                        .spaceCreated(spaceCreated)
+                        .build();
+                return Result.success(vo);
+            }
             return Result.success(null);
         }
 
@@ -360,6 +411,8 @@ public class AgentPlanController {
                     .build();
         }
 
+        ActiveRunVO.SpaceCreatedVO spaceCreated = findSpaceCreatedForConversation(conversationId);
+
         ActiveRunVO vo = ActiveRunVO.builder()
                 .draftId(draft.getDraftId())
                 .planType("EXECUTION_PLAN")
@@ -367,9 +420,91 @@ public class AgentPlanController {
                 .taskList(taskListVO)
                 .pauseInfo(pauseInfoVO)
                 .activeClarificationId(activeClarificationId)
+                .spaceCreated(spaceCreated)
                 .build();
 
         return Result.success(vo);
+    }
+
+    /**
+     * 获取会话级目标规划快照。
+     * <p>
+     * 与 active-run 不同，该接口会返回最新 EXECUTION_PLAN 的终态快照，
+     * 以及最新 LEARNING_PLAN 草稿/已创建学习空间信息，供前端渲染唯一执行面板和历史恢复。
+     */
+    @GetMapping("/conversations/{conversationId}/planning-snapshot")
+    @Operation(summary = "获取会话目标规划快照",
+               description = "返回会话最新执行计划、暂停信息、待确认学习计划草稿和已创建学习空间信息。")
+    public Result<PlanningSnapshotVO> getPlanningSnapshot(@PathVariable String conversationId) {
+        Long userId = getCurrentUserId();
+        AgentPlanDraft executionDraft = draftMapper.selectLatestExecutionPlanDraft(conversationId);
+        AgentPlanDraft learningDraft = draftMapper.selectLatestLearningPlanDraft(conversationId);
+        ActiveRunVO.SpaceCreatedVO spaceCreated = findSpaceCreatedForConversation(conversationId);
+
+        if (executionDraft == null && learningDraft == null && spaceCreated == null) {
+            return Result.success(null);
+        }
+
+        ExecutionPlan plan = null;
+        if (executionDraft != null && executionDraft.getExecutionPlanJson() != null) {
+            try {
+                plan = JSON.parseObject(executionDraft.getExecutionPlanJson(), ExecutionPlan.class);
+            } catch (Exception e) {
+                log.warn("[PlanningSnapshot] 反序列化 ExecutionPlan 失败: draftId={}",
+                        executionDraft.getDraftId(), e);
+            }
+        }
+
+        AgentRunState runState = executionDraft != null
+                ? runStateService.getByDraftId(executionDraft.getDraftId())
+                : null;
+        String status = resolveSnapshotStatus(plan, runState, executionDraft, spaceCreated);
+
+        ActiveRunVO.TaskListVO taskListVO = null;
+        ActiveRunVO.PauseInfoVO pauseInfoVO = null;
+        if (plan != null) {
+            taskListVO = buildTaskListVO(plan, status);
+            pauseInfoVO = buildPauseInfoVO(status, plan, executionDraft.getDraftId());
+        }
+
+        PlanningSnapshotVO.LearningPlanDraftVO learningPlanDraftVO = null;
+        if (learningDraft != null
+                && ("PENDING".equals(learningDraft.getStatus()) || spaceCreated != null)) {
+            learningPlanDraftVO = toLearningPlanDraftVO(learningDraft);
+        }
+
+        PlanningSnapshotVO vo = PlanningSnapshotVO.builder()
+                .conversationId(conversationId)
+                .runId(runState != null ? runState.getRunId() : null)
+                .executionDraftId(executionDraft != null ? executionDraft.getDraftId() : null)
+                .learningPlanDraftId(learningDraft != null ? learningDraft.getDraftId() : null)
+                .planType("EXECUTION_PLAN")
+                .status(status)
+                .taskList(taskListVO)
+                .pauseInfo(pauseInfoVO)
+                .learningPlanDraft(learningPlanDraftVO)
+                .spaceCreated(spaceCreated)
+                .build();
+
+        return Result.success(vo);
+    }
+
+    /**
+     * 获取指定学习空间对应的已确认学习计划草稿。
+     * <p>
+     * 学习空间详情页用它展示用户最初与 Agent 对话确认的完整规划，而不只展示物化后的路径节点。
+     */
+    @GetMapping("/learning-plans/by-space/{spaceId}")
+    @Operation(summary = "按学习空间查询已确认学习计划",
+               description = "返回创建该学习空间时确认的 LEARNING_PLAN 草稿，用于学习空间内展示原始 Agent 规划。")
+    public Result<PlanningSnapshotVO.LearningPlanDraftVO> getLearningPlanBySpace(
+            @PathVariable Long spaceId) {
+        Long userId = getCurrentUserId();
+        AgentPlanDraft draft = draftMapper.selectConfirmedLearningPlanDraftBySpaceId(userId, spaceId);
+        if (draft == null) {
+            return Result.success(null);
+        }
+        return Result.success(toLearningPlanDraftVO(draft));
     }
 
     /**
@@ -456,6 +591,185 @@ public class AgentPlanController {
         };
     }
 
+    private String resolveSnapshotStatus(ExecutionPlan plan, AgentRunState runState,
+                                         AgentPlanDraft executionDraft,
+                                         ActiveRunVO.SpaceCreatedVO spaceCreated) {
+        if (runState != null && runState.getStatus() != null) {
+            return runState.getStatus();
+        }
+        if (plan != null && plan.getStatus() != null) {
+            return plan.getStatus();
+        }
+        if (spaceCreated != null) {
+            return "COMPLETED";
+        }
+        if (executionDraft != null && "CONFIRMED".equals(executionDraft.getStatus())) {
+            return "COMPLETED";
+        }
+        return "EXECUTING";
+    }
+
+    private ActiveRunVO.TaskListVO buildTaskListVO(ExecutionPlan plan, String status) {
+        ActiveRunVO.TaskListVO taskListVO = ActiveRunVO.TaskListVO.builder()
+                .userGoal(plan.getUserGoal())
+                .planId(plan.getPlanId())
+                .status(status)
+                .currentTaskIndex(plan.getCurrentStepIndex())
+                .taskOutputs(plan.getStepOutputs())
+                .createdAt(plan.getCreatedAt())
+                .clarificationQuestion(plan.getClarificationQuestion())
+                .confirmationDraftId(plan.getConfirmationDraftId())
+                .build();
+
+        if (plan.getSteps() != null) {
+            taskListVO.setTasks(plan.getSteps().stream()
+                    .map(this::toTaskItemVO)
+                    .toList());
+        }
+        return taskListVO;
+    }
+
+    private ActiveRunVO.PauseInfoVO buildPauseInfoVO(String planStatus, ExecutionPlan plan, String draftId) {
+        if (!"PAUSED_CLARIFICATION".equals(planStatus) && !"PAUSED_CONFIRMATION".equals(planStatus)) {
+            return null;
+        }
+
+        int pausedIndex = plan.getCurrentStepIndex();
+        String pausedTaskId = plan.getSteps() != null && pausedIndex < plan.getSteps().size()
+                ? plan.getSteps().get(pausedIndex).getStepId()
+                : null;
+
+        if ("PAUSED_CONFIRMATION".equals(planStatus)) {
+            return ActiveRunVO.PauseInfoVO.builder()
+                    .reason("CONFIRMATION")
+                    .taskId(pausedTaskId)
+                    .question(null)
+                    .build();
+        }
+
+        AgentClarification nextPending = clarificationService.getClarificationsForDraft(draftId).stream()
+                .filter(c -> "PENDING".equals(c.getStatus()))
+                .sorted((a, b) -> Integer.compare(a.getSlotPriority(), b.getSlotPriority()))
+                .findFirst()
+                .orElse(null);
+
+        ActiveRunVO.ClarificationInfoVO clarInfo = null;
+        if (nextPending != null) {
+            clarInfo = ActiveRunVO.ClarificationInfoVO.builder()
+                    .clarificationId(nextPending.getClarificationId())
+                    .slotKey(nextPending.getSlotKey())
+                    .question(nextPending.getQuestion())
+                    .answerType(nextPending.getAnswerType())
+                    .slotPriority(nextPending.getSlotPriority())
+                    .build();
+            if (nextPending.getOptionsJson() != null) {
+                try {
+                    List<Map> opts = JSON.parseArray(nextPending.getOptionsJson(), Map.class);
+                    clarInfo.setOptions(opts.stream().map(m -> Map.of(
+                            "label", String.valueOf(m.getOrDefault("label", "")),
+                            "value", String.valueOf(m.getOrDefault("value", ""))
+                    )).toList());
+                } catch (Exception ignored) {
+                    // options 解析失败时保留文本题形态
+                }
+            }
+        }
+
+        return ActiveRunVO.PauseInfoVO.builder()
+                .reason("CLARIFICATION")
+                .taskId(pausedTaskId)
+                .question(plan.getClarificationQuestion())
+                .clarification(clarInfo)
+                .build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private PlanningSnapshotVO.LearningPlanDraftVO toLearningPlanDraftVO(AgentPlanDraft draft) {
+        if (draft == null || draft.getPlanJson() == null) {
+            return null;
+        }
+        JSONObject planJson = JSON.parseObject(draft.getPlanJson());
+        return PlanningSnapshotVO.LearningPlanDraftVO.builder()
+                .draftId(draft.getDraftId())
+                .spaceName(planJson.getString("spaceName"))
+                .type(planJson.getString("type"))
+                .description(planJson.getString("description"))
+                .goals(toStringList(planJson.get("goals")))
+                .startDate(planJson.getString("startDate"))
+                .targetEndDate(planJson.getString("targetEndDate"))
+                .phases(toMapList(planJson.get("phases")))
+                .knowledgeGraph(toMap(planJson.get("knowledgeGraph")))
+                .build();
+    }
+
+    private List<String> toStringList(Object value) {
+        if (value == null) return List.of();
+        if (value instanceof JSONArray array) {
+            return array.stream().map(String::valueOf).toList();
+        }
+        if (value instanceof List<?> list) {
+            return list.stream().map(String::valueOf).toList();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return JSON.parseArray(text, String.class);
+            } catch (Exception ignored) {
+                return List.of(text);
+            }
+        }
+        return List.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> toMapList(Object value) {
+        if (value == null) return List.of();
+        if (value instanceof JSONArray || value instanceof List<?>) {
+            List<Map> rawList = JSON.parseArray(JSON.toJSONString(value), Map.class);
+            return rawList.stream()
+                    .map(this::copyRawMap)
+                    .toList();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                List<Map> rawList = JSON.parseArray(text, Map.class);
+                return rawList.stream()
+                        .map(this::copyRawMap)
+                        .toList();
+            } catch (Exception ignored) {
+                return List.of();
+            }
+        }
+        return List.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> copyRawMap(Map raw) {
+        return new LinkedHashMap<>((Map<String, Object>) raw);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> toMap(Object value) {
+        if (value == null) return emptyKnowledgeGraph();
+        if (value instanceof JSONObject || value instanceof Map<?, ?>) {
+            return new LinkedHashMap<>((Map<String, Object>) JSON.parseObject(JSON.toJSONString(value), Map.class));
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return new LinkedHashMap<>((Map<String, Object>) JSON.parseObject(text, Map.class));
+            } catch (Exception ignored) {
+                return emptyKnowledgeGraph();
+            }
+        }
+        return emptyKnowledgeGraph();
+    }
+
+    private Map<String, Object> emptyKnowledgeGraph() {
+        Map<String, Object> graph = new LinkedHashMap<>();
+        graph.put("nodes", List.of());
+        graph.put("edges", List.of());
+        return graph;
+    }
+
     private ActiveRunVO.TaskItemVO toTaskItemVO(ExecutionStep step) {
         return ActiveRunVO.TaskItemVO.builder()
                 .taskId(step.getStepId())
@@ -475,6 +789,31 @@ public class AgentPlanController {
     private Long getCurrentUserId() {
         Claims claims = ThreadLocalUtils.get();
         return claims.get("userId", Long.class);
+    }
+
+    /**
+     * 查找会话中已确认的 LEARNING_PLAN 草稿对应的学习空间信息。
+     * 用于前端恢复 PlanChecklist 的"学习空间已创建"banner。
+     */
+    private ActiveRunVO.SpaceCreatedVO findSpaceCreatedForConversation(String conversationId) {
+        AgentPlanDraft learningPlanDraft = draftMapper.selectConfirmedLearningPlanDraft(conversationId);
+        if (learningPlanDraft == null || learningPlanDraft.getCreatedSpaceId() == null) {
+            return null;
+        }
+        String spaceName = "";
+        try {
+            if (learningPlanDraft.getPlanJson() != null) {
+                var planJson = com.alibaba.fastjson.JSON.parseObject(learningPlanDraft.getPlanJson());
+                spaceName = planJson.getString("spaceName");
+                if (spaceName == null) spaceName = "";
+            }
+        } catch (Exception e) {
+            log.debug("[ActiveRun] 解析 LEARNING_PLAN spaceName 失败（非关键）: {}", e.getMessage());
+        }
+        return ActiveRunVO.SpaceCreatedVO.builder()
+                .spaceId(learningPlanDraft.getCreatedSpaceId())
+                .spaceName(spaceName)
+                .build();
     }
 
     private AgentRuntimeContext buildContext(String traceId, String conversationId, Long userId) {

@@ -1,11 +1,12 @@
-生成通用测评题，题型代码固定为 unknown。仅在题型未明确时使用。
+生成通用测评题，type 固定为 "通用题"。仅在题型未明确时使用。
 
 约束：
 1. 优先生成可自动判分的题目，避免开放讨论。
-2. optionsJson 和 answerJson 必须与题干含义匹配。
-3. explanation 简短说明答案依据。
-4. commonMistakesJson 至少说明 1 个真实误区。
-5. 如果输入能推断具体题型，应在 questionType 中使用更具体的题型代码。
+2. options 和 answer 必须与题干含义匹配。
+3. analysis.correct_reason 简短说明答案依据。
+4. analysis.wrong_reason 说明至少 1 个常见误区。
+5. 如果输入能推断具体题型，应在 type 中使用更具体的题型名称。
+6. score 默认 5。
 
 # 最终输出
 只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
@@ -13,14 +14,20 @@
 # 短示例
 {
   "questions": [{
-    "questionType": "unknown",
+    "question": "数据结构中，线性表的元素之间主要是什么关系？",
+    "type": "通用题",
+    "options": ["一对一", "一对多", "多对多", "无关系"],
+    "answer": "A",
+    "score": 5,
     "difficulty": 3,
-    "abilityDimension": "concept",
-    "stem": "数据结构中，线性表的元素之间主要是什么关系？",
-    "optionsJson": [{"label":"A","content":"一对一"},{"label":"B","content":"一对多"},{"label":"C","content":"多对多"},{"label":"D","content":"无关系"}],
-    "answerJson": {"correctOptions":["A"]},
-    "explanation": "线性表中除首尾元素外，每个元素有唯一前驱和唯一后继，体现一对一关系。",
-    "commonMistakesJson": [{"option":"B","reason":"把树结构关系误认为线性表关系","example":"认为一个元素可直接连接多个后继"}],
-    "tagsJson": ["数据结构","线性表","unknown"]
+    "knowledge_points": ["数据结构", "线性表"],
+    "ability_tags": ["概念理解"],
+    "analysis": {
+      "correct_reason": "线性表中除首尾元素外，每个元素有唯一前驱和唯一后继，体现一对一关系。",
+      "wrong_reason": {
+        "B": "把树结构关系误认为线性表关系",
+        "C": "把图结构关系误认为线性表关系"
+      }
+    }
   }]
 }

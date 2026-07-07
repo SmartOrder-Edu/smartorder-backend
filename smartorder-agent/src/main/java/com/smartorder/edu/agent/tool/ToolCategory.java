@@ -23,6 +23,8 @@ public enum ToolCategory {
     RESOURCE("资源生成", RiskLevel.WRITE_CONFIRMED),
     QUIZ("测评生成", RiskLevel.WRITE_CONFIRMED),
     TASK("任务管理", RiskLevel.WRITE_CONFIRMED),
+    UTILITY("工具功能", RiskLevel.READ),
+
     SEARCH("搜索工具", RiskLevel.READ);
 
     private final String description;
