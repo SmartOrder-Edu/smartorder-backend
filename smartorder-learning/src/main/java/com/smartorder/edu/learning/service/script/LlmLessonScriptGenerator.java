@@ -123,7 +123,8 @@ public class LlmLessonScriptGenerator {
             String markdown = text(step, "markdown", "");
             String teacherTalk = collectSegmentField(step.path("teachingSegments"), "teacherTalk");
             String boardContent = collectSegmentField(step.path("teachingSegments"), "boardContent");
-            String instructionalText = markdown + teacherTalk + boardContent;
+            String boardBlocks = collectSegmentBoardBlocks(step.path("teachingSegments"));
+            String instructionalText = markdown + teacherTalk + boardContent + boardBlocks;
             String canvasType = normalizeCanvasType(text(step, "canvasType", defaultCanvasType(index)));
             String phase = text(step, "phase", "");
             if (title.isBlank()) {
@@ -137,6 +138,7 @@ public class LlmLessonScriptGenerator {
             hasAssessment = hasAssessment || "assessment".equals(canvasType) || "assessment".equals(phase);
             hasSummary = hasSummary || "summary".equals(canvasType) || "summary".equals(phase);
             hasQuiz = hasQuiz || step.has("quiz") || containsSegmentQuiz(step.path("teachingSegments"));
+            errors.addAll(validateTeachingSegments(step.path("teachingSegments"), index));
         }
         if (!hasConcept) {
             errors.add("steps must include a concept or derivation step");
@@ -154,6 +156,78 @@ public class LlmLessonScriptGenerator {
             errors.add("at least one quiz is required");
         }
         return errors;
+    }
+
+    private List<String> validateTeachingSegments(JsonNode segmentsNode, int stepIndex) {
+        List<String> errors = new ArrayList<>();
+        if (!segmentsNode.isArray() || segmentsNode.isEmpty()) {
+            errors.add("step " + stepIndex + " teachingSegments must be a non-empty array");
+            return errors;
+        }
+        int segmentIndex = 0;
+        for (JsonNode segment : segmentsNode) {
+            segmentIndex++;
+            boolean hasBasicContent = !text(segment, "teacherTalk", "").isBlank()
+                    || !text(segment, "boardContent", "").isBlank()
+                    || !text(segment, "markdown", "").isBlank();
+            boolean hasBoardBlocks = hasNonEmptyBoardBlocks(segment.path("boardBlocks"));
+            if (!hasBasicContent && !hasBoardBlocks && !isInteractiveSegment(normalizeSegmentType(text(segment, "type", "")))) {
+                errors.add("step " + stepIndex + " segment " + segmentIndex
+                        + " must have teacherTalk, boardBlocks, boardContent or markdown");
+            }
+
+            JsonNode blocks = segment.path("boardBlocks");
+            if (blocks.isMissingNode() || blocks.isNull()) {
+                continue;
+            }
+            if (!blocks.isArray()) {
+                errors.add("step " + stepIndex + " segment " + segmentIndex + " boardBlocks must be an array");
+                continue;
+            }
+            int blockIndex = 0;
+            for (JsonNode block : blocks) {
+                blockIndex++;
+                if (!block.isObject()) {
+                    errors.add("step " + stepIndex + " segment " + segmentIndex
+                            + " boardBlocks[" + blockIndex + "] must be an object");
+                    continue;
+                }
+                String type = text(block, "type", "markdown").toLowerCase();
+                String content = text(block, "content", "");
+                if (!isAllowedBoardBlockType(type)) {
+                    errors.add("step " + stepIndex + " segment " + segmentIndex
+                            + " boardBlocks[" + blockIndex + "] type is invalid: " + type);
+                }
+                if (content.isBlank()) {
+                    errors.add("step " + stepIndex + " segment " + segmentIndex
+                            + " boardBlocks[" + blockIndex + "] content is blank");
+                }
+                if ("code".equals(type) && text(block, "language", "").isBlank()) {
+                    errors.add("step " + stepIndex + " segment " + segmentIndex
+                            + " boardBlocks[" + blockIndex + "] code language is required");
+                }
+            }
+        }
+        return errors;
+    }
+
+    private boolean hasNonEmptyBoardBlocks(JsonNode blocksNode) {
+        if (!blocksNode.isArray()) {
+            return false;
+        }
+        for (JsonNode block : blocksNode) {
+            if (!text(block, "content", "").isBlank()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isAllowedBoardBlockType(String type) {
+        return switch (safe(type, "markdown").toLowerCase()) {
+            case "markdown", "code", "formula", "list", "quote", "diagram", "callout" -> true;
+            default -> false;
+        };
     }
 
     private boolean containsSegmentQuiz(JsonNode segmentsNode) {
@@ -175,6 +249,24 @@ public class LlmLessonScriptGenerator {
         StringBuilder builder = new StringBuilder();
         for (JsonNode segment : segmentsNode) {
             builder.append(text(segment, field, ""));
+        }
+        return builder.toString();
+    }
+
+    private String collectSegmentBoardBlocks(JsonNode segmentsNode) {
+        if (!segmentsNode.isArray()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (JsonNode segment : segmentsNode) {
+            JsonNode blocks = segment.path("boardBlocks");
+            if (!blocks.isArray()) {
+                continue;
+            }
+            for (JsonNode block : blocks) {
+                builder.append(text(block, "title", ""));
+                builder.append(text(block, "content", ""));
+            }
         }
         return builder.toString();
     }
@@ -276,6 +368,10 @@ public class LlmLessonScriptGenerator {
                         text(segmentNode, "agentCommentary", ""));
                 String boardContent = text(segmentNode, "boardContent", "");
                 String markdown = text(segmentNode, "markdown", "");
+                List<Map<String, Object>> boardBlocks = normalizeBoardBlocks(segmentNode, boardContent, markdown, type);
+                if (boardContent.isBlank() && !boardBlocks.isEmpty()) {
+                    boardContent = boardBlocksToMarkdown(boardBlocks);
+                }
                 if (markdown.isBlank()) {
                     markdown = boardContent.isBlank() ? teacherTalk : boardContent;
                 }
@@ -288,6 +384,7 @@ public class LlmLessonScriptGenerator {
                 segment.put("markdown", markdown);
                 segment.put("teacherTalk", teacherTalk.isBlank() ? markdown : teacherTalk);
                 segment.put("boardContent", boardContent);
+                segment.put("boardBlocks", boardBlocks);
                 segment.put("teachingIntent", text(segmentNode, "teachingIntent", ""));
                 segment.put("emotionTone", text(segmentNode, "emotionTone", defaultTone(type)));
                 segment.put("agentCommentary", text(segmentNode, "agentCommentary",
@@ -317,6 +414,7 @@ public class LlmLessonScriptGenerator {
             segment.put("markdown", defaultMarkdown(step));
             segment.put("teacherTalk", "我们先抓住这一步的核心判断，再慢慢展开。");
             segment.put("boardContent", defaultMarkdown(step));
+            segment.put("boardBlocks", List.of(boardBlock("markdown", "基础板书", null, defaultMarkdown(step), "info")));
             segment.put("teachingIntent", "兜底生成基础讲解段，保证课堂脚本可播放。");
             segment.put("emotionTone", "serious");
             segment.put("autoAdvanceMs", 0);
@@ -329,6 +427,193 @@ public class LlmLessonScriptGenerator {
                 "isActive", false,
                 "isPaused", false
         ));
+    }
+
+    private List<Map<String, Object>> normalizeBoardBlocks(JsonNode segmentNode,
+                                                           String boardContent,
+                                                           String markdown,
+                                                           String segmentType) {
+        List<Map<String, Object>> blocks = new ArrayList<>();
+        JsonNode blocksNode = segmentNode.path("boardBlocks");
+        if (blocksNode.isArray()) {
+            int index = 1;
+            for (JsonNode blockNode : blocksNode) {
+                Map<String, Object> block = normalizeBoardBlock(blockNode, index, segmentType);
+                if (block != null) {
+                    blocks.add(block);
+                    index++;
+                }
+            }
+        }
+        if (!blocks.isEmpty()) {
+            return blocks;
+        }
+
+        String fallback = boardContent.isBlank() ? markdown : boardContent;
+        if (fallback == null || fallback.isBlank()) {
+            return blocks;
+        }
+        String type = inferBoardBlockType(fallback, segmentType);
+        String language = "code".equals(type) ? inferCodeLanguage(fallback) : null;
+        String title = switch (type) {
+            case "code" -> "示例代码";
+            case "formula" -> "关键公式";
+            case "diagram" -> "结构图";
+            case "callout" -> "提示";
+            default -> "板书";
+        };
+        blocks.add(boardBlock(type, title, language, stripMarkdownFence(fallback), defaultBoardTone(segmentType)));
+        return blocks;
+    }
+
+    private Map<String, Object> normalizeBoardBlock(JsonNode blockNode, int index, String segmentType) {
+        if (blockNode == null || !blockNode.isObject()) {
+            return null;
+        }
+        String content = text(blockNode, "content", "");
+        if (content.isBlank()) {
+            return null;
+        }
+        String type = normalizeBoardBlockType(text(blockNode, "type", inferBoardBlockType(content, segmentType)));
+        String language = text(blockNode, "language", "code".equals(type) ? inferCodeLanguage(content) : "");
+        String title = text(blockNode, "title", defaultBoardBlockTitle(type));
+        String tone = text(blockNode, "tone", defaultBoardTone(segmentType));
+        String id = text(blockNode, "id", "board-block-" + index);
+        return boardBlock(type, title, language, content, tone, id);
+    }
+
+    private Map<String, Object> boardBlock(String type, String title, String language, String content, String tone) {
+        return boardBlock(type, title, language, content, tone, null);
+    }
+
+    private Map<String, Object> boardBlock(String type, String title, String language, String content, String tone, String id) {
+        Map<String, Object> block = new LinkedHashMap<>();
+        if (id != null && !id.isBlank()) {
+            block.put("id", id);
+        }
+        block.put("type", normalizeBoardBlockType(type));
+        block.put("title", title == null ? "" : title);
+        if (language != null && !language.isBlank()) {
+            block.put("language", language);
+        }
+        block.put("content", stripMarkdownFence(content));
+        block.put("tone", tone == null || tone.isBlank() ? "info" : tone);
+        return block;
+    }
+
+    private String boardBlocksToMarkdown(List<Map<String, Object>> blocks) {
+        List<String> markdownBlocks = new ArrayList<>();
+        for (Map<String, Object> block : blocks) {
+            String type = String.valueOf(block.getOrDefault("type", "markdown"));
+            String content = String.valueOf(block.getOrDefault("content", ""));
+            String language = String.valueOf(block.getOrDefault("language", ""));
+            if (content.isBlank()) {
+                continue;
+            }
+            if ("code".equals(type)) {
+                markdownBlocks.add("```" + ("null".equals(language) ? "" : language) + "\n" + content + "\n```");
+            } else if ("diagram".equals(type)) {
+                markdownBlocks.add("```mermaid\n" + content + "\n```");
+            } else {
+                markdownBlocks.add(content);
+            }
+        }
+        return String.join("\n\n", markdownBlocks);
+    }
+
+    private String inferBoardBlockType(String content, String segmentType) {
+        if ("formula".equals(segmentType) || content.contains("$$")) {
+            return "formula";
+        }
+        if ("diagram".equals(segmentType) || content.contains("flowchart") || content.contains("sequenceDiagram")) {
+            return "diagram";
+        }
+        if ("mistake_warning".equals(segmentType) || "diagnosis".equals(segmentType)) {
+            return "callout";
+        }
+        if (isLikelyCode(content)) {
+            return "code";
+        }
+        return "markdown";
+    }
+
+    private String normalizeBoardBlockType(String type) {
+        return switch (safe(type, "markdown").toLowerCase()) {
+            case "code", "formula", "list", "quote", "diagram", "callout" -> type.toLowerCase();
+            default -> "markdown";
+        };
+    }
+
+    private String defaultBoardBlockTitle(String type) {
+        return switch (type) {
+            case "code" -> "示例代码";
+            case "formula" -> "关键公式";
+            case "diagram" -> "结构图";
+            case "callout" -> "提示";
+            default -> "板书";
+        };
+    }
+
+    private String defaultBoardTone(String segmentType) {
+        return switch (segmentType) {
+            case "mistake_warning", "diagnosis" -> "warning";
+            case "summary" -> "success";
+            default -> "info";
+        };
+    }
+
+    private boolean isLikelyCode(String content) {
+        String[] lines = content.split("\\R");
+        int nonBlank = 0;
+        int codeLines = 0;
+        for (String line : lines) {
+            String text = line.trim();
+            if (text.isBlank()) {
+                continue;
+            }
+            nonBlank++;
+            if (text.matches(".*[;{}]$")
+                    || text.matches("^(#include|import|package|typedef|struct|class|interface|enum|public|private|protected|function|def|const|let|var)\\b.*")
+                    || text.matches("^(if|else|for|while|switch|case|return|try|catch)\\b.*")
+                    || text.matches(".*(\\+\\+|--|->|=>|==|!=|<=|>=|&&|\\|\\|).*")) {
+                codeLines++;
+            }
+        }
+        return nonBlank >= 2 && (codeLines >= 3 || codeLines * 1.0 / nonBlank >= 0.45);
+    }
+
+    private String inferCodeLanguage(String content) {
+        if (content.matches("(?s).*(#include\\s*<|typedef\\s+struct|->|int\\*|char\\*).*")) {
+            return "c";
+        }
+        if (content.matches("(?s).*(\\bpublic\\s+class\\b|\\bSystem\\.out\\.println\\b).*")) {
+            return "java";
+        }
+        if (content.matches("(?s).*(\\bdef\\s+\\w+\\(|\\bprint\\().*")) {
+            return "python";
+        }
+        if (content.matches("(?s).*(\\bfunction\\s+\\w+\\(|\\bconst\\s+\\w+\\s*=|\\blet\\s+\\w+\\s*=|=>).*")) {
+            return "javascript";
+        }
+        if (content.matches("(?s).*(\\binterface\\s+\\w+\\b|:\\s*(string|number|boolean)\\b).*")) {
+            return "typescript";
+        }
+        if (content.matches("(?is).*(\\bSELECT\\b|\\bFROM\\b|\\bWHERE\\b).*")) {
+            return "sql";
+        }
+        return "";
+    }
+
+    private String stripMarkdownFence(String content) {
+        if (content == null) {
+            return "";
+        }
+        String trimmed = content.trim();
+        Matcher matcher = Pattern.compile("(?s)^```[a-zA-Z0-9_-]*\\s*(.*?)\\s*```$").matcher(trimmed);
+        if (matcher.matches()) {
+            return matcher.group(1).trim();
+        }
+        return content;
     }
 
     private int resolveAutoAdvanceMs(JsonNode segmentNode, String type, boolean lastSegment) {
@@ -564,7 +849,8 @@ public class LlmLessonScriptGenerator {
                         {
                           "type": "hook|recall|explain|analogy|board_write|diagram|worked_example|teacher_question|student_try|diagnosis|mistake_warning|summary|transition|quiz|formula",
                           "teacherTalk": "老师真实会说出口的话，像面对学生讲课，不要写成资料摘要",
-                          "boardContent": "黑板/画布上逐步出现的内容，可用 Markdown、公式、代码或 Mermaid",
+                          "boardContent": "兼容字段：黑板/画布上逐步出现的 Markdown 内容",
+                          "boardBlocks": [{"type": "markdown|code|formula|list|quote|diagram|callout", "title": "板书块标题", "language": "代码语言，仅 type=code 时填写，例如 c/java/python/javascript", "content": "纯内容。code 不要包含 Markdown 代码围栏，diagram 不要包含 ```mermaid", "tone": "info|warning|success|error"}],
                           "markdown": "兼容字段，通常等于 boardContent 或本段展示内容",
                           "teachingIntent": "说明本段为什么这样讲",
                           "emotionTone": "curious|encourage|serious|warning|summary",
@@ -583,14 +869,16 @@ public class LlmLessonScriptGenerator {
                 规则：
                 1. steps 数量 4 到 6 个，必须包含导入、前置回忆、概念、例题或练习、检验、总结。
                 2. 内容必须围绕上下文知识点，不要使用“洛必达法则”等无关默认示例。
-                3. 讲解要像老师正在上课，不要只列大纲；每个 step 的 teacherTalk + boardContent 总量至少 160 个中文字符。
+                3. 讲解要像老师正在上课，不要只列大纲；每个 step 的 teacherTalk + boardContent + boardBlocks.content 总量至少 160 个中文字符。
                 4. quiz 要有明确参考答案和解析；选择题必须使用 single_select 或 multi_select，并提供 options 数组。
                 5. answerType 只能使用 text、single_select、multi_select、number；不要使用 short_text。
                 6. 选择题的 options 必须是 {"label":"展示给学生的选项文本","value":"a|b|c|d"}，correctAnswer 必须填写选项 value，不要把 “A. ... B. ...” 拼进 prompt。
                 7. 如果知识点属于编程/工程/计算机，请优先给出可执行思路、例子或伪代码。
                 8. 每个脚本至少包含 3 次课堂停顿或互动，类型可为 teacher_question、student_try、quiz 或 self_check。
                 9. 至少包含 1 个 mistake_warning 或 diagnosis，像老师一样指出常见误区并纠正。
-                10. teacherTalk 用自然口语，boardContent 用精炼板书；不要把长篇资料一口气塞进同一段。
+                10. teacherTalk 用自然口语，boardBlocks/boardContent 用精炼板书；不要把长篇资料一口气塞进同一段。
+                11. 每个 teachingSegment 优先输出 boardBlocks。普通板书用 type=markdown；算法/程序代码必须用 type=code，并填写 language；公式用 type=formula；常见误区或提示用 type=callout。
+                12. boardBlocks[*].content 必须是纯内容：代码不要包 ```，Mermaid 图不要包 ```mermaid；前端会根据 type 和 language 负责渲染。
 
                 学习上下文：
                 - 学习空间：%s
@@ -632,7 +920,9 @@ public class LlmLessonScriptGenerator {
                 - 每个 step 必须有 title、subtitle、estimatedMinutes、canvasType、markdown、teachingSegments。
                 - canvasType 只能是 concept、example、practice、assessment、derivation、summary。
                 - teachingSegments[*].type 只能是 hook、recall、explain、analogy、board_write、diagram、worked_example、teacher_question、student_try、diagnosis、mistake_warning、summary、transition、quiz、formula。
-                - 每个 teachingSegment 必须有 teacherTalk、boardContent 或 markdown 之一。
+                - 每个 teachingSegment 必须有 teacherTalk、boardBlocks、boardContent 或 markdown 之一。
+                - 每个 teachingSegment 应优先提供 boardBlocks；boardBlocks[*].type 只能是 markdown、code、formula、list、quote、diagram、callout。
+                - 代码必须放入 {"type":"code","language":"c|java|python|javascript|...","content":"纯代码"}，content 不要包含 Markdown 代码围栏。
                 - quiz.answerType 只能是 text、single_select、multi_select、number。
                 - 当 quiz.answerType 为 single_select 或 multi_select 时，quiz.options 必须是数组，且每项包含 label 和 value；correctAnswer 必须填写选项 value。
                 - answer 和 correctAnswer 都必须有值。

@@ -296,6 +296,7 @@ public class LessonScriptBuilder {
             segment.put("markdown", segmentMarkdown(step, segmentType, i));
             segment.put("teacherTalk", teacherTalk(step, segmentType, i));
             segment.put("boardContent", boardContent(step, segmentType, i));
+            segment.put("boardBlocks", boardBlocks(step, segmentType, i));
             segment.put("teachingIntent", teachingIntent(segmentType));
             segment.put("emotionTone", emotionTone(segmentType));
             segment.put("autoAdvanceMs", (isInteractiveSegment(segmentType) || i == segmentTypes.size() - 1) ? 0 : 3600 + i * 400);
@@ -384,6 +385,65 @@ public class LessonScriptBuilder {
                     ? "围绕 **" + title + "** 做一次关键判断。"
                     : segmentMarkdown(step, segmentType, index);
         };
+    }
+
+    private List<Map<String, Object>> boardBlocks(StudyScriptStepVO step, String segmentType, int index) {
+        return switch (segmentType) {
+            case "diagram" -> List.of(boardBlock(
+                    "diagram",
+                    "条件判断流程",
+                    null,
+                    "flowchart TD\n  A[阅读题目] --> B[判断关键条件]\n  B -->|满足| C[使用当前方法]\n  B -->|不满足| D[换方法或先变形]\n  C --> E[验证结果]",
+                    "info"
+            ));
+            case "formula" -> List.of(boardBlock(
+                    "formula",
+                    "关键表达",
+                    null,
+                    "$$\\text{条件成立} \\Rightarrow \\text{选择当前方法} \\Rightarrow \\text{验证结果}$$",
+                    "info"
+            ));
+            case "diagnosis" -> List.of(boardBlock(
+                    "callout",
+                    "错因定位",
+                    null,
+                    "- 是否跳过了条件？\n- 是否把形式相似当成方法适用？\n- 是否验证了结果？",
+                    "warning"
+            ));
+            case "mistake_warning" -> List.of(boardBlock(
+                    "callout",
+                    "高频误区",
+                    null,
+                    "条件未满足时，不能直接套用当前方法。",
+                    "warning"
+            ));
+            case "teacher_question", "student_try" -> List.of(boardBlock(
+                    "callout",
+                    "课堂提问",
+                    null,
+                    "使用当前方法前，最先要确认什么？",
+                    "info"
+            ));
+            default -> List.of(boardBlock(
+                    "markdown",
+                    "板书",
+                    null,
+                    boardContent(step, segmentType, index),
+                    "summary".equals(segmentType) ? "success" : "info"
+            ));
+        };
+    }
+
+    private Map<String, Object> boardBlock(String type, String title, String language, String content, String tone) {
+        Map<String, Object> block = new LinkedHashMap<>();
+        block.put("type", type);
+        block.put("title", title);
+        if (language != null && !language.isBlank()) {
+            block.put("language", language);
+        }
+        block.put("content", content);
+        block.put("tone", tone);
+        return block;
     }
 
     private String teachingIntent(String segmentType) {
