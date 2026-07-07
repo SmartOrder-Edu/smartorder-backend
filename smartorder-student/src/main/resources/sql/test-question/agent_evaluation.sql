@@ -301,5 +301,14 @@ CREATE TABLE `evaluation_question_generation_item`
     INDEX             `idx_question_id` (`question_id` ASC) USING BTREE
 ) ENGINE=InnoDB AUTO_INCREMENT=47648763000006 CHARACTER SET=utf8mb4 COLLATE utf8mb4_0900_ai_ci COMMENT='题库单题生成子任务表' ROW_FORMAT=Dynamic;
 
+-- ----------------------------
+-- 9. 题库表新增字段（v2 重构：新 JSON 格式支持）
+-- 注意：若字段已存在需先手动删除，或仅在新环境执行
+-- ----------------------------
+ALTER TABLE `evaluation_question`
+    ADD COLUMN `knowledge_points_json` json NULL COMMENT '知识点标签JSON' AFTER `tags_json`,
+    ADD COLUMN `ability_tags_json`     json NULL COMMENT '能力标签JSON' AFTER `knowledge_points_json`,
+    ADD COLUMN `analysis_json`         json NULL COMMENT '题目分析JSON（包含correct_reason和wrong_reason）' AFTER `common_mistakes_json`;
+
 SET
 FOREIGN_KEY_CHECKS = 1;

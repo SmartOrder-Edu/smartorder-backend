@@ -16,12 +16,17 @@
 5. 题干、解析、误区说明优先简洁，准确表达题意即可。
 6. 不要在题干中泄露答案，不要使用无法判分的主观表述。
 7. JSON 字段名必须与要求一致，不要增加无关字段，不要尾随逗号。
-8. abilityDimension 只能取：concept、application、analysis、design、debug。
-9. 取值建议：难度 1-3 用 concept；4-5 用 application；6-7 用 analysis；8-10 用 design。
-10. tagsJson 输出 2-4 个短标签，必须包含题型代码。
+8. knowledge_points 输出 2-4 个知识点标签。
+9. ability_tags 输出 1-3 个能力标签。
+10. score 分值：单选题/判断题/填空题默认 5 分，多选题默认 8 分，简答题默认 10 分，编程题/SQL题默认 15 分，场景题/多模态题默认 15 分。
 
 # 每道题通用字段
-questionType、difficulty、abilityDimension、stem、optionsJson、answerJson、explanation、commonMistakesJson、tagsJson。
+question、type、options、answer、score、difficulty、knowledge_points、ability_tags、analysis。
+
+# analysis 字段说明
+analysis 是一个对象，包含：
+- correct_reason：正确答案的解析说明
+- wrong_reason：错误选项的解析（仅选择题需要），key 为选项字母，value 为错误原因说明
 
 # 题型规则
 {{questionTypeRules}}

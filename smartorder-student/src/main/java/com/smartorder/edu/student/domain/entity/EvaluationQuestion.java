@@ -74,6 +74,18 @@ public class EvaluationQuestion {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<String> tagsJson;
 
+    /** 知识点标签JSON */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<String> knowledgePointsJson;
+
+    /** 能力标签JSON */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<String> abilityTagsJson;
+
+    /** 题目分析JSON（包含correct_reason和wrong_reason） */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<String, Object> analysisJson;
+
     /** 来源：agent_generated/manual/rag/imported */
     private String generationSource;
 

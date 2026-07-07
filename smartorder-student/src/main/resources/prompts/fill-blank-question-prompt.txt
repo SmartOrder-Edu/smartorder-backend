@@ -1,13 +1,13 @@
-生成填空题，题型代码固定为 fill_blank。
+生成填空题，type 固定为 "填空题"。
 
 约束：
-1. 每题 1 到 3 个空，stem 中每个空统一写成 ____。
-2. optionsJson 必须是空数组 []。
-3. answerJson 格式：{"blanks":[{"index":1,"answer":"标准答案","acceptableAnswers":["标准答案","等价答案"]}]}。
-4. blanks.index 从 1 开始连续递增，数量必须等于 stem 中 ____ 的数量。
-5. acceptableAnswers 必须包含标准答案，也可列入等价表达。
-6. explanation 按空位简述答案依据。
-7. commonMistakesJson 至少覆盖 1 个空位。
+1. 每题 1 到 3 个空，question 中每个空统一写成 ____。
+2. options 必须是空数组 []。
+3. answer 格式：字符串数组，按空的顺序排列答案，如 ["先进先出", "后进先出"]。
+4. answer 数组长度必须等于 question 中 ____ 的数量。
+5. analysis.correct_reason 按空位简述答案依据。
+6. analysis.wrong_reason 为空对象 {}。
+7. score 默认 5。
 
 # 最终输出
 只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
@@ -15,14 +15,17 @@
 # 短示例
 {
   "questions": [{
-    "questionType": "fill_blank",
+    "question": "数据结构中，队列遵循 ____ 原则，栈遵循 ____ 原则。",
+    "type": "填空题",
+    "options": [],
+    "answer": ["先进先出", "后进先出"],
+    "score": 5,
     "difficulty": 3,
-    "abilityDimension": "concept",
-    "stem": "数据结构中，队列遵循 ____ 原则，栈遵循 ____ 原则。",
-    "optionsJson": [],
-    "answerJson": {"blanks":[{"index":1,"answer":"先进先出","acceptableAnswers":["先进先出","FIFO"]},{"index":2,"answer":"后进先出","acceptableAnswers":["后进先出","LIFO"]}]},
-    "explanation": "队列从队头出队，体现 FIFO；栈从栈顶出栈，体现 LIFO。",
-    "commonMistakesJson": [{"blankIndex":1,"reason":"把队列和栈的顺序混淆","example":"第一空填后进先出"}],
-    "tagsJson": ["数据结构","线性表","fill_blank"]
+    "knowledge_points": ["数据结构", "线性表"],
+    "ability_tags": ["数据结构基础"],
+    "analysis": {
+      "correct_reason": "队列从队头出队体现FIFO，栈从栈顶出栈体现LIFO。",
+      "wrong_reason": {}
+    }
   }]
 }

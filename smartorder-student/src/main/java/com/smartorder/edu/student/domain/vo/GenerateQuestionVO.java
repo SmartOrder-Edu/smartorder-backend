@@ -202,6 +202,15 @@ public class GenerateQuestionVO {
         /** 标签 */
         private List<String> tagsJson;
 
+        /** 知识点标签 */
+        private List<String> knowledgePoints;
+
+        /** 能力标签 */
+        private List<String> abilityTags;
+
+        /** 题目分析 */
+        private Map<String, Object> analysis;
+
         /** 生成来源 */
         private String generationSource;
 
@@ -233,6 +242,9 @@ public class GenerateQuestionVO {
             vo.setExplanation(question.getExplanation());
             vo.setCommonMistakesJson(question.getCommonMistakesJson());
             vo.setTagsJson(question.getTagsJson());
+            vo.setKnowledgePoints(question.getKnowledgePointsJson());
+            vo.setAbilityTags(question.getAbilityTagsJson());
+            vo.setAnalysis(question.getAnalysisJson());
             vo.setGenerationSource(question.getGenerationSource());
             vo.setStatus(question.getStatus());
             vo.setCreatedAt(question.getCreatedAt());

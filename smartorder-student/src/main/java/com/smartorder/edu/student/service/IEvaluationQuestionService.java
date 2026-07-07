@@ -1,6 +1,8 @@
 package com.smartorder.edu.student.service;
 
 import com.smartorder.edu.student.domain.dto.GenerateQuestionDTO;
+import com.smartorder.edu.student.domain.vo.EvaluationQuestionVO;
+import com.smartorder.edu.student.domain.vo.EvaluationTaskVO;
 import com.smartorder.edu.student.domain.vo.GenerateQuestionVO;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -15,6 +17,9 @@ public interface IEvaluationQuestionService {
 
     /**
      * 查询已保存的测评题目，供前端联调渲染题库列表。
+     * <p>支持按学习空间ID过滤和数量限制，也支持按任务ID精确查询。</p>
      */
-    List<GenerateQuestionVO.QuestionVO> listQuestions(Long learningSpaceId, Integer limit);
+    List<EvaluationQuestionVO> listQuestions(Long learningSpaceId, Integer limit, Long taskId);
+
+    List<EvaluationTaskVO> listQuestionsTaskList(Long learningSpaceId, Long currentUserId);
 }

@@ -17,6 +17,8 @@ import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationTask
 import com.smartorder.edu.student.domain.enums.PromptFile;
 import com.smartorder.edu.student.domain.enums.QuestionTaskPlan;
 import com.smartorder.edu.student.domain.enums.QuestionScore;
+import com.smartorder.edu.student.domain.vo.EvaluationQuestionVO;
+import com.smartorder.edu.student.domain.vo.EvaluationTaskVO;
 import com.smartorder.edu.student.domain.vo.GenerateQuestionVO;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationItemMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationTaskMapper;
@@ -34,6 +36,8 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -115,23 +119,40 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     }
 
     @Override
-    public List<GenerateQuestionVO.QuestionVO> listQuestions(Long learningSpaceId, Integer limit) {
-        // 归一化分页参数：默认30条，范围限制在 1~100 之间，防止过量查询
-        int normalizedLimit = limit == null ? 30 : Math.max(1, Math.min(limit, 100));
-        LambdaQueryWrapper<EvaluationQuestion> query = new LambdaQueryWrapper<EvaluationQuestion>()
-                .eq(EvaluationQuestion::getStatus, 1)
-                .orderByDesc(EvaluationQuestion::getCreatedAt)
-                .last("LIMIT " + normalizedLimit);
-
-        // 学习空间ID不为空时，按学习空间过滤
-        if (learningSpaceId != null) {
-            query.eq(EvaluationQuestion::getLearningSpaceId, learningSpaceId);
+    public List<EvaluationQuestionVO> listQuestions(Long learningSpaceId, Integer limit, Long taskId) {
+        // 同时传 taskId 时优先按任务ID精确查询
+        if (taskId != null) {
+            return evaluationQuestionMapper.selectByTaskId(taskId)
+                    .stream()
+                    .map(EvaluationQuestionVO::from)
+                    .toList();
         }
 
-        // 仅查询启用状态(status=1)的题目，并转换为对外视图对象
-        return evaluationQuestionMapper.selectList(query)
+        // 默认走学习空间查询，limit 范围控制在 1~200，未传默认 100
+        // 使用 LambdaQueryWrapper 而非自定义 @Select，确保 autoResultMap 的 JacksonTypeHandler 生效
+        int resolvedLimit = (limit == null || limit <= 0) ? 100 : Math.min(limit, 200);
+        LambdaQueryWrapper<EvaluationQuestion> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(EvaluationQuestion::getStatus, 1);
+        if (learningSpaceId != null) {
+            wrapper.eq(EvaluationQuestion::getLearningSpaceId, learningSpaceId);
+        }
+        wrapper.orderByDesc(EvaluationQuestion::getCreatedAt);
+        wrapper.last("LIMIT " + resolvedLimit);
+        return evaluationQuestionMapper.selectList(wrapper)
                 .stream()
-                .map(GenerateQuestionVO.QuestionVO::from)
+                .map(EvaluationQuestionVO::from)
+                .toList();
+    }
+
+    @Override
+    public List<EvaluationTaskVO> listQuestionsTaskList(Long learningSpaceId, Long currentUserId) {
+        LambdaQueryWrapper<EvaluationQuestionGenerationTask> queryWrapper = new LambdaQueryWrapper<EvaluationQuestionGenerationTask>();
+        queryWrapper.eq(learningSpaceId != null, EvaluationQuestionGenerationTask::getLearningSpaceId, learningSpaceId)
+                .eq(currentUserId != null, EvaluationQuestionGenerationTask::getUserId, currentUserId)
+                .orderByDesc(EvaluationQuestionGenerationTask::getCreatedAt);
+        return generationTaskMapper.selectList(queryWrapper)
+                .stream()
+                .map(EvaluationTaskVO::new)
                 .toList();
     }
 
@@ -475,6 +496,12 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
     /**
      * 将大模型返回的单个题目 JSON 节点映射为 {@link EvaluationQuestion} 题库实体。
+     *
+     * <p>兼容新旧两种 JSON 格式：</p>
+     * <ul>
+     *   <li>新格式：{@code question/type/options/answer/score/knowledge_points/ability_tags/analysis}</li>
+     *   <li>旧格式：{@code stem/questionType/optionsJson/answerJson/explanation/tagsJson}</li>
+     * </ul>
      */
     private EvaluationQuestion mapJsonToQuestion(Long questionId,
                                                  JsonNode q,
@@ -488,12 +515,71 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         EvaluationQuestion question = new EvaluationQuestion();
 
         question.setId(questionId);
-        question.setQuestionCode(buildQuestionCode(courseName, questionType, sequence, questionId));
         question.setLearningSpaceId(dto.getLearningSpaceId());
         question.setChapterId(dto.getChapterId());
         question.setKnowledgePointId(dto.getKnowledgePointId());
-        question.setQuestionType(readText(q, "questionType", questionType));
-        question.setDifficulty(readInt(q, "difficulty", difficulty));
+
+        // 判断格式：新格式有 "type" 字段（中文题型名），旧格式有 "questionType" 字段（英文代码）
+        boolean isNewFormat = q.has("type") && !q.has("questionType");
+
+        if (isNewFormat) {
+            parseNewFormat(q, questionType, difficulty, question);
+        } else {
+            parseOldFormat(q, questionType, difficulty, question);
+        }
+
+        question.setQuestionCode(buildQuestionCode(courseName, question.getQuestionType(), sequence, questionId));
+        question.setGenerationSource("agent_generated");
+        question.setStatus(1);
+        question.setCreatedAt(now);
+        question.setUpdatedAt(now);
+
+        return question;
+    }
+
+    /** 解析新格式 JSON（question/type/options/answer/score/knowledge_points/ability_tags/analysis） */
+    private void parseNewFormat(JsonNode q, String fallbackQuestionType, int fallbackDifficulty,
+                                EvaluationQuestion question) {
+        // type: 中文题型名 → 英文代码
+        String typeChinese = readRequiredText(q, "type");
+        String resolvedType = resolveQuestionTypeFromChinese(typeChinese);
+        question.setQuestionType(resolvedType);
+
+        question.setDifficulty(readInt(q, "difficulty", fallbackDifficulty));
+        int defaultScore = QuestionScore.fromCode(resolvedType).getDefaultScore().intValue();
+        question.setScore(BigDecimal.valueOf(readInt(q, "score", defaultScore)));
+        question.setStem(readRequiredText(q, "question"));
+        question.setOptionsJson(parseOptions(q));
+        question.setAnswerJson(parseAnswer(q, resolvedType));
+
+        // analysis 对象
+        JsonNode analysisNode = q.get("analysis");
+        if (analysisNode != null && analysisNode.isObject()) {
+            question.setAnalysisJson(objectMapper.convertValue(analysisNode, Map.class));
+            question.setExplanation(readText(analysisNode, "correct_reason", ""));
+            question.setCommonMistakesJson(parseWrongReason(analysisNode));
+        } else {
+            question.setExplanation("");
+            question.setCommonMistakesJson(List.of());
+        }
+
+        // knowledge_points / ability_tags
+        List<String> knowledgePoints = readJsonArrayAsStringList(q, "knowledge_points");
+        question.setKnowledgePointsJson(knowledgePoints);
+        question.setAbilityTagsJson(readJsonArrayAsStringList(q, "ability_tags"));
+
+        // tagsJson: 合并 knowledge_points + ability_tags + 题型代码
+        List<String> tags = new LinkedList<>(knowledgePoints);
+        tags.addAll(readJsonArrayAsStringList(q, "ability_tags"));
+        tags.add(resolvedType);
+        question.setTagsJson(tags);
+    }
+
+    /** 解析旧格式 JSON（stem/questionType/optionsJson/answerJson/explanation/tagsJson） */
+    private void parseOldFormat(JsonNode q, String fallbackQuestionType, int fallbackDifficulty,
+                                EvaluationQuestion question) {
+        question.setQuestionType(readText(q, "questionType", fallbackQuestionType));
+        question.setDifficulty(readInt(q, "difficulty", fallbackDifficulty));
         question.setScore(BigDecimal.valueOf(1));
         question.setStem(readRequiredText(q, "stem"));
         question.setOptionsJson(readJsonArrayAsList(q, "optionsJson"));
@@ -502,13 +588,112 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         question.setAbilityDimension(readText(q, "abilityDimension", null));
         question.setCommonMistakesJson(readJsonArrayAsList(q, "commonMistakesJson"));
         question.setTagsJson(readJsonArrayAsStringList(q, "tagsJson"));
-        // 标记为 Agent 生成来源，状态置为启用
-        question.setGenerationSource("agent_generated");
-        question.setStatus(1);
-        question.setCreatedAt(now);
-        question.setUpdatedAt(now);
+    }
 
-        return question;
+    /** 中文题型名 → 英文题型代码（如 "单选题" → "single_choice"） */
+    private String resolveQuestionTypeFromChinese(String chinese) {
+        if (chinese == null) return "unknown";
+        return switch (chinese) {
+            case "单选题" -> "single_choice";
+            case "多选题" -> "multiple_choice";
+            case "填空题" -> "fill_blank";
+            case "判断题" -> "judge";
+            case "简答题" -> "short_answer";
+            case "编程题" -> "code";
+            case "场景题" -> "scenario";
+            case "SQL题" -> "sql";
+            case "多模态题" -> "multimodal";
+            default -> "unknown";
+        };
+    }
+
+    /** 新格式 options（字符串数组）→ 旧格式 [{label:"A", content:"..."}] */
+    private List<Map<String, Object>> parseOptions(JsonNode q) {
+        JsonNode optionsNode = q.get("options");
+        if (optionsNode == null || !optionsNode.isArray()) {
+            return List.of();
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (int i = 0; i < optionsNode.size(); i++) {
+            Map<String, Object> option = new LinkedHashMap<>();
+            option.put("label", String.valueOf((char) ('A' + i)));
+            option.put("content", optionsNode.get(i).asText());
+            result.add(option);
+        }
+        return result;
+    }
+
+    /** 新格式 answer → 旧格式 answerJson（按题型转换） */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseAnswer(JsonNode q, String questionType) {
+        JsonNode answerNode = q.get("answer");
+        if (answerNode == null || answerNode.isNull()) {
+            return Map.of();
+        }
+        return switch (questionType) {
+            case "single_choice" -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("correctOptions", List.of(answerNode.asText()));
+                yield m;
+            }
+            case "multiple_choice" -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                if (answerNode.isArray()) {
+                    m.put("correctOptions", objectMapper.convertValue(answerNode, List.class));
+                } else {
+                    m.put("correctOptions", List.of(answerNode.asText()));
+                }
+                yield m;
+            }
+            case "judge" -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("correctValue", answerNode.asBoolean());
+                yield m;
+            }
+            case "fill_blank" -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                List<Map<String, Object>> blanks = new ArrayList<>();
+                if (answerNode.isArray()) {
+                    for (int i = 0; i < answerNode.size(); i++) {
+                        Map<String, Object> blank = new LinkedHashMap<>();
+                        blank.put("index", i + 1);
+                        blank.put("answer", answerNode.get(i).asText());
+                        blanks.add(blank);
+                    }
+                }
+                m.put("blanks", blanks);
+                yield m;
+            }
+            case "short_answer", "code", "scenario", "sql", "multimodal" -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("referenceAnswer", answerNode.asText());
+                yield m;
+            }
+            default -> {
+                if (answerNode.isTextual()) {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("answer", answerNode.asText());
+                    yield m;
+                }
+                yield objectMapper.convertValue(answerNode, Map.class);
+            }
+        };
+    }
+
+    /** 新格式 analysis.wrong_reason（{A:"原因", C:"原因"}）→ 旧格式 [{option:"A", reason:"..."}] */
+    private List<Map<String, Object>> parseWrongReason(JsonNode analysisNode) {
+        JsonNode wrongReason = analysisNode.get("wrong_reason");
+        if (wrongReason == null || !wrongReason.isObject() || wrongReason.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        wrongReason.fields().forEachRemaining(entry -> {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("option", entry.getKey());
+            item.put("reason", entry.getValue().asText());
+            result.add(item);
+        });
+        return result;
     }
 
     /** 任务进入运行状态：更新 currentStep=running */
