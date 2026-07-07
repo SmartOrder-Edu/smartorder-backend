@@ -50,7 +50,8 @@ public class LessonTimelineBuilder {
                     segmentType,
                     "",
                     durationMs,
-                    waitForUser
+                    waitForUser,
+                    Map.of()
             ));
         }
         return buildFromSpecs(step, specs, "script_builder");
@@ -80,6 +81,7 @@ public class LessonTimelineBuilder {
                 payload.put("segmentId", spec.id());
                 payload.put("speechStartMs", cursorMs);
                 payload.put("speechEndMs", cursorMs + durationMs);
+                payload.putAll(spec.actionPayload());
                 sceneAction.put("payload", payload);
             }
 
@@ -133,7 +135,7 @@ public class LessonTimelineBuilder {
                 "stepTitle", step.getTitle(),
                 "nodeType", step.getNodeType(),
                 "contractVersion", 2,
-                "capabilities", List.of("segment_reveal", "scene_action", "pause_at_segment_end")
+                "capabilities", List.of("segment_reveal", "scene_action", "pause_at_segment_end", "board_block_action_payload")
         )));
         return timeline;
     }
@@ -164,9 +166,54 @@ public class LessonTimelineBuilder {
             int autoAdvanceMs = intValue(segment.get("autoAdvanceMs"), 0);
             boolean waitForUser = autoAdvanceMs <= 0 || waitsForUser(type);
             long durationMs = Math.max(autoAdvanceMs, estimateSpeechDurationMs(speechText));
-            specs.add(new SegmentTimelineSpec(id, type, speechText, durationMs, waitForUser));
+            specs.add(new SegmentTimelineSpec(id, type, speechText, durationMs, waitForUser, boardActionPayload(segment)));
         }
         return specs;
+    }
+
+    private Map<String, Object> boardActionPayload(Map<?, ?> segment) {
+        Object rawBlocks = segment.get("boardBlocks");
+        if (!(rawBlocks instanceof List<?> blocks) || blocks.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        for (Object item : blocks) {
+            if (!(item instanceof Map<?, ?> block)) {
+                continue;
+            }
+            copyPayloadField(block, payload, "type", "boardBlockType");
+            copyPayloadField(block, payload, "id", "boardBlockId");
+            copyPayloadField(block, payload, "language", "language");
+            copyPayloadField(block, payload, "focusLine", "focusLine");
+            copyPayloadField(block, payload, "highlights", "highlights");
+            copyPayloadField(block, payload, "structureType", "structureType");
+            copyPayloadField(block, payload, "items", "items");
+            copyPayloadField(block, payload, "nodes", "nodes");
+            copyPayloadField(block, payload, "edges", "edges");
+            copyPayloadField(block, payload, "pointers", "pointers");
+            copyPayloadField(block, payload, "activeIndices", "activeIndices");
+            copyPayloadField(block, payload, "activeIds", "activeIds");
+            copyPayloadField(block, payload, "algorithm", "algorithm");
+            copyPayloadField(block, payload, "processedRange", "processedRange");
+            copyPayloadField(block, payload, "action", "action");
+            copyPayloadField(block, payload, "explanation", "explanation");
+            copyPayloadField(block, payload, "time", "time");
+            copyPayloadField(block, payload, "space", "space");
+            copyPayloadField(block, payload, "cases", "cases");
+            copyPayloadField(block, payload, "reason", "reason");
+        }
+        return payload;
+    }
+
+    private void copyPayloadField(Map<?, ?> source, Map<String, Object> target, String sourceKey, String targetKey) {
+        Object value = source.get(sourceKey);
+        if (value == null) {
+            return;
+        }
+        if (value instanceof String text && text.isBlank()) {
+            return;
+        }
+        target.putIfAbsent(targetKey, value);
     }
 
     private String speechText(Map<?, ?> segment) {
@@ -244,7 +291,8 @@ public class LessonTimelineBuilder {
             String type,
             String speechText,
             long durationMs,
-            boolean waitForUser
+            boolean waitForUser,
+            Map<String, Object> actionPayload
     ) {
     }
 }
