@@ -234,7 +234,7 @@ public class LlmLessonScriptGenerator {
     private boolean isAllowedBoardBlockType(String type) {
         return switch (safe(type, "markdown").toLowerCase()) {
             case "markdown", "code", "formula", "list", "quote", "diagram", "callout",
-                    "structure", "trace", "complexity" -> true;
+                    "structure", "trace", "complexity", "comparison", "vs_compare", "vs-compare" -> true;
             default -> false;
         };
     }
@@ -258,6 +258,10 @@ public class LlmLessonScriptGenerator {
                     || !text(block, "space", "").isBlank()
                     || nonEmptyArray(block.path("cases"))
                     || !text(block, "reason", "").isBlank();
+            case "comparison", "vs_compare", "vs-compare" -> block.has("left")
+                    || block.has("right")
+                    || nonEmptyArray(block.path("criteria"))
+                    || !text(block, "summary", "").isBlank();
             default -> false;
         };
     }
@@ -303,12 +307,22 @@ public class LlmLessonScriptGenerator {
                 builder.append(text(block, "title", ""));
                 builder.append(text(block, "content", ""));
                 builder.append(text(block, "caption", ""));
+                builder.append(text(block, "summary", ""));
                 builder.append(text(block, "structureType", ""));
                 builder.append(text(block, "action", ""));
                 builder.append(text(block, "explanation", ""));
                 builder.append(text(block, "time", ""));
                 builder.append(text(block, "space", ""));
                 builder.append(text(block, "reason", ""));
+                if (block.has("left")) {
+                    builder.append(block.path("left"));
+                }
+                if (block.has("right")) {
+                    builder.append(block.path("right"));
+                }
+                if (block.has("criteria")) {
+                    builder.append(block.path("criteria"));
+                }
                 if (block.has("items")) {
                     builder.append(block.path("items"));
                 }
@@ -558,8 +572,14 @@ public class LlmLessonScriptGenerator {
         copyBoardBlockField(blockNode, block, "explanation");
         copyBoardBlockField(blockNode, block, "time");
         copyBoardBlockField(blockNode, block, "space");
+        copyBoardBlockField(blockNode, block, "caseHeaders");
         copyBoardBlockField(blockNode, block, "cases");
         copyBoardBlockField(blockNode, block, "reason");
+        copyBoardBlockField(blockNode, block, "left");
+        copyBoardBlockField(blockNode, block, "right");
+        copyBoardBlockField(blockNode, block, "criteria");
+        copyBoardBlockField(blockNode, block, "summary");
+        copyBoardBlockField(blockNode, block, "emphasis");
         return block;
     }
 
@@ -635,6 +655,11 @@ public class LlmLessonScriptGenerator {
                     + "- 时间复杂度：" + block.getOrDefault("time", "待分析") + "\n"
                     + "- 空间复杂度：" + block.getOrDefault("space", "待分析") + "\n"
                     + "- 原因：" + block.getOrDefault("reason", "");
+            case "comparison", "vs_compare" -> title + "\n\n"
+                    + "- 左侧：" + block.getOrDefault("left", Map.of()) + "\n"
+                    + "- 右侧：" + block.getOrDefault("right", Map.of()) + "\n"
+                    + "- 对比维度：" + block.getOrDefault("criteria", List.of()) + "\n"
+                    + "- 结论：" + block.getOrDefault("summary", "");
             default -> "";
         };
     }
@@ -658,7 +683,8 @@ public class LlmLessonScriptGenerator {
     private String normalizeBoardBlockType(String type) {
         return switch (safe(type, "markdown").toLowerCase()) {
             case "code", "formula", "list", "quote", "diagram", "callout",
-                    "structure", "trace", "complexity" -> type.toLowerCase();
+                    "structure", "trace", "complexity", "comparison", "vs_compare" -> type.toLowerCase();
+            case "vs-compare" -> "vs_compare";
             default -> "markdown";
         };
     }
@@ -672,6 +698,7 @@ public class LlmLessonScriptGenerator {
             case "structure" -> "数据结构状态";
             case "trace" -> "算法过程";
             case "complexity" -> "复杂度分析";
+            case "comparison", "vs_compare" -> "对比分析";
             default -> "板书";
         };
     }
@@ -973,11 +1000,12 @@ public class LlmLessonScriptGenerator {
                           "teacherTalk": "老师真实会说出口的话，像面对学生讲课，不要写成资料摘要",
                           "boardContent": "兼容字段：黑板/画布上逐步出现的 Markdown 内容",
                           "boardBlocks": [
-                            {"type": "markdown|code|formula|list|quote|diagram|callout|structure|trace|complexity", "title": "板书块标题", "content": "普通文本或代码纯内容", "caption": "简短说明", "tone": "info|warning|success|error"},
+                            {"type": "markdown|code|formula|list|quote|diagram|callout|structure|trace|complexity|comparison|vs_compare", "title": "板书块标题", "content": "普通文本或代码纯内容", "caption": "简短说明", "tone": "info|warning|success|error"},
                             {"type": "code", "title": "代码标题", "language": "c|cpp|java|python|javascript|typescript|go|rust|sql", "content": "纯代码，不要包含 Markdown 代码围栏", "highlights": [2, 3], "focusLine": 3},
                             {"type": "structure", "structureType": "array|stack|queue|linked_list|tree|heap|graph", "title": "结构状态标题", "items": [1, 2, 3], "nodes": [{"id": "A", "label": "A", "depth": 0, "order": 0}], "edges": [{"from": "A", "to": "B", "label": "可选边权"}], "pointers": {"front": 0, "rear": 3, "top": 2}, "activeIndices": [0], "activeIds": ["A"], "visitedIds": ["A"], "frontierIds": ["B"], "pathIds": ["A", "B"], "compareIds": ["1", "4"], "directed": false, "animation": {"action": "enqueue|dequeue|push|pop|compare|swap", "durationMs": 1800, "movingItem": 4, "from": "rear", "to": 3, "previous": {"items": [1, 2, 3], "pointers": {"front": 0, "rear": 3}}, "next": {"items": [1, 2, 3, 4], "pointers": {"front": 0, "rear": 4}}, "phases": [{"name": "before", "startRatio": 0, "items": [1, 2, 3], "pointers": {"front": 0, "rear": 3}, "narrationHint": "入队前"}, {"name": "moving", "startRatio": 0.34, "items": [1, 2, 3], "pointers": {"front": 0, "rear": 3}, "movingItem": 4, "targetIndex": 3, "highlightPointers": ["rear"], "narrationHint": "写入 rear 位置"}, {"name": "after", "startRatio": 0.72, "items": [1, 2, 3, 4], "pointers": {"front": 0, "rear": 4}, "narrationHint": "rear 后移"}]}},
                             {"type": "trace", "algorithm": "bubble_sort|binary_search|dfs|bfs|...", "title": "过程标题", "items": [5, 2, 8], "activeIndices": [0, 1], "processedRange": [2, 2], "action": "compare|swap|insert|delete|visit|mark", "explanation": "当前步骤解释"},
-                            {"type": "complexity", "title": "复杂度标题", "time": "O(n)", "space": "O(1)", "cases": [{"label": "最坏情况", "value": "O(n)", "description": "原因"}], "reason": "复杂度原因"}
+                            {"type": "complexity", "title": "复杂度标题", "time": "O(n)", "space": "O(1)", "caseHeaders": {"label": "场景", "value": "复杂度", "description": "说明"}, "cases": [{"label": "最坏情况", "value": "O(n)", "description": "原因"}], "reason": "复杂度原因"},
+                            {"type": "vs_compare", "title": "方法 A vs 方法 B", "left": {"title": "方法 A", "subtitle": "适用场景", "badge": "基础方法", "content": "核心步骤或公式", "strengths": ["优势"], "weaknesses": ["注意点"]}, "right": {"title": "方法 B", "subtitle": "适用场景", "badge": "进阶方法", "content": "核心步骤或公式", "strengths": ["优势"], "weaknesses": ["注意点"]}, "criteria": [{"label": "计算步数", "left": "较多", "right": "较少", "winner": "right", "explanation": "原因"}], "summary": "什么时候优先选哪种方法", "emphasis": "left|right|balanced"}
                           ],
                           "markdown": "兼容字段，通常等于 boardContent 或本段展示内容",
                           "teachingIntent": "说明本段为什么这样讲",
@@ -1013,8 +1041,9 @@ public class LlmLessonScriptGenerator {
                 16. structureType=graph 时使用 nodes、edges、activeIds、visitedIds、frontierIds、pathIds、directed；edges 使用 from/to/label。
                 17. 讲解队列入队/出队时，structureType=queue 必须优先提供 animation.phases，至少包含 before、moving、after 三个阶段；前端会按阶段渲染旧状态、动作中状态和最终状态，不能一开始就只给最终状态。
                 18. trace 当前优先用 items、activeIndices、processedRange、action、explanation 表示算法执行过程。
-                19. complexity 使用 time、space、cases、reason，不要把复杂度结论只写在普通段落里。
-                20. boardBlocks[*].content 必须是纯内容：代码不要包 ```，Mermaid 图不要包 ```mermaid；前端会根据 type 和 language 负责渲染。
+                19. complexity 使用 time、space、caseHeaders、cases、reason，不要把复杂度结论只写在普通段落里；caseHeaders 可自定义 cases 表头，不需要自定义时可省略。
+                20. 对比两个概念、方法、公式、解法、易混点时优先使用 type=vs_compare 或 type=comparison；必须提供 left、right、criteria、summary，criteria.winner 可为 left、right、tie。
+                21. boardBlocks[*].content 必须是纯内容：代码不要包 ```，Mermaid 图不要包 ```mermaid；前端会根据 type 和 language 负责渲染。
 
                 学习上下文：
                 - 学习空间：%s
@@ -1057,12 +1086,13 @@ public class LlmLessonScriptGenerator {
                 - canvasType 只能是 concept、example、practice、assessment、derivation、summary。
                 - teachingSegments[*].type 只能是 hook、recall、explain、analogy、board_write、diagram、worked_example、teacher_question、student_try、diagnosis、mistake_warning、summary、transition、quiz、formula。
                 - 每个 teachingSegment 必须有 teacherTalk、boardBlocks、boardContent 或 markdown 之一。
-                - 每个 teachingSegment 应优先提供 boardBlocks；boardBlocks[*].type 只能是 markdown、code、formula、list、quote、diagram、callout、structure、trace、complexity。
+                - 每个 teachingSegment 应优先提供 boardBlocks；boardBlocks[*].type 只能是 markdown、code、formula、list、quote、diagram、callout、structure、trace、complexity、comparison、vs_compare。
                 - 代码必须放入 {"type":"code","language":"c|java|python|javascript|...","content":"纯代码"}，content 不要包含 Markdown 代码围栏。
                 - 数据结构状态必须优先使用 {"type":"structure","structureType":"array|stack|queue|linked_list|tree|heap|graph","items":[...],"nodes":[...],"edges":[...],"pointers":{...},"activeIndices":[...],"activeIds":[...],"visitedIds":[...],"frontierIds":[...],"pathIds":[...],"compareIds":[...],"directed":false,"animation":{...}}。
                 - 队列入队/出队讲解应保留 animation.phases，至少包含 before、moving、after；before 使用操作前 items/pointers，moving 使用旧 items/pointers 加 movingItem/targetIndex 或 sourceIndex，after 使用操作后 items/pointers。
                 - 算法推演必须优先使用 {"type":"trace","algorithm":"算法名","items":[...],"activeIndices":[...],"processedRange":[start,end],"action":"compare|swap|insert|delete|visit|mark","explanation":"说明"}。
-                - 复杂度分析必须优先使用 {"type":"complexity","time":"O(...)","space":"O(...)","cases":[...],"reason":"原因"}。
+                - 复杂度分析必须优先使用 {"type":"complexity","time":"O(...)","space":"O(...)","caseHeaders":{"label":"场景","value":"复杂度","description":"说明"},"cases":[...],"reason":"原因"}，caseHeaders 可省略。
+                - 对比两个概念、方法、解法或易混点时，必须优先使用 {"type":"vs_compare","left":{...},"right":{...},"criteria":[...],"summary":"结论","emphasis":"left|right|balanced"}。
                 - quiz.answerType 只能是 text、single_select、multi_select、number。
                 - 当 quiz.answerType 为 single_select 或 multi_select 时，quiz.options 必须是数组，且每项包含 label 和 value；correctAnswer 必须填写选项 value。
                 - answer 和 correctAnswer 都必须有值。

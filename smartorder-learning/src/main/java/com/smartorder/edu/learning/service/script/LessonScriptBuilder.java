@@ -770,6 +770,11 @@ public class LessonScriptBuilder {
         Map<String, Object> block = boardBlock("complexity", title, null, reason, "info");
         block.put("time", time);
         block.put("space", space);
+        block.put("caseHeaders", new LinkedHashMap<>(Map.of(
+                "label", "场景",
+                "value", "复杂度",
+                "description", "说明"
+        )));
         block.put("cases", List.of(
                 new LinkedHashMap<>(Map.of(
                         "label", "核心判断",

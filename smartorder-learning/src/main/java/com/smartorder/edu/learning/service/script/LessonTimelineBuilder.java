@@ -207,8 +207,14 @@ public class LessonTimelineBuilder {
             copyPayloadField(block, payload, "explanation", "explanation");
             copyPayloadField(block, payload, "time", "time");
             copyPayloadField(block, payload, "space", "space");
+            copyPayloadField(block, payload, "caseHeaders", "caseHeaders");
             copyPayloadField(block, payload, "cases", "cases");
             copyPayloadField(block, payload, "reason", "reason");
+            copyPayloadField(block, payload, "left", "left");
+            copyPayloadField(block, payload, "right", "right");
+            copyPayloadField(block, payload, "criteria", "criteria");
+            copyPayloadField(block, payload, "summary", "summary");
+            copyPayloadField(block, payload, "emphasis", "emphasis");
         }
         return payload;
     }
