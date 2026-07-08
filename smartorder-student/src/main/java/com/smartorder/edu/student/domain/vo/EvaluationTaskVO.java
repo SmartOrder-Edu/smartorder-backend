@@ -51,7 +51,7 @@ public class EvaluationTaskVO {
         this.id = task.getId();
         this.learningSpaceId = task.getLearningSpaceId();
         this.topic = task.getTopic();
-        this.description = task.getCourseName();
+        this.description = task.getLearningName();
         this.status = task.getStatus();
         // 展示已成功生成的题数；若任务仍在跑则显示总题数
         this.questionCount = "success".equals(task.getStatus())

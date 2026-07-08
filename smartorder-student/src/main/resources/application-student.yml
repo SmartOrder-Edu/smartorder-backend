@@ -11,4 +11,8 @@ quiz:
     model-name: ${QUIZ_LLM_MODEL_NAME:mimo-v2.5-pro}
 
 
-
+practice:
+  reminder:
+    stage1-delay: 5        # 第一次提醒延迟（分钟），测试用；正式改为 1440（1天）
+    stage2-delay: 15       # 第二次提醒延迟（分钟，从开始算），测试用；正式改为 4320（3天）
+    scan-interval: 60000   # 扫描间隔（毫秒）

@@ -1,15 +1,18 @@
 package com.smartorder.edu.student.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.student.aiservice.QuestionAiService;
 import com.smartorder.edu.student.domain.dto.SubmitAnswersDTO;
 import com.smartorder.edu.student.domain.entity.EvaluationAnswerRecord;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestion;
+import com.smartorder.edu.student.domain.entity.EvaluationSession;
 import com.smartorder.edu.student.domain.enums.QuestionScore;
 import com.smartorder.edu.student.domain.vo.TaskSubmitResultVO;
 import com.smartorder.edu.student.mapper.EvaluationAnswerRecordMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
+import com.smartorder.edu.student.mapper.EvaluationSessionMapper;
 import com.smartorder.edu.student.service.IEvaluationSubmitService;
 import com.smartorder.edu.student.util.StudentPromptFileLoader;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +27,6 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 测评答案提交与判分服务实现
@@ -48,6 +50,7 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
 
     private final EvaluationAnswerRecordMapper answerRecordMapper;
     private final EvaluationQuestionMapper questionMapper;
+    private final EvaluationSessionMapper sessionMapper;
     private final TransactionTemplate transactionTemplate;
     private final StudentPromptFileLoader promptFileLoader;
     private final QuestionAiService questionAiService;
@@ -85,10 +88,12 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
                 .map(SubmitAnswersDTO.AnswerItem::getQuestionId)
                 .distinct()
                 .toList();
+
         List<EvaluationQuestion> questions = questionMapper.selectBatchIds(questionIds);
         if (questions.isEmpty()) {
             throw new BusinessException("未找到对应题目");
         }
+
         Map<Long, EvaluationQuestion> questionMap = new HashMap<>();
         for (EvaluationQuestion q : questions) {
             questionMap.put(q.getId(), q);
@@ -158,6 +163,29 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
                 .map(q -> q.getScore() != null ? q.getScore() : QuestionScore.fromCode(q.getQuestionType()).getDefaultScore())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        // 6. 标记作业已经写完了，写入 EvaluationSession 数据库
+        LambdaQueryWrapper<EvaluationSession> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(EvaluationSession::getTaskId, taskId)
+                .eq(EvaluationSession::getUserId, userId);
+
+        EvaluationSession session = sessionMapper.selectOne(queryWrapper);
+        if (session != null) {
+            session.setStatus("finished");
+            session.setActualScore(objectiveScore);
+            session.setAccuracy(total.compareTo(BigDecimal.ZERO) > 0
+                    ? objectiveScore.divide(total, 4, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO);
+            session.setAnsweredCount(items.size());
+            session.setFinishedAt(LocalDateTime.now());
+            session.setUpdatedAt(LocalDateTime.now());
+            sessionMapper.updateById(session);
+            log.info("测评任务已标记完成: sessionId={}, actualScore={}, accuracy={}",
+                    taskId, objectiveScore, session.getAccuracy());
+        } else {
+            log.warn("未找到对应的 EvaluationSession: sessionId={}, 跳过标记完成", taskId);
+        }
+
+        //  . 返回值给前端
         return TaskSubmitResultVO.builder()
                 .taskId(taskId)
                 .totalScore(total)
@@ -243,7 +271,6 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
     }
 
     // ======================== 私有方法 ========================
-
     /**
      * 构建答题记录基础字段
      */
@@ -252,12 +279,12 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
                                                     SubmitAnswersDTO.AnswerItem item) {
         EvaluationAnswerRecord record = new EvaluationAnswerRecord();
         record.setSessionId(taskId);
+        record.setTaskId(taskId);
         record.setUserId(userId);
         record.setLearningSpaceId(spaceId);
         record.setQuestionId(question.getId());
-        record.setKnowledgePointId(question.getKnowledgePointId());
         record.setUserAnswer(item.getUserAnswer());
-        record.setCorrectAnswer(question.getAnswerJson());
+        record.setCorrectAnswer(question.getCorrectAnswer());
         record.setDuration(item.getAnswerDurationSeconds() != null ? item.getAnswerDurationSeconds() : 0);
         record.setUsedHint(item.getUsedHint() != null ? item.getUsedHint() : 0);
         record.setCreatedAt(LocalDateTime.now());
@@ -284,7 +311,7 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
 
     private GradeResult gradeObjective(EvaluationQuestion question, Map<String, Object> userAnswer) {
         String type = question.getQuestionType();
-        Map<String, Object> answerJson = question.getAnswerJson();
+        Map<String, Object> answerJson = question.getCorrectAnswer();
         BigDecimal maxScore = question.getScore() != null
                 ? question.getScore()
                 : QuestionScore.fromCode(type).getDefaultScore();
@@ -516,7 +543,7 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
         return template
                 .replace("{{questionType}}", getQuestionTypeName(question.getQuestionType()))
                 .replace("{{stem}}", question.getStem() != null ? question.getStem() : "")
-                .replace("{{standardAnswer}}", formatAnswerJson(question.getAnswerJson()))
+                .replace("{{standardAnswer}}", formatAnswerJson(question.getCorrectAnswer()))
                 .replace("{{explanation}}", question.getExplanation() != null ? question.getExplanation() : "无")
                 .replace("{{maxScore}}", question.getScore() != null ? question.getScore().toString() : "10")
                 .replace("{{userAnswer}}", userAnswer);

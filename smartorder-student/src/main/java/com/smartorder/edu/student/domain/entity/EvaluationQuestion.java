@@ -37,9 +37,6 @@ public class EvaluationQuestion {
     /** 章节ID */
     private Long chapterId;
 
-    /** 知识点ID */
-    private Long knowledgePointId;
-
     /** 题型：single_choice/multiple_choice/judge/fill_blank/short_answer/code/scenario/sql/multimodal */
     private String questionType;
 
@@ -56,41 +53,44 @@ public class EvaluationQuestion {
     private String stem;
 
     /** 选项JSON */
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private List<Map<String, Object>> optionsJson;
+    @TableField(value = "options", typeHandler = JacksonTypeHandler.class)
+    private List<Map<String, Object>> options;
 
     /** 标准答案JSON */
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> answerJson;
+    @TableField(value = "correct_answer", typeHandler = JacksonTypeHandler.class)
+    private Map<String, Object> correctAnswer;
 
     /** 题目解析 */
     private String explanation;
 
     /** 常见错误分析JSON */
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private List<Map<String, Object>> commonMistakesJson;
-
-    /** 标签JSON */
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private List<String> tagsJson;
-
-    /** 知识点标签JSON */
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private List<String> knowledgePointsJson;
-
-    /** 能力标签JSON */
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private List<String> abilityTagsJson;
+    @TableField(value = "common_mistakes", typeHandler = JacksonTypeHandler.class)
+    private List<Map<String, Object>> commonMistakes;
 
     /** 题目分析JSON（包含correct_reason和wrong_reason） */
-    @TableField(typeHandler = JacksonTypeHandler.class)
+    @TableField(value = "analysis_json", typeHandler = JacksonTypeHandler.class)
     private Map<String, Object> analysisJson;
+
+    /** 标签JSON */
+    @TableField(value = "tags", typeHandler = JacksonTypeHandler.class)
+    private List<String> tags;
+
+    /** 知识点标签JSON */
+    @TableField(value = "knowledge_points", typeHandler = JacksonTypeHandler.class)
+    private List<String> knowledgePoints;
+
+    /** 能力标签JSON */
+    @TableField(value = "ability_tags_json", typeHandler = JacksonTypeHandler.class)
+    private List<String> abilityTagsJson;
 
     /** 来源：agent_generated/manual/rag/imported */
     private String generationSource;
 
     /** 状态：1启用，0禁用 */
     private Integer status;
+
+    /** 审核状态 */
+    private String reviewStatus;
 
     /** 创建时间 */
     private LocalDateTime createdAt;

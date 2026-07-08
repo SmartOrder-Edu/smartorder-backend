@@ -2,12 +2,12 @@ package com.smartorder.edu.student.service;
 
 import com.smartorder.edu.student.domain.entity.EvaluationSession;
 import com.smartorder.edu.student.domain.dto.SubmitAnswersDTO;
+import com.smartorder.edu.student.domain.vo.EvaluationQuestionVO;
 import com.smartorder.edu.student.domain.vo.SessionResultVO;
 import com.smartorder.edu.student.domain.vo.SessionReportVO;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 测评任务（Session）服务接口
@@ -18,17 +18,19 @@ import java.util.Map;
 public interface IEvaluationSessionService {
 
     /** 创建测评任务 */
-    EvaluationSession createSession(Long learningSpaceId, Long userId, String title,
-                                    List<Long> questionIds, BigDecimal totalScore,
-                                    Map<String, Object> difficultyDistribution);
+    EvaluationSession createSession(Long learningSpaceId, Long userId, String topic,
+                                    Long taskId, BigDecimal totalScore);
 
     /** 开始答题 */
     void startSession(Long sessionId, Long userId);
 
-    /** 提交答案 */
+    /** 获取试卷题目列表 */
+    List<EvaluationQuestionVO> getSessionQuestions(Long sessionId, Long userId);
+
+    /** 提交答案（批量判分 + 更新 session 分数） */
     SessionResultVO submitAnswers(Long sessionId, Long userId, SubmitAnswersDTO dto);
 
-    /** 查询判分结果 */
+    /** 查询判分结果（含主观题轮询） */
     SessionResultVO getSessionResult(Long sessionId, Long userId);
 
     /** 查询学习报告 */

@@ -165,30 +165,28 @@ CREATE TABLE `evaluation_session`
     `id`                      bigint                                                        NOT NULL AUTO_INCREMENT COMMENT '测评任务ID',
     `user_id`                 bigint                                                        NOT NULL COMMENT '用户ID',
     `learning_space_id`       bigint                                                        NOT NULL COMMENT '学习空间ID',
-    `session_type`            varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci  NOT NULL COMMENT '测评类型：diagnosis/chapter/weakness/stage/final/comprehensive',
     `title`                   varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '测评标题',
     `chapter_id`              bigint                                                       DEFAULT NULL COMMENT '章节ID',
+    `description`             varchar(255)                                                 DEFAULT NULL COMMENT '描述',
     `target_knowledge_points` json                                                         DEFAULT NULL COMMENT '目标知识点列表',
     `question_ids`            json                                                         DEFAULT NULL COMMENT '题目ID列表',
     `difficulty_distribution` json                                                         DEFAULT NULL COMMENT '难度分布',
     `ability_distribution`    json                                                         DEFAULT NULL COMMENT '能力维度分布',
-    `total_question_count`    int                                                          DEFAULT 0 COMMENT '题目总数',
-    `answered_count`          int                                                          DEFAULT 0 COMMENT '已作答数量',
+    `total_question_count`    int                                                          DEFAULT '0' COMMENT '题目总数',
+    `answered_count`          int                                                          DEFAULT '0' COMMENT '已作答数量',
     `total_score`             decimal(5, 2)                                                DEFAULT NULL COMMENT '总分',
     `actual_score`            decimal(5, 2)                                                DEFAULT NULL COMMENT '实际得分',
     `accuracy`                decimal(5, 2)                                                DEFAULT NULL COMMENT '正确率',
-    `status`                  varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT 'created' COMMENT '状态：created/doing/finished/cancelled',
+    `status`                  varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT 'created' COMMENT '状态：todo/doing/finished/error',
     `agent_strategy_json`     json                                                         DEFAULT NULL COMMENT '组卷策略JSON',
     `started_at`              datetime                                                     DEFAULT NULL COMMENT '开始时间',
     `finished_at`             datetime                                                     DEFAULT NULL COMMENT '完成时间',
     `created_at`              datetime                                                     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`              datetime                                                     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`) USING BTREE,
-    INDEX                     `idx_user_learning_space` (`user_id` ASC, `learning_space_id` ASC) USING BTREE,
-    INDEX                     `idx_status` (`status` ASC) USING BTREE,
-    INDEX                     `idx_session_type` (`session_type` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '测评Agent测评任务表' ROW_FORMAT = Dynamic;
-
+    KEY                       `idx_user_learning_space` (`user_id`,`learning_space_id`) USING BTREE,
+    KEY                       `idx_status` (`status`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=DYNAMIC COMMENT='测评Agent测评任务表';
 -- ----------------------------
 -- 表结构：evaluation_student_error_analysis（测评学生错因分析表）
 -- ----------------------------

@@ -30,6 +30,9 @@ public class EvaluationAnswerRecord {
     /** 测评任务ID */
     private Long sessionId;
 
+    /** 任务ID */
+    private Long taskId;
+
     /** 用户ID */
     private Long userId;
 
@@ -38,9 +41,6 @@ public class EvaluationAnswerRecord {
 
     /** 题目ID */
     private Long questionId;
-
-    /** 知识点ID */
-    private Long knowledgePointId;
 
     /** 用户答案JSON */
     @TableField(typeHandler = JacksonTypeHandler.class)

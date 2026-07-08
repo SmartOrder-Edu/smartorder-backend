@@ -19,10 +19,10 @@ import com.smartorder.edu.student.domain.enums.PromptFile;
 import com.smartorder.edu.student.domain.enums.QuestionTaskPlan;
 import com.smartorder.edu.student.domain.enums.QuestionScore;
 import com.smartorder.edu.student.domain.vo.EvaluationQuestionVO;
-import com.smartorder.edu.student.domain.vo.EvaluationTaskVO;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationItemMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationTaskMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
+import com.smartorder.edu.student.mapper.EvaluationSessionMapper;
 import com.smartorder.edu.student.service.IEvaluationQuestionService;
 import com.smartorder.edu.student.service.IEvaluationSessionService;
 import com.smartorder.edu.student.util.StudentPromptFileLoader;
@@ -46,8 +46,6 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
-
 import static com.smartorder.edu.common.util.ThreadLocalUtils.getCurrentUserId;
 
 /**
@@ -87,6 +85,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     private final TransactionTemplate transactionTemplate;
     private final QuestionAiService questionAiService;
     private final IEvaluationSessionService sessionService;
+    private final EvaluationSessionMapper sessionMapper;
 
     /** 每题型默认生成数量 */
     private static final int DEFAULT_COUNT = 3;
@@ -148,15 +147,14 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     }
 
     @Override
-    public List<EvaluationTaskVO> listQuestionsTaskList(Long learningSpaceId, Long currentUserId) {
-        LambdaQueryWrapper<EvaluationQuestionGenerationTask> queryWrapper = new LambdaQueryWrapper<EvaluationQuestionGenerationTask>();
-        queryWrapper.eq(learningSpaceId != null, EvaluationQuestionGenerationTask::getLearningSpaceId, learningSpaceId)
-                .eq(currentUserId != null, EvaluationQuestionGenerationTask::getUserId, currentUserId)
-                .orderByDesc(EvaluationQuestionGenerationTask::getCreatedAt);
-        return generationTaskMapper.selectList(queryWrapper)
-                .stream()
-                .map(EvaluationTaskVO::new)
-                .toList();
+    public List<EvaluationSession> listQuestionsTaskList(Long learningSpaceId, Long userId) {
+        LambdaQueryWrapper<EvaluationSession> queryWrapper = new LambdaQueryWrapper<>();
+
+        queryWrapper.eq(learningSpaceId != null, EvaluationSession::getLearningSpaceId, learningSpaceId)
+                .eq(userId != null, EvaluationSession::getUserId, userId)
+                .orderByDesc(EvaluationSession::getCreatedAt);
+
+        return sessionMapper.selectList(queryWrapper);
     }
 
     /**
@@ -178,6 +176,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                 .mapToInt(typeCount -> resolveCount(typeCount.getCount()))
                 .sum();
 
+        IdGenerator.setWorkerId(1);
         long id = IdGenerator.nextId();
         Long userId = resolveCurrentUserId();
         // 构建生成任务(task)记录，初始状态为 pending
@@ -187,7 +186,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                 .learningSpaceId(dto.getLearningSpaceId())
                 .chapterId(dto.getChapterId())
                 .knowledgePointId(dto.getKnowledgePointId())
-                .courseName(courseName)
+                .learningName(courseName)
                 .topic(topic)
                 .requestPayload(toJson(dto))
                 .status("pending")
@@ -279,7 +278,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                 var session = createEvaluationSession(context);
                 sendEvent(emitter, "session-created", Map.of(
                         "sessionId", session.getId(),
-                        "title", session.getTitle(),
+                        "topic", session.getTopic(),
                         "totalQuestionCount", session.getTotalQuestionCount(),
                         "totalScore", session.getTotalScore()
                 ));
@@ -536,7 +535,6 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         question.setId(questionId);
         question.setLearningSpaceId(dto.getLearningSpaceId());
         question.setChapterId(dto.getChapterId());
-        question.setKnowledgePointId(dto.getKnowledgePointId());
 
         // 判断格式：新格式有 "type" 字段（中文题型名），旧格式有 "questionType" 字段（英文代码）
         boolean isNewFormat = q.has("type") && !q.has("questionType");
@@ -568,30 +566,30 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         int defaultScore = QuestionScore.fromCode(resolvedType).getDefaultScore().intValue();
         question.setScore(BigDecimal.valueOf(readInt(q, "score", defaultScore)));
         question.setStem(readRequiredText(q, "question"));
-        question.setOptionsJson(parseOptions(q));
-        question.setAnswerJson(parseAnswer(q, resolvedType));
+        question.setOptions(parseOptions(q));
+        question.setCorrectAnswer(parseAnswer(q, resolvedType));
 
         // analysis 对象
         JsonNode analysisNode = q.get("analysis");
         if (analysisNode != null && analysisNode.isObject()) {
             question.setAnalysisJson(objectMapper.convertValue(analysisNode, Map.class));
             question.setExplanation(parseCorrectReason(analysisNode));
-            question.setCommonMistakesJson(parseWrongReason(analysisNode));
+            question.setCommonMistakes(parseWrongReason(analysisNode));
         } else {
             question.setExplanation("");
-            question.setCommonMistakesJson(List.of());
+            question.setCommonMistakes(List.of());
         }
 
         // knowledge_points / ability_tags
         List<String> knowledgePoints = readJsonArrayAsStringList(q, "knowledge_points");
-        question.setKnowledgePointsJson(knowledgePoints);
+        question.setKnowledgePoints(knowledgePoints);
         question.setAbilityTagsJson(readJsonArrayAsStringList(q, "ability_tags"));
 
-        // tagsJson: 合并 knowledge_points + ability_tags + 题型代码
+        // tags: 合并 knowledge_points + ability_tags + 题型代码
         List<String> tags = new LinkedList<>(knowledgePoints);
         tags.addAll(readJsonArrayAsStringList(q, "ability_tags"));
         tags.add(resolvedType);
-        question.setTagsJson(tags);
+        question.setTags(tags);
     }
 
     /** 解析旧格式 JSON（stem/questionType/optionsJson/answerJson/explanation/tagsJson） */
@@ -601,12 +599,12 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         question.setDifficulty(readInt(q, "difficulty", fallbackDifficulty));
         question.setScore(BigDecimal.valueOf(1));
         question.setStem(readRequiredText(q, "stem"));
-        question.setOptionsJson(readJsonArrayAsList(q, "optionsJson"));
-        question.setAnswerJson(readJsonObjectAsMap(q, "answerJson"));
+        question.setOptions(readJsonArrayAsList(q, "optionsJson"));
+        question.setCorrectAnswer(readJsonObjectAsMap(q, "answerJson"));
         question.setExplanation(readText(q, "explanation", ""));
         question.setAbilityDimension(readText(q, "abilityDimension", null));
-        question.setCommonMistakesJson(readJsonArrayAsList(q, "commonMistakesJson"));
-        question.setTagsJson(readJsonArrayAsStringList(q, "tagsJson"));
+        question.setCommonMistakes(readJsonArrayAsList(q, "commonMistakesJson"));
+        question.setTags(readJsonArrayAsStringList(q, "tagsJson"));
     }
 
     /** 中文题型名 → 英文题型代码（如 "单选题" → "single_choice"） */
@@ -1064,15 +1062,14 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                 .isNotNull(EvaluationQuestionGenerationItem::getQuestionId);
         List<EvaluationQuestionGenerationItem> successItems = generationItemMapper.selectList(wrapper);
 
-        List<Long> questionIds = successItems.stream()
-                .map(EvaluationQuestionGenerationItem::getQuestionId)
-                .toList();
-
-        if (questionIds.isEmpty()) {
+        if (successItems.isEmpty()) {
             throw new BusinessException("没有成功生成的题目，无法创建会话");
         }
 
         // 查询题目实体获取分值信息
+        List<Long> questionIds = successItems.stream()
+                .map(EvaluationQuestionGenerationItem::getQuestionId)
+                .toList();
         List<EvaluationQuestion> questions = evaluationQuestionMapper.selectBatchIds(questionIds);
         BigDecimal totalScore = questions.stream()
                 .map(q -> {
@@ -1084,23 +1081,14 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                 })
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // 构建难度分布
-        Map<String, Object> difficultyDistribution = new LinkedHashMap<>();
-        Map<Integer, Long> difficultyCount = questions.stream()
-                .collect(Collectors.groupingBy(
-                        q -> q.getDifficulty() != null ? q.getDifficulty() : 3,
-                        Collectors.counting()));
-        difficultyDistribution.put("levels", difficultyCount);
-
-        String title = (context.topic() != null ? context.topic() : context.courseName()) + "测评";
+        String topic = (context.topic() != null ? context.topic() : context.courseName()) + "测评";
 
         return sessionService.createSession(
                 context.dto().getLearningSpaceId(),
                 context.task().getUserId(),
-                title,
-                questionIds,
-                totalScore,
-                difficultyDistribution
+                topic,
+                context.task().getId(),
+                totalScore
         );
     }
 

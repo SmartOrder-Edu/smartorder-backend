@@ -11,7 +11,7 @@ import java.util.Map;
 /**
  * 测评题库视图对象 —— 对应 evaluation_question 表所有字段
  *
- * @author SmartOrder
+ * @author maq
  * @since 2026-07-07
  */
 @Data
@@ -28,9 +28,6 @@ public class EvaluationQuestionVO {
 
     /** 章节ID */
     private Long chapterId;
-
-    /** 知识点ID */
-    private Long knowledgePointId;
 
     /** 题型编码 */
     private String questionType;
@@ -51,22 +48,22 @@ public class EvaluationQuestionVO {
     private String stem;
 
     /** 选项JSON */
-    private List<Map<String, Object>> optionsJson;
+    private List<Map<String, Object>> options;
 
     /** 标准答案JSON */
-    private Map<String, Object> answerJson;
+    private Map<String, Object> correctAnswer;
 
-    /** 标准答案展示值（从 answerJson 按题型提取） */
+    /** 标准答案展示值（从 correctAnswer 按题型提取） */
     private Object standardAnswer;
 
     /** 题目解析 */
     private String explanation;
 
     /** 常见错误分析JSON */
-    private List<Map<String, Object>> commonMistakesJson;
+    private List<Map<String, Object>> commonMistakes;
 
     /** 标签JSON */
-    private List<String> tagsJson;
+    private List<String> tags;
 
     /** 知识点标签 */
     private List<String> knowledgePoints;
@@ -83,6 +80,9 @@ public class EvaluationQuestionVO {
     /** 状态：1启用，0禁用 */
     private Integer status;
 
+    /** 审核状态 */
+    private String reviewStatus;
+
     /** 创建时间 */
     private LocalDateTime createdAt;
 
@@ -98,24 +98,24 @@ public class EvaluationQuestionVO {
         vo.setQuestionCode(q.getQuestionCode());
         vo.setLearningSpaceId(q.getLearningSpaceId());
         vo.setChapterId(q.getChapterId());
-        vo.setKnowledgePointId(q.getKnowledgePointId());
         vo.setQuestionType(q.getQuestionType());
         vo.setQuestionTypeName(resolveQuestionTypeName(q.getQuestionType()));
         vo.setDifficulty(q.getDifficulty());
         vo.setScore(q.getScore());
         vo.setAbilityDimension(q.getAbilityDimension());
         vo.setStem(q.getStem());
-        vo.setOptionsJson(q.getOptionsJson());
-        vo.setAnswerJson(q.getAnswerJson());
-        vo.setStandardAnswer(resolveStandardAnswer(q.getAnswerJson()));
+        vo.setOptions(q.getOptions());
+        vo.setCorrectAnswer(q.getCorrectAnswer());
+        vo.setStandardAnswer(resolveStandardAnswer(q.getCorrectAnswer()));
         vo.setExplanation(q.getExplanation());
-        vo.setCommonMistakesJson(q.getCommonMistakesJson());
-        vo.setTagsJson(q.getTagsJson());
-        vo.setKnowledgePoints(q.getKnowledgePointsJson());
+        vo.setCommonMistakes(q.getCommonMistakes());
+        vo.setTags(q.getTags());
+        vo.setKnowledgePoints(q.getKnowledgePoints());
         vo.setAbilityTags(q.getAbilityTagsJson());
         vo.setAnalysis(q.getAnalysisJson());
         vo.setGenerationSource(q.getGenerationSource());
         vo.setStatus(q.getStatus());
+        vo.setReviewStatus(q.getReviewStatus());
         vo.setCreatedAt(q.getCreatedAt());
         vo.setUpdatedAt(q.getUpdatedAt());
         return vo;
