@@ -184,6 +184,16 @@ public class LessonTimelineBuilder {
             copyPayloadField(block, payload, "type", "boardBlockType");
             copyPayloadField(block, payload, "id", "boardBlockId");
             copyPayloadField(block, payload, "language", "language");
+            copyPayloadField(block, payload, "term", "term");
+            copyPayloadField(block, payload, "definition", "definition");
+            copyPayloadField(block, payload, "intuition", "intuition");
+            copyPayloadField(block, payload, "formal", "formal");
+            copyPayloadField(block, payload, "keyPoints", "keyPoints");
+            copyPayloadField(block, payload, "boundaries", "boundaries");
+            copyPayloadField(block, payload, "conditions", "conditions");
+            copyPayloadField(block, payload, "examples", "examples");
+            copyPayloadField(block, payload, "nonExamples", "nonExamples");
+            copyPayloadField(block, payload, "takeaway", "takeaway");
             copyPayloadField(block, payload, "focusLine", "focusLine");
             copyPayloadField(block, payload, "highlights", "highlights");
             copyPayloadField(block, payload, "structureType", "structureType");
@@ -201,14 +211,29 @@ public class LessonTimelineBuilder {
             copyPayloadField(block, payload, "directed", "directed");
             copyPayloadField(block, payload, "layout", "layout");
             copyPayloadField(block, payload, "animation", "animation");
+            copyPayloadField(block, payload, "traceKind", "traceKind");
             copyPayloadField(block, payload, "algorithm", "algorithm");
             copyPayloadField(block, payload, "processedRange", "processedRange");
             copyPayloadField(block, payload, "action", "action");
             copyPayloadField(block, payload, "explanation", "explanation");
+            copyPayloadField(block, payload, "operation", "operation");
+            copyPayloadField(block, payload, "steps", "steps");
+            copyPayloadField(block, payload, "currentStep", "currentStep");
+            copyPayloadField(block, payload, "invariant", "invariant");
+            copyPayloadField(block, payload, "statement", "statement");
+            copyPayloadField(block, payload, "whyItMatters", "whyItMatters");
+            copyPayloadField(block, payload, "checkpoints", "checkpoints");
+            copyPayloadField(block, payload, "commonMistake", "commonMistake");
             copyPayloadField(block, payload, "time", "time");
             copyPayloadField(block, payload, "space", "space");
+            copyPayloadField(block, payload, "caseHeaders", "caseHeaders");
             copyPayloadField(block, payload, "cases", "cases");
             copyPayloadField(block, payload, "reason", "reason");
+            copyPayloadField(block, payload, "left", "left");
+            copyPayloadField(block, payload, "right", "right");
+            copyPayloadField(block, payload, "criteria", "criteria");
+            copyPayloadField(block, payload, "summary", "summary");
+            copyPayloadField(block, payload, "emphasis", "emphasis");
         }
         return payload;
     }

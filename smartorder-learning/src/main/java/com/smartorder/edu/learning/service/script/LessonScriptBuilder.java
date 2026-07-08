@@ -551,12 +551,15 @@ public class LessonScriptBuilder {
                             "看额外存储",
                             "判断复杂度时先问：有没有遍历元素？有没有额外开数组、栈或队列？"
                     ),
-                    boardBlock(
-                            "markdown",
+                    orderedChecklistBlock(
                             "复盘清单",
-                            null,
-                            "1. 先画结构状态\n2. 再标出关键指针或下标\n3. 最后解释代码和复杂度",
-                            "success"
+                            "数据结构操作题复盘时使用",
+                            List.of(
+                                    checklistItem("先画结构状态", "把数组、链表、栈、队列或树的当前状态画出来。"),
+                                    checklistItem("再标关键指针或下标", "明确 front、rear、top、head、left、right 等变量含义。"),
+                                    checklistItem("最后解释代码和复杂度", "说明每一步改变了什么，以及是否遍历或额外开空间。")
+                            ),
+                            "先画状态，再解释变化。"
                     )
             );
             case "teacher_question", "student_try" -> List.of(boardBlock(
@@ -566,12 +569,15 @@ public class LessonScriptBuilder {
                     "如果执行一次入队，真正发生变化的是元素区、front，还是 rear？",
                     "info"
             ));
-            default -> List.of(boardBlock(
-                    "markdown",
+            default -> List.of(numberedPointsBlock(
                     "结构化理解",
-                    null,
-                    "学习 `" + safe(step.getTitle()) + "` 时，先画出结构状态，再分析每一步操作改变了什么。",
-                    "info"
+                    "学习 `" + safe(step.getTitle()) + "` 时，先抓住这几个固定动作。",
+                    List.of(
+                            pointItem("画出状态", "先把结构当前长什么样画出来。"),
+                            pointItem("标出变量", "把关键指针、下标或边界标清楚。"),
+                            pointItem("解释变化", "每执行一步都说清楚哪个元素、指针或区间发生了改变。")
+                    ),
+                    "数据结构题不要只背定义，要看状态如何变化。"
             ));
         };
     }
@@ -770,6 +776,11 @@ public class LessonScriptBuilder {
         Map<String, Object> block = boardBlock("complexity", title, null, reason, "info");
         block.put("time", time);
         block.put("space", space);
+        block.put("caseHeaders", new LinkedHashMap<>(Map.of(
+                "label", "场景",
+                "value", "复杂度",
+                "description", "说明"
+        )));
         block.put("cases", List.of(
                 new LinkedHashMap<>(Map.of(
                         "label", "核心判断",
@@ -779,6 +790,38 @@ public class LessonScriptBuilder {
         ));
         block.put("reason", reason);
         return block;
+    }
+
+    private Map<String, Object> orderedChecklistBlock(String title, String context,
+                                                      List<Map<String, Object>> items, String reminder) {
+        Map<String, Object> block = boardBlock("ordered_checklist", title, null, "", "success");
+        block.put("context", context);
+        block.put("items", items);
+        block.put("reminder", reminder);
+        return block;
+    }
+
+    private Map<String, Object> numberedPointsBlock(String title, String lead,
+                                                    List<Map<String, Object>> items, String conclusion) {
+        Map<String, Object> block = boardBlock("numbered_points", title, null, "", "info");
+        block.put("lead", lead);
+        block.put("items", items);
+        block.put("conclusion", conclusion);
+        return block;
+    }
+
+    private Map<String, Object> pointItem(String title, String content) {
+        return new LinkedHashMap<>(Map.of(
+                "title", title,
+                "content", content
+        ));
+    }
+
+    private Map<String, Object> checklistItem(String text, String detail) {
+        return new LinkedHashMap<>(Map.of(
+                "text", text,
+                "detail", detail
+        ));
     }
 
     private Map<String, Object> boardBlock(String type, String title, String language, String content, String tone) {
