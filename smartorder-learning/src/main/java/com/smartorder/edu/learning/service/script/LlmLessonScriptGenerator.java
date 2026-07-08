@@ -513,6 +513,8 @@ public class LlmLessonScriptGenerator {
             case "markdown", "code", "formula", "list", "quote", "diagram", "callout",
                     "concept_card", "concept-card", "definition_card", "definition-card",
                     "principle_card", "principle-card", "key_takeaway", "key-takeaway",
+                    "numbered_points", "numbered-points", "reasoning_steps", "reasoning-steps",
+                    "concept_breakdown", "concept-breakdown", "ordered_checklist", "ordered-checklist",
                     "structure", "trace", "operation_sequence", "operation-sequence", "invariant",
                     "complexity", "comparison", "vs_compare", "vs-compare" -> true;
             default -> false;
@@ -537,6 +539,17 @@ public class LlmLessonScriptGenerator {
                             || nonEmptyArray(block.path("keyPoints"))
                             || nonEmptyArray(block.path("examples"))
                             || !text(block, "takeaway", "").isBlank();
+            case "numbered_points", "numbered-points", "reasoning_steps", "reasoning-steps",
+                    "concept_breakdown", "concept-breakdown", "ordered_checklist", "ordered-checklist" ->
+                    !text(block, "lead", "").isBlank()
+                            || !text(block, "question", "").isBlank()
+                            || !text(block, "summary", "").isBlank()
+                            || !text(block, "conclusion", "").isBlank()
+                            || !text(block, "rule", "").isBlank()
+                            || !text(block, "reminder", "").isBlank()
+                            || nonEmptyArray(block.path("items"))
+                            || nonEmptyArray(block.path("points"))
+                            || nonEmptyArray(block.path("steps"));
             case "structure" -> !text(block, "structureType", "").isBlank()
                     || nonEmptyArray(block.path("items"))
                     || nonEmptyArray(block.path("nodes"));
@@ -854,6 +867,13 @@ public class LlmLessonScriptGenerator {
         copyBoardBlockField(blockNode, block, "examples");
         copyBoardBlockField(blockNode, block, "nonExamples");
         copyBoardBlockField(blockNode, block, "takeaway");
+        copyBoardBlockField(blockNode, block, "lead");
+        copyBoardBlockField(blockNode, block, "question");
+        copyBoardBlockField(blockNode, block, "points");
+        copyBoardBlockField(blockNode, block, "conclusion");
+        copyBoardBlockField(blockNode, block, "rule");
+        copyBoardBlockField(blockNode, block, "context");
+        copyBoardBlockField(blockNode, block, "reminder");
         copyBoardBlockField(blockNode, block, "highlights");
         copyBoardBlockField(blockNode, block, "focusLine");
         copyBoardBlockField(blockNode, block, "errorLines");
@@ -966,6 +986,23 @@ public class LlmLessonScriptGenerator {
                     + "- 形式化表达：" + block.getOrDefault("formal", "") + "\n"
                     + "- 关键点：" + block.getOrDefault("keyPoints", List.of()) + "\n"
                     + "- 结论：" + block.getOrDefault("takeaway", "");
+            case "numbered_points" -> title + "\n\n"
+                    + "- 导语：" + block.getOrDefault("lead", "") + "\n"
+                    + "- 要点：" + block.getOrDefault("items", List.of()) + "\n"
+                    + "- 结论：" + block.getOrDefault("conclusion", block.getOrDefault("summary", ""));
+            case "reasoning_steps" -> title + "\n\n"
+                    + "- 问题：" + block.getOrDefault("question", "") + "\n"
+                    + "- 推理步骤：" + block.getOrDefault("steps", List.of()) + "\n"
+                    + "- 结论：" + block.getOrDefault("conclusion", "");
+            case "concept_breakdown" -> title + "\n\n"
+                    + "- 概念：" + block.getOrDefault("term", "") + "\n"
+                    + "- 总述：" + block.getOrDefault("summary", "") + "\n"
+                    + "- 拆解：" + block.getOrDefault("points", block.getOrDefault("items", List.of())) + "\n"
+                    + "- 规则：" + block.getOrDefault("rule", block.getOrDefault("takeaway", ""));
+            case "ordered_checklist" -> title + "\n\n"
+                    + "- 使用场景：" + block.getOrDefault("context", "") + "\n"
+                    + "- 检查项：" + block.getOrDefault("items", List.of()) + "\n"
+                    + "- 提醒：" + block.getOrDefault("reminder", "");
             case "structure" -> title + "\n\n"
                     + "- 类型：" + block.getOrDefault("structureType", "数据结构") + "\n"
                     + "- 元素：" + block.getOrDefault("items", block.getOrDefault("nodes", List.of())) + "\n"
@@ -1018,6 +1055,7 @@ public class LlmLessonScriptGenerator {
         return switch (safe(type, "markdown").toLowerCase()) {
             case "code", "formula", "list", "quote", "diagram", "callout", "concept_card",
                     "definition_card", "principle_card", "key_takeaway",
+                    "numbered_points", "reasoning_steps", "concept_breakdown", "ordered_checklist",
                     "structure", "trace", "operation_sequence", "invariant",
                     "complexity", "comparison", "vs_compare" -> type.toLowerCase();
             case "concept-card" -> "concept_card";
@@ -1026,6 +1064,10 @@ public class LlmLessonScriptGenerator {
             case "key-takeaway" -> "key_takeaway";
             case "operation-sequence" -> "operation_sequence";
             case "vs-compare" -> "vs_compare";
+            case "numbered-points" -> "numbered_points";
+            case "reasoning-steps" -> "reasoning_steps";
+            case "concept-breakdown" -> "concept_breakdown";
+            case "ordered-checklist" -> "ordered_checklist";
             default -> "markdown";
         };
     }
@@ -1040,6 +1082,10 @@ public class LlmLessonScriptGenerator {
             case "definition_card" -> "定义说明";
             case "principle_card" -> "规则说明";
             case "key_takeaway" -> "关键结论";
+            case "numbered_points" -> "编号要点";
+            case "reasoning_steps" -> "推理步骤";
+            case "concept_breakdown" -> "概念拆解";
+            case "ordered_checklist" -> "检查清单";
             case "structure" -> "数据结构状态";
             case "trace" -> "算法过程";
             case "operation_sequence" -> "操作步骤";
@@ -1348,7 +1394,7 @@ public class LlmLessonScriptGenerator {
                       "canvasType": "concept|example|practice|assessment|derivation|summary",
                       "keyPoints": ["必须讲清楚的关键点"],
                       "commonMistakes": ["本步骤要预防或诊断的错误"],
-                      "expectedBoardTypes": ["markdown|formula|callout|structure|trace|complexity|vs_compare|code|diagram"],
+                      "expectedBoardTypes": ["markdown|formula|callout|numbered_points|reasoning_steps|concept_breakdown|ordered_checklist|structure|trace|complexity|vs_compare|code|diagram"],
                       "interactionNeed": "none|teacher_question|student_try|quiz|self_check",
                       "segmentPlan": [
                         {"type": "hook|recall|explain|board_write|worked_example|teacher_question|student_try|diagnosis|mistake_warning|summary|transition|quiz|formula", "intent": "这一段为什么这样讲", "boardHint": "建议使用的板书类型"}
@@ -1366,6 +1412,7 @@ public class LlmLessonScriptGenerator {
                 5. 错误驱动：每节课必须设计至少一个常见错误，并解释“为什么会错”和“如何避免”。
                 6. 主动提取：总结必须形成一句可复用判断规则，而不是复述知识点。
                 7. 迁移意识：练习或诊断要改变一个关键条件，检查学生是否能迁移。
+                8. 结构化表达：当概念、规则、步骤或检查项超过 3 个时，必须规划编号化板书，避免长段落堆叠。
 
                 知识类型对应策略：
                 - concept：必须包含定义、反例、边界条件、易混概念对比。
@@ -1486,20 +1533,25 @@ public class LlmLessonScriptGenerator {
                 10. 数据结构/算法讲解优先使用 structure、trace、complexity。
                 11. 内容必须围绕上下文知识点，不要使用无关默认示例。
                 12. boardBlocks[*].content 必须是纯内容：代码不要包 ```，Mermaid 图不要包 ```mermaid。
+                13. 概念、规则、步骤、检查清单能拆成 3 个以上同维度条目时，优先使用 numbered_points、reasoning_steps、concept_breakdown 或 ordered_checklist，不要只写长段 markdown。
 
                 教学内容质量要求：
-                13. teacherTalk、boardBlocks、interaction 必须分工明确：teacherTalk 负责引导和解释，boardBlocks 负责可视化和结构化呈现，interaction 负责检查理解，三者不能互相替代。
-                14. 每个 teachingSegment 只解决一个主要认知点；如果需要两个以上概念，必须拆成多个 segment。
-                15. 讲新概念时必须先建立直觉，再给形式化表达，最后用例子或反例确认。
-                16. worked_example 必须解释每一步“为什么这样做”，不能只列计算过程。
-                17. practice 或 student_try 必须相对例题改变一个关键条件，用于检查迁移能力。
-                18. diagnosis 或 mistake_warning 必须指出具体错因，不要只说“注意条件”。
-                19. summary 必须沉淀为一条可复用判断规则，例如“看到 X，先检查 Y，再选择 Z”。
-                20. quiz 的干扰项必须对应真实常见误区，解析要解释为什么错误选项不对。
+                14. teacherTalk、boardBlocks、interaction 必须分工明确：teacherTalk 负责引导和解释，boardBlocks 负责可视化和结构化呈现，interaction 负责检查理解，三者不能互相替代。
+                15. 每个 teachingSegment 只解决一个主要认知点；如果需要两个以上概念，必须拆成多个 segment。
+                16. 讲新概念时必须先建立直觉，再给形式化表达，最后用例子或反例确认。
+                17. worked_example 必须解释每一步“为什么这样做”，不能只列计算过程。
+                18. practice 或 student_try 必须相对例题改变一个关键条件，用于检查迁移能力。
+                19. diagnosis 或 mistake_warning 必须指出具体错因，不要只说“注意条件”。
+                20. summary 必须沉淀为一条可复用判断规则，例如“看到 X，先检查 Y，再选择 Z”。
+                21. quiz 的干扰项必须对应真实常见误区，解析要解释为什么错误选项不对。
 
                 boardBlocks 选择原则：
                 - 概念定义：definition_card，必须填写 term、definition，最好补充 intuition 或 formal。
                 - 概念理解：concept_card，适合同时呈现定义、直觉、关键点、边界、正反例。
+                - 概念拆解：concept_breakdown，适合把一个概念拆成 3-5 个同维度要点，必须填写 term、summary、points。
+                - 核心要点：numbered_points，适合呈现 3-6 个并列知识点，每项要短，字段用 items。
+                - 推理链路：reasoning_steps，适合解释“为什么”，每步填写 title/step、reason、result。
+                - 复盘检查：ordered_checklist，适合总结前检查或解题前检查，每项必须可操作。
                 - 规则/原则：principle_card，必须填写 keyPoints、conditions 或 takeaway。
                 - 可迁移结论：key_takeaway，用一句判断规则帮助学生复用。
                 - 普通补充说明：markdown + callout。
@@ -1555,11 +1607,15 @@ public class LlmLessonScriptGenerator {
                 - 必须有 title、subtitle、estimatedMinutes、canvasType、markdown、teachingSegments。
                 - canvasType 只能是 concept、example、practice、assessment、derivation、summary。
                 - teachingSegments 必须是非空数组，每段必须有 teacherTalk、boardBlocks、boardContent 或 markdown 之一。
-                - boardBlocks[*].type 只能是 markdown、code、formula、list、quote、diagram、callout、structure、trace、complexity、comparison、vs_compare。
+                - boardBlocks[*].type 只能是 markdown、code、formula、list、quote、diagram、callout、concept_card、definition_card、principle_card、key_takeaway、numbered_points、reasoning_steps、concept_breakdown、ordered_checklist、structure、trace、operation_sequence、invariant、complexity、comparison、vs_compare。
                 - code 必须有 language 和纯代码 content。
                 - structure 必须有 structureType。
                 - complexity 使用 time、space、caseHeaders、cases、reason。
                 - vs_compare 使用 left、right、criteria、summary、emphasis。
+                - numbered_points 使用 items，每项包含 title/name 和 content/detail。
+                - reasoning_steps 使用 question、steps、conclusion，每步包含 title/step、reason、result。
+                - concept_breakdown 使用 term、summary、points、rule。
+                - ordered_checklist 使用 context、items、reminder。
                 - quiz.answerType 只能是 text、single_select、multi_select、number。
                 - 选择题 correctAnswer 必须匹配 options.value。
                 - 内容必须围绕知识点，不要使用无关默认示例。
@@ -1620,6 +1676,7 @@ public class LlmLessonScriptGenerator {
                 7. 板书适配：boardBlocks 是否真正降低理解负担，是否和 teacherTalk 对应。
                 8. 语言自然度：teacherTalk 是否像老师面对学生讲课。
                 9. 迁移支持：是否沉淀出可复用判断规则，而不是只讲当前例子。
+                10. 结构清晰度：概念属性、推理步骤、复盘清单是否用编号结构呈现，编号项是否同维度且短小。
 
                 如果 overallScore < 0.78，或存在 high severity issue，needsRepair 必须为 true。
 
@@ -1664,6 +1721,7 @@ public class LlmLessonScriptGenerator {
                 - 例题必须解释每一步为什么合理。
                 - 互动题必须检查关键误区或关键判断。
                 - 总结必须沉淀成可复用的判断规则。
+                - 概念属性、推理步骤和复盘检查项超过 3 个时，必须使用编号化 boardBlocks，而不是长段落。
                 - 不允许使用与上下文无关的默认例子。
 
                 当前 step 序号：%s
@@ -1714,7 +1772,11 @@ public class LlmLessonScriptGenerator {
                           "teacherTalk": "老师真实会说出口的话，像面对学生讲课，不要写成资料摘要",
                           "boardContent": "兼容字段：黑板/画布上逐步出现的 Markdown 内容",
                           "boardBlocks": [
-                            {"type": "markdown|code|formula|list|quote|diagram|callout|structure|trace|complexity|comparison|vs_compare", "title": "板书块标题", "content": "普通文本或代码纯内容", "caption": "简短说明", "tone": "info|warning|success|error"},
+                            {"type": "markdown|code|formula|list|quote|diagram|callout|concept_card|definition_card|principle_card|key_takeaway|numbered_points|reasoning_steps|concept_breakdown|ordered_checklist|structure|trace|operation_sequence|invariant|complexity|comparison|vs_compare", "title": "板书块标题", "content": "普通文本或代码纯内容", "caption": "简短说明", "tone": "info|warning|success|error"},
+                            {"type": "numbered_points", "title": "核心要点", "lead": "先把这个知识点拆成几个同维度判断", "items": [{"title": "要点一", "content": "短解释", "example": "必要时给最小例子"}], "conclusion": "一句可复用结论"},
+                            {"type": "reasoning_steps", "title": "为什么这样做", "question": "为什么这个条件成立后可以这样判断？", "steps": [{"step": "先确认条件", "reason": "没有条件就不能套用规则", "result": "确定方法适用"}], "conclusion": "推理结束后得到的判断规则"},
+                            {"type": "concept_breakdown", "title": "概念拆解", "term": "概念名", "summary": "一句话总述", "points": [{"name": "组成部分", "detail": "解释这个部分的作用"}], "rule": "检查这个概念时的判断规则"},
+                            {"type": "ordered_checklist", "title": "解题前检查", "context": "什么时候使用这张清单", "items": [{"text": "检查项", "detail": "为什么要检查"}], "reminder": "最后提醒"},
                             {"type": "code", "title": "代码标题", "language": "c|cpp|java|python|javascript|typescript|go|rust|sql", "content": "纯代码，不要包含 Markdown 代码围栏", "highlights": [2, 3], "focusLine": 3},
                             {"type": "structure", "structureType": "array|stack|queue|linked_list|tree|heap|graph", "title": "结构状态标题", "items": [1, 2, 3], "nodes": [{"id": "A", "label": "A", "depth": 0, "order": 0}], "edges": [{"from": "A", "to": "B", "label": "可选边权"}], "pointers": {"front": 0, "rear": 3, "top": 2}, "activeIndices": [0], "activeIds": ["A"], "visitedIds": ["A"], "frontierIds": ["B"], "pathIds": ["A", "B"], "compareIds": ["1", "4"], "directed": false, "animation": {"action": "enqueue|dequeue|push|pop|compare|swap", "durationMs": 1800, "movingItem": 4, "from": "rear", "to": 3, "previous": {"items": [1, 2, 3], "pointers": {"front": 0, "rear": 3}}, "next": {"items": [1, 2, 3, 4], "pointers": {"front": 0, "rear": 4}}, "phases": [{"name": "before", "startRatio": 0, "items": [1, 2, 3], "pointers": {"front": 0, "rear": 3}, "narrationHint": "入队前"}, {"name": "moving", "startRatio": 0.34, "items": [1, 2, 3], "pointers": {"front": 0, "rear": 3}, "movingItem": 4, "targetIndex": 3, "highlightPointers": ["rear"], "narrationHint": "写入 rear 位置"}, {"name": "after", "startRatio": 0.72, "items": [1, 2, 3, 4], "pointers": {"front": 0, "rear": 4}, "narrationHint": "rear 后移"}]}},
                             {"type": "trace", "algorithm": "bubble_sort|binary_search|dfs|bfs|...", "title": "过程标题", "items": [5, 2, 8], "activeIndices": [0, 1], "processedRange": [2, 2], "action": "compare|swap|insert|delete|visit|mark", "explanation": "当前步骤解释"},
@@ -1748,16 +1810,17 @@ public class LlmLessonScriptGenerator {
                 9. 至少包含 1 个 mistake_warning 或 diagnosis，像老师一样指出常见误区并纠正。
                 10. teacherTalk 用自然口语，boardBlocks/boardContent 用精炼板书；不要把长篇资料一口气塞进同一段。
                 11. 每个 teachingSegment 优先输出 boardBlocks。普通板书用 type=markdown；算法/程序代码必须用 type=code，并填写 language；公式用 type=formula；常见误区或提示用 type=callout。
-                12. 如果知识点属于数据结构或算法，必须优先使用结构化板书：结构状态用 type=structure，排序/查找/遍历过程用 type=trace，复杂度结论用 type=complexity。
-                13. structure 当前线性结构优先使用 structureType=array|stack|queue|linked_list，items 表示元素，pointers 表示 front/rear/top/head 等指针，activeIndices 表示当前高亮下标。
-                14. structureType=tree 时使用 nodes、edges、activeIds、visitedIds、pathIds；nodes 可带 id、label、depth、order。
-                15. structureType=heap 时使用 items、activeIndices、compareIds；items 是堆的数组存储顺序。
-                16. structureType=graph 时使用 nodes、edges、activeIds、visitedIds、frontierIds、pathIds、directed；edges 使用 from/to/label。
-                17. 讲解队列入队/出队时，structureType=queue 必须优先提供 animation.phases，至少包含 before、moving、after 三个阶段；前端会按阶段渲染旧状态、动作中状态和最终状态，不能一开始就只给最终状态。
-                18. trace 当前优先用 items、activeIndices、processedRange、action、explanation 表示算法执行过程。
-                19. complexity 使用 time、space、caseHeaders、cases、reason，不要把复杂度结论只写在普通段落里；caseHeaders 可自定义 cases 表头，不需要自定义时可省略。
-                20. 对比两个概念、方法、公式、解法、易混点时优先使用 type=vs_compare 或 type=comparison；必须提供 left、right、criteria、summary，criteria.winner 可为 left、right、tie。
-                21. boardBlocks[*].content 必须是纯内容：代码不要包 ```，Mermaid 图不要包 ```mermaid；前端会根据 type 和 language 负责渲染。
+                12. 当讲解包含 3 个以上并列要点、推理步骤、概念组成或复盘检查项时，必须优先使用 numbered_points、reasoning_steps、concept_breakdown 或 ordered_checklist，让学生看到清晰的 1、2、3、4 结构。
+                13. 如果知识点属于数据结构或算法，必须优先使用结构化板书：结构状态用 type=structure，排序/查找/遍历过程用 type=trace，复杂度结论用 type=complexity。
+                14. structure 当前线性结构优先使用 structureType=array|stack|queue|linked_list，items 表示元素，pointers 表示 front/rear/top/head 等指针，activeIndices 表示当前高亮下标。
+                15. structureType=tree 时使用 nodes、edges、activeIds、visitedIds、pathIds；nodes 可带 id、label、depth、order。
+                16. structureType=heap 时使用 items、activeIndices、compareIds；items 是堆的数组存储顺序。
+                17. structureType=graph 时使用 nodes、edges、activeIds、visitedIds、frontierIds、pathIds、directed；edges 使用 from/to/label。
+                18. 讲解队列入队/出队时，structureType=queue 必须优先提供 animation.phases，至少包含 before、moving、after 三个阶段；前端会按阶段渲染旧状态、动作中状态和最终状态，不能一开始就只给最终状态。
+                19. trace 当前优先用 items、activeIndices、processedRange、action、explanation 表示算法执行过程。
+                20. complexity 使用 time、space、caseHeaders、cases、reason，不要把复杂度结论只写在普通段落里；caseHeaders 可自定义 cases 表头，不需要自定义时可省略。
+                21. 对比两个概念、方法、公式、解法、易混点时优先使用 type=vs_compare 或 type=comparison；必须提供 left、right、criteria、summary，criteria.winner 可为 left、right、tie。
+                22. boardBlocks[*].content 必须是纯内容：代码不要包 ```，Mermaid 图不要包 ```mermaid；前端会根据 type 和 language 负责渲染。
 
                 学习上下文：
                 - 学习空间：%s
@@ -1800,8 +1863,9 @@ public class LlmLessonScriptGenerator {
                 - canvasType 只能是 concept、example、practice、assessment、derivation、summary。
                 - teachingSegments[*].type 只能是 hook、recall、explain、analogy、board_write、diagram、worked_example、teacher_question、student_try、diagnosis、mistake_warning、summary、transition、quiz、formula。
                 - 每个 teachingSegment 必须有 teacherTalk、boardBlocks、boardContent 或 markdown 之一。
-                - 每个 teachingSegment 应优先提供 boardBlocks；boardBlocks[*].type 只能是 markdown、code、formula、list、quote、diagram、callout、structure、trace、complexity、comparison、vs_compare。
+                - 每个 teachingSegment 应优先提供 boardBlocks；boardBlocks[*].type 只能是 markdown、code、formula、list、quote、diagram、callout、concept_card、definition_card、principle_card、key_takeaway、numbered_points、reasoning_steps、concept_breakdown、ordered_checklist、structure、trace、operation_sequence、invariant、complexity、comparison、vs_compare。
                 - 代码必须放入 {"type":"code","language":"c|java|python|javascript|...","content":"纯代码"}，content 不要包含 Markdown 代码围栏。
+                - 编号化讲解必须优先使用 {"type":"numbered_points","items":[{"title":"要点","content":"解释"}],"conclusion":"结论"}、{"type":"reasoning_steps","question":"为什么","steps":[{"step":"步骤","reason":"原因","result":"结果"}],"conclusion":"结论"}、{"type":"concept_breakdown","term":"概念","summary":"总述","points":[{"name":"组成","detail":"解释"}],"rule":"判断规则"} 或 {"type":"ordered_checklist","items":[{"text":"检查项","detail":"说明"}],"reminder":"提醒"}。
                 - 数据结构状态必须优先使用 {"type":"structure","structureType":"array|stack|queue|linked_list|tree|heap|graph","items":[...],"nodes":[...],"edges":[...],"pointers":{...},"activeIndices":[...],"activeIds":[...],"visitedIds":[...],"frontierIds":[...],"pathIds":[...],"compareIds":[...],"directed":false,"animation":{...}}。
                 - 队列入队/出队讲解应保留 animation.phases，至少包含 before、moving、after；before 使用操作前 items/pointers，moving 使用旧 items/pointers 加 movingItem/targetIndex 或 sourceIndex，after 使用操作后 items/pointers。
                 - 算法推演必须优先使用 {"type":"trace","algorithm":"算法名","items":[...],"activeIndices":[...],"processedRange":[start,end],"action":"compare|swap|insert|delete|visit|mark","explanation":"说明"}。
@@ -1867,11 +1931,15 @@ public class LlmLessonScriptGenerator {
 
     private String boardBlockExamplesForPrompt() {
         return """
-                {"type": "markdown|code|formula|list|quote|diagram|callout|concept_card|definition_card|principle_card|key_takeaway|structure|trace|operation_sequence|invariant|complexity|comparison|vs_compare", "title": "板书块标题", "content": "普通文本或代码纯内容", "caption": "简短说明", "tone": "info|warning|success|error"},
+                {"type": "markdown|code|formula|list|quote|diagram|callout|concept_card|definition_card|principle_card|key_takeaway|numbered_points|reasoning_steps|concept_breakdown|ordered_checklist|structure|trace|operation_sequence|invariant|complexity|comparison|vs_compare", "title": "板书块标题", "content": "普通文本或代码纯内容", "caption": "简短说明", "tone": "info|warning|success|error"},
                 {"type": "definition_card", "title": "定义说明", "term": "队列", "definition": "队列是一种只允许在一端插入、另一端删除的线性结构", "intuition": "像排队买票，先来的人先被服务", "formal": "enqueue 在 rear 端插入，dequeue 在 front 端删除", "boundaries": ["只能从 front 删除", "只能从 rear 插入"], "takeaway": "判断队列题时，先找 front 和 rear 的含义"},
                 {"type": "concept_card", "title": "概念拆解", "term": "二叉搜索树", "definition": "每个节点的左子树值都小于节点值，右子树值都大于节点值", "intuition": "每个节点都把搜索范围分成左右两半", "keyPoints": ["左小右大必须对每个节点成立", "中序遍历会得到有序序列"], "examples": [{"label": "正例", "value": "根 8，左子树 3/6，右子树 10/14", "explanation": "每个局部都满足左小右大"}], "nonExamples": [{"label": "反例", "value": "某个右子树节点小于根节点", "explanation": "破坏全局搜索范围"}], "takeaway": "检查 BST 不能只看父子，还要看整棵子树的取值范围"},
                 {"type": "principle_card", "title": "规则说明", "term": "哈希冲突处理", "definition": "不同 key 映射到同一桶时必须用额外策略保存所有元素", "conditions": ["哈希函数可能产生相同下标", "桶内需要能区分原始 key"], "keyPoints": ["链地址法把冲突元素挂到同一 bucket", "开放寻址法继续探测下一个可用位置"], "takeaway": "哈希表不是避免冲突，而是设计冲突后还能正确查找"},
                 {"type": "key_takeaway", "title": "关键结论", "takeaway": "看到线性结构操作题，先明确操作端点，再判断元素顺序是否被改变", "keyPoints": ["栈：同一端进出", "队列：一端进一端出", "双端队列：两端都可操作"]},
+                {"type": "numbered_points", "title": "队列的 4 个关键点", "lead": "理解队列时先抓住同一组判断维度。", "items": [{"title": "一端插入", "content": "新元素从 rear 端进入。"}, {"title": "一端删除", "content": "旧元素从 front 端离开。"}, {"title": "先进先出", "content": "先进入的元素先被处理。"}, {"title": "指针含义", "content": "front/rear 的定义决定代码是否正确。"}], "conclusion": "判断队列题时，先标 front 和 rear，再判断元素出入顺序。"},
+                {"type": "reasoning_steps", "title": "为什么循环队列要取模", "question": "rear 到达数组末尾后为什么还能继续入队？", "steps": [{"step": "数组空间固定", "reason": "顺序队列不能无限向右增长", "result": "需要复用前面空出来的位置"}, {"step": "rear 前进后取模", "reason": "取模能把下标映射回 [0, capacity) 范围", "result": "形成首尾相接的逻辑空间"}], "conclusion": "循环队列的关键不是数组变圆，而是下标用取模回绕。"},
+                {"type": "concept_breakdown", "title": "栈的概念拆解", "term": "栈", "summary": "栈是一种只允许在同一端插入和删除的线性结构。", "points": [{"name": "操作端", "detail": "所有 push/pop 都发生在 top。"}, {"name": "顺序特征", "detail": "最后进入的元素最先离开。"}, {"name": "典型用途", "detail": "函数调用、括号匹配、DFS 回溯。"}], "rule": "只要题目强调最近加入的先处理，就先考虑栈。"},
+                {"type": "ordered_checklist", "title": "写链表删除前先检查", "context": "处理链表删除节点时使用", "items": [{"text": "是否保存了前驱或后继？", "detail": "否则断链后会丢失剩余节点。"}, {"text": "是否处理头节点？", "detail": "删除头节点需要更新 head。"}, {"text": "是否处理空链表？", "detail": "空链表不能访问 next。"}], "reminder": "链表题先保指针，再改连接。"},
                 {"type": "code", "title": "代码标题", "language": "c|cpp|java|python|javascript|typescript|go|rust|sql", "content": "纯代码，不要包含 Markdown 代码围栏", "highlights": [2, 3], "focusLine": 3},
                 {"type": "structure", "structureType": "array|stack|queue|linked_list|tree|heap|graph|hash_table|matrix", "title": "结构状态标题", "items": [1, 2, 3], "nodes": [{"id": "A", "label": "A", "depth": 0, "order": 0}], "edges": [{"from": "A", "to": "B", "label": "可选边权"}], "pointers": {"front": 0, "rear": 3, "top": 2}, "activeIndices": [0], "activeIds": ["A"], "visitedIds": ["A"], "frontierIds": ["B"], "pathIds": ["A", "B"], "compareIds": ["1", "4"], "directed": false, "animation": {"action": "enqueue|dequeue|push|pop|compare|swap", "durationMs": 1800}},
                 {"type": "trace", "traceKind": "array_step|pointer_walk|sort_step|tree_traversal|graph_traversal|heap_adjust", "algorithm": "binary_search|two_pointers|bubble_sort|dfs|bfs|heapify|...", "title": "过程标题", "items": [5, 2, 8], "pointers": {"left": 0, "mid": 1, "right": 2}, "activeIndices": [0, 1], "processedRange": [2, 2], "action": "compare|swap|insert|delete|visit|mark", "explanation": "当前步骤解释"},
