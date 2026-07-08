@@ -11,6 +11,7 @@ import com.smartorder.edu.learning.domain.vo.StudySessionVO;
 import com.smartorder.edu.learning.domain.vo.StudyTimelineVO;
 import dev.langchain4j.model.chat.ChatModel;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
@@ -28,9 +29,16 @@ public class LlmLessonScriptGenerator {
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final Pattern INLINE_OPTION_PATTERN = Pattern.compile(
             "(?s)(^|\\s)([A-Ha-h])\\s*[\\.、．)]\\s*(.+?)(?=(\\s+[A-Ha-h]\\s*[\\.、．)]\\s*)|$)");
+    private static final double DEFAULT_QUALITY_REVIEW_THRESHOLD = 0.78;
 
     private final ChatModel chatModel;
     private final LessonTimelineBuilder timelineBuilder;
+
+    @Value("${lesson.script.quality-review.enabled:true}")
+    private boolean qualityReviewEnabled;
+
+    @Value("${lesson.script.quality-review.threshold:0.78}")
+    private double qualityReviewThreshold;
 
     public LlmLessonScriptGenerator(@Qualifier("lessonScriptChatModel") ChatModel chatModel,
                                     LessonTimelineBuilder timelineBuilder) {
@@ -64,7 +72,7 @@ public class LlmLessonScriptGenerator {
             JsonNode planStep = blueprintSteps.path(i);
             JsonNode step = parseAndValidateStepOrRepair(context, blueprint, planStep, i + 1,
                     chatModel.chat(buildStepPrompt(context, blueprint, planStep, i + 1, stepCount)));
-            steps.add(step);
+            steps.add(reviewAndRepairStepQuality(context, blueprint, planStep, i + 1, step));
         }
         root.set("mastery", blueprint.has("mastery") ? blueprint.path("mastery") : defaultMasteryNode());
 
@@ -187,6 +195,44 @@ public class LlmLessonScriptGenerator {
         return repairedStep;
     }
 
+    private JsonNode reviewAndRepairStepQuality(LessonScriptContext context,
+                                                JsonNode blueprint,
+                                                JsonNode planStep,
+                                                int stepIndex,
+                                                JsonNode step) {
+        if (!qualityReviewEnabled) {
+            return step;
+        }
+        try {
+            JsonNode review = parseJson(chatModel.chat(buildStepQualityReviewPrompt(context, blueprint, planStep, stepIndex, step)));
+            double score = review.path("overallScore").isNumber() ? review.path("overallScore").asDouble() : 1.0;
+            boolean needsRepair = review.path("needsRepair").asBoolean(false);
+            if (!needsRepair && score >= normalizedQualityReviewThreshold()) {
+                return step;
+            }
+
+            String repaired = chatModel.chat(buildStepQualityRepairPrompt(context, blueprint, planStep, stepIndex, step, review));
+            JsonNode repairedStep = unwrapStepNode(parseJson(repaired));
+            List<String> errors = validateStepNode(repairedStep, stepIndex);
+            if (errors.isEmpty()) {
+                return repairedStep;
+            }
+            log.warn("[LessonScript] quality repair discarded because contract validation failed: taskId={}, stepIndex={}, errors={}",
+                    context.getTaskId(), stepIndex, String.join("; ", errors));
+        } catch (Exception e) {
+            log.warn("[LessonScript] step quality review skipped: taskId={}, stepIndex={}, reason={}",
+                    context.getTaskId(), stepIndex, e.getMessage());
+        }
+        return step;
+    }
+
+    private double normalizedQualityReviewThreshold() {
+        if (qualityReviewThreshold <= 0 || qualityReviewThreshold > 1) {
+            return DEFAULT_QUALITY_REVIEW_THRESHOLD;
+        }
+        return qualityReviewThreshold;
+    }
+
     private JsonNode unwrapStepNode(JsonNode node) {
         if (node != null && node.has("step") && node.path("step").isObject()) {
             return node.path("step");
@@ -200,6 +246,15 @@ public class LlmLessonScriptGenerator {
         if (steps == null || !steps.isArray()) {
             errors.add("blueprint.steps must be an array");
             return errors;
+        }
+        if (!isAllowedKnowledgeType(text(blueprint, "knowledgeType", ""))) {
+            errors.add("blueprint.knowledgeType is invalid or blank");
+        }
+        if (text(blueprint, "teachingStrategy", "").isBlank()) {
+            errors.add("blueprint.teachingStrategy is blank");
+        }
+        if (text(blueprint, "strategyRationale", "").isBlank()) {
+            errors.add("blueprint.strategyRationale is blank");
         }
         if (steps.size() < 4 || steps.size() > 6) {
             errors.add("blueprint.steps size must be 4 to 6, actual=" + steps.size());
@@ -218,6 +273,9 @@ public class LlmLessonScriptGenerator {
             }
             if (text(step, "goal", "").isBlank()) {
                 errors.add("blueprint step " + (i + 1) + " goal is blank");
+            }
+            if (text(step, "designRationale", "").isBlank()) {
+                errors.add("blueprint step " + (i + 1) + " designRationale is blank");
             }
             if (!step.path("segmentPlan").isArray() || step.path("segmentPlan").isEmpty()) {
                 errors.add("blueprint step " + (i + 1) + " segmentPlan must be a non-empty array");
@@ -242,6 +300,13 @@ public class LlmLessonScriptGenerator {
             errors.add("blueprint must include a summary step");
         }
         return errors;
+    }
+
+    private boolean isAllowedKnowledgeType(String value) {
+        return switch (safe(value, "").toLowerCase()) {
+            case "concept", "procedure", "algorithm", "formula", "comparison", "problem_solving", "misconception" -> true;
+            default -> false;
+        };
     }
 
     private List<String> validateStepNode(JsonNode step, int stepIndex) {
@@ -1197,7 +1262,9 @@ public class LlmLessonScriptGenerator {
 
                 输出结构：
                 {
+                  "knowledgeType": "concept|procedure|algorithm|formula|comparison|problem_solving|misconception",
                   "teachingStrategy": "本节课采用的整体教学策略",
+                  "strategyRationale": "为什么这种教学策略适合当前知识点和学生状态",
                   "coreMisconceptions": ["学生最可能出现的误区"],
                   "steps": [
                     {
@@ -1206,6 +1273,7 @@ public class LlmLessonScriptGenerator {
                       "title": "步骤标题",
                       "subtitle": "一句话说明",
                       "goal": "本步骤明确教学目标",
+                      "designRationale": "为什么这一步放在这里，它解决学生的哪个认知障碍",
                       "estimatedMinutes": 3-20,
                       "canvasType": "concept|example|practice|assessment|derivation|summary",
                       "keyPoints": ["必须讲清楚的关键点"],
@@ -1220,12 +1288,42 @@ public class LlmLessonScriptGenerator {
                   "mastery": {"level": "unknown|weak|progressing|mastered", "levelLabel": "中文标签", "hint": "学习判断", "nextSuggestion": "下一步建议"}
                 }
 
+                教学设计必须遵循以下方法论：
+                1. 目标倒推：每个 step 必须服务于最终学习目标，不允许只罗列知识点。
+                2. 认知负荷控制：每一步只引入 1-2 个新概念；复杂内容拆成“直觉解释 → 形式化表达 → 例子验证”。
+                3. 前置诊断：依赖前置概念时，必须安排 recall 或 teacher_question 检查学生是否具备前置理解。
+                4. 具体到抽象：新概念优先从具体例子、反例或可观察现象进入，再总结定义、公式或规则。
+                5. 错误驱动：每节课必须设计至少一个常见错误，并解释“为什么会错”和“如何避免”。
+                6. 主动提取：总结必须形成一句可复用判断规则，而不是复述知识点。
+                7. 迁移意识：练习或诊断要改变一个关键条件，检查学生是否能迁移。
+
+                知识类型对应策略：
+                - concept：必须包含定义、反例、边界条件、易混概念对比。
+                - procedure：必须包含步骤拆解、每步目的、常见漏步。
+                - algorithm：必须包含状态变化、执行跟踪、复杂度分析、边界情况。
+                - formula：必须包含公式含义、适用条件、推导直觉、错误套用场景。
+                - comparison：必须使用 vs_compare 比较适用条件、核心差异、选择规则。
+                - problem_solving：必须包含审题、方法选择、关键判断、变式题。
+                - misconception：必须先暴露错误直觉，再用反例或诊断纠正。
+
+                教学动作库：
+                - hook：制造问题感，只提出一个学生能感知的问题。
+                - recall：检查前置知识，不讲新内容。
+                - explain：解释核心概念，只解决一个认知点。
+                - board_write：把口头解释压缩成可视化板书。
+                - worked_example：老师带做，显式说明每一步为什么做。
+                - student_try：让学生预测下一步或做一个关键判断。
+                - diagnosis：根据可能错误解释错因。
+                - mistake_warning：提前指出高频误区。
+                - summary：沉淀为可复用规则。
+
                 规则：
                 1. steps 数量 4 到 6 个，必须形成清晰递进：导入/回忆 → 概念 → 例题或练习 → 诊断 → 总结。
                 2. 必须至少包含一个 concept 或 derivation 步骤、一个 example 或 practice 步骤、一个 assessment 步骤、一个 summary 步骤。
                 3. 至少一个步骤要覆盖常见误区，至少三个步骤要安排互动或停顿。
                 4. 只做教学设计，不要生成 boardBlocks 的具体字段内容。
                 5. 内容必须围绕上下文知识点，不要使用无关默认示例。
+                6. 每个 step 的 designRationale 必须说明该 step 解决的具体认知障碍。
 
                 学习上下文：
                 %s
@@ -1239,11 +1337,14 @@ public class LlmLessonScriptGenerator {
                 只输出一个 JSON 对象，不要 Markdown 代码块，不要解释，不要额外文本。
 
                 必须满足：
+                - 必须有 knowledgeType，且只能是 concept、procedure、algorithm、formula、comparison、problem_solving、misconception。
+                - 必须有 teachingStrategy 和 strategyRationale。
                 - steps 数量 4 到 6。
-                - 每个 step 必须有 phase、nodeType、title、subtitle、goal、estimatedMinutes、canvasType、keyPoints、segmentPlan。
+                - 每个 step 必须有 phase、nodeType、title、subtitle、goal、designRationale、estimatedMinutes、canvasType、keyPoints、segmentPlan。
                 - canvasType 只能是 concept、example、practice、assessment、derivation、summary。
                 - 必须包含 concept 或 derivation、example 或 practice、assessment、summary。
                 - 每个 segmentPlan 至少 2 项，type 必须是课堂教学段类型。
+                - 每个 step 的 designRationale 必须说明该 step 解决的具体认知障碍。
                 - 内容必须围绕知识点，不要使用无关默认示例。
 
                 学习上下文：
@@ -1316,6 +1417,36 @@ public class LlmLessonScriptGenerator {
                 11. 内容必须围绕上下文知识点，不要使用无关默认示例。
                 12. boardBlocks[*].content 必须是纯内容：代码不要包 ```，Mermaid 图不要包 ```mermaid。
 
+                教学内容质量要求：
+                13. teacherTalk、boardBlocks、interaction 必须分工明确：teacherTalk 负责引导和解释，boardBlocks 负责可视化和结构化呈现，interaction 负责检查理解，三者不能互相替代。
+                14. 每个 teachingSegment 只解决一个主要认知点；如果需要两个以上概念，必须拆成多个 segment。
+                15. 讲新概念时必须先建立直觉，再给形式化表达，最后用例子或反例确认。
+                16. worked_example 必须解释每一步“为什么这样做”，不能只列计算过程。
+                17. practice 或 student_try 必须相对例题改变一个关键条件，用于检查迁移能力。
+                18. diagnosis 或 mistake_warning 必须指出具体错因，不要只说“注意条件”。
+                19. summary 必须沉淀为一条可复用判断规则，例如“看到 X，先检查 Y，再选择 Z”。
+                20. quiz 的干扰项必须对应真实常见误区，解析要解释为什么错误选项不对。
+
+                boardBlocks 选择原则：
+                - 定义/规则：markdown + callout。
+                - 公式含义和推导：formula。
+                - 代码或伪代码：code。
+                - 执行过程：trace。
+                - 数据结构状态：structure。
+                - 复杂度：complexity。
+                - 方法区别、易混概念、适用条件对比：vs_compare。
+                - 流程判断：diagram。
+                不要为了使用结构化组件而使用；只有当它能降低理解负担时才使用。
+
+                输出前请内部自检，但不要输出自检过程：
+                - 是否每个 segment 都服务于当前 step 目标？
+                - 是否先建立直觉再形式化？
+                - 是否有具体例子、反例或状态变化？
+                - 是否至少暴露或预防一个真实误区？
+                - 互动是否检查关键理解？
+                - boardBlocks 是否与 teacherTalk 对应？
+                - 总结是否形成可复用规则？
+
                 学习上下文：
                 %s
                 """.formatted(
@@ -1372,6 +1503,115 @@ public class LlmLessonScriptGenerator {
                 contextSummary(context),
                 "- " + String.join("\n- ", errors),
                 invalidJson == null ? "" : invalidJson
+        );
+    }
+
+    private String buildStepQualityReviewPrompt(LessonScriptContext context, JsonNode blueprint, JsonNode planStep,
+                                                int stepIndex, JsonNode step) {
+        return """
+                你是严格的教学质量评审专家。请评审当前学习教程 step 是否真的能帮助学生学懂知识。
+
+                只输出一个 JSON 对象，不要 Markdown 代码块，不要解释，不要额外文本。
+
+                输出结构：
+                {
+                  "overallScore": 0.0,
+                  "needsRepair": true,
+                  "scores": {
+                    "topicAlignment": 0.0,
+                    "teachingProgression": 0.0,
+                    "cognitiveLoad": 0.0,
+                    "exampleQuality": 0.0,
+                    "interactionQuality": 0.0,
+                    "misconceptionCoverage": 0.0,
+                    "boardBlockFit": 0.0,
+                    "languageNaturalness": 0.0,
+                    "transferSupport": 0.0
+                  },
+                  "issues": [
+                    {"scope": "teacherTalk|boardBlocks|quiz|summary|segment:1", "severity": "low|medium|high", "reason": "具体问题", "suggestedRepair": "具体修复建议"}
+                  ],
+                  "strengths": ["已经做得好的地方"]
+                }
+
+                评审标准：
+                1. 主题贴合：是否紧扣当前知识点，是否有无关默认例子。
+                2. 教学递进：是否从直觉、前置、核心概念、例子、练习或诊断逐步推进。
+                3. 认知负荷：是否每段只解决 1 个主要认知点，是否避免一次塞太多术语。
+                4. 例题质量：是否使用最小可说明例，是否解释“为什么这样做”。
+                5. 互动质量：提问是否检查关键理解，而不是寒暄或机械确认。
+                6. 误区覆盖：是否指出学生最容易错在哪里，以及为什么错。
+                7. 板书适配：boardBlocks 是否真正降低理解负担，是否和 teacherTalk 对应。
+                8. 语言自然度：teacherTalk 是否像老师面对学生讲课。
+                9. 迁移支持：是否沉淀出可复用判断规则，而不是只讲当前例子。
+
+                如果 overallScore < 0.78，或存在 high severity issue，needsRepair 必须为 true。
+
+                学习上下文：
+                %s
+
+                当前 step 序号：%s
+                当前 step 计划：
+                %s
+
+                整课蓝图摘要：
+                %s
+
+                待评审 step：
+                %s
+                """.formatted(
+                contextSummary(context),
+                stepIndex,
+                compactJson(planStep),
+                compactBlueprintSummary(blueprint),
+                compactJson(step)
+        );
+    }
+
+    private String buildStepQualityRepairPrompt(LessonScriptContext context, JsonNode blueprint, JsonNode planStep,
+                                                int stepIndex, JsonNode step, JsonNode review) {
+        return """
+                你是学习教程 step 教学质量修复器。请只修复当前一个 step 的教学质量，不要输出整课 steps。
+
+                只输出一个 JSON 对象，不要 Markdown 代码块，不要解释，不要额外文本。
+
+                修复目标：
+                1. 让学生真的学懂当前知识点，而不是只看到资料摘要。
+                2. 保持当前 step 的 phase、nodeType、canvasType 和主要教学目标不变。
+                3. 尽量保持已有 boardBlocks 类型不变；除非原类型明显不适合教学目标。
+                4. 优先重写 teacherTalk、boardContent、quiz.explanation、summary 类内容。
+                5. 修复后仍必须满足前端协议和 JSON 合同。
+
+                必须遵循的教学原则：
+                - 先建立直觉，再形式化表达。
+                - 每个 segment 只解决 1 个主要认知点。
+                - 例题必须解释每一步为什么合理。
+                - 互动题必须检查关键误区或关键判断。
+                - 总结必须沉淀成可复用的判断规则。
+                - 不允许使用与上下文无关的默认例子。
+
+                当前 step 序号：%s
+                学习上下文：
+                %s
+
+                当前 step 计划：
+                %s
+
+                整课蓝图摘要：
+                %s
+
+                质量评审结果：
+                %s
+
+                待修复 step：
+                %s
+                """.formatted(
+                stepIndex,
+                contextSummary(context),
+                compactJson(planStep),
+                compactBlueprintSummary(blueprint),
+                compactJson(review),
+                compactJson(step)
         );
     }
 
@@ -1495,6 +1735,10 @@ public class LlmLessonScriptGenerator {
                 - 当 quiz.answerType 为 single_select 或 multi_select 时，quiz.options 必须是数组，且每项包含 label 和 value；correctAnswer 必须填写选项 value。
                 - answer 和 correctAnswer 都必须有值。
                 - 内容必须围绕知识点，不要使用无关默认示例。
+                - teacherTalk 必须像老师讲课，不能只是资料摘要。
+                - worked_example 必须解释每一步为什么这样做。
+                - student_try、teacher_question 或 quiz 必须检查关键理解或常见误区。
+                - summary 必须沉淀为可复用判断规则。
 
                 学习上下文：
                 - 学习空间：%s
@@ -1558,7 +1802,9 @@ public class LlmLessonScriptGenerator {
 
     private String compactBlueprintSummary(JsonNode blueprint) {
         ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("knowledgeType", text(blueprint, "knowledgeType", ""));
         summary.put("teachingStrategy", text(blueprint, "teachingStrategy", ""));
+        summary.put("strategyRationale", text(blueprint, "strategyRationale", ""));
         summary.set("coreMisconceptions", blueprint == null ? objectMapper.createArrayNode() : blueprint.path("coreMisconceptions"));
         summary.set("steps", blueprint == null ? objectMapper.createArrayNode() : blueprint.path("steps"));
         return compactJson(summary);
