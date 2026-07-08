@@ -314,7 +314,7 @@ public class UserServiceImpl implements IUserService {
                         .or().eq("email", keyword)
         );
         // 排除已注销的用户 (account_status = 3)
-        queryWrapper.ne("account_status", 3);
+        queryWrapper.ne("status", 3);
 
         // 执行查询
         List<User> users = userMapper.selectList(queryWrapper);

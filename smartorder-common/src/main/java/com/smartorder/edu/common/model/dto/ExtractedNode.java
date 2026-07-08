@@ -3,6 +3,7 @@ package com.smartorder.edu.common.model.dto;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
+import java.util.List;
 
 /**
  * LLM 提取的知识节点
@@ -31,4 +32,10 @@ public class ExtractedNode {
      * 重要程度（1-5）
      */
     private Integer importance;
+
+    private List<Long> sourceChunkIds;
+
+    private List<Integer> sourceChunkIndexes;
+
+    private List<String> sourceTitlePaths;
 }

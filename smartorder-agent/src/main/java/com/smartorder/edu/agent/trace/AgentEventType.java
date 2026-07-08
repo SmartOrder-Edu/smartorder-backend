@@ -31,6 +31,8 @@ public enum AgentEventType {
     PHASE_CHANGE("agent.phase.change", "阶段切换", true),
     STATUS("agent.status", "状态提示", true),
 
+    RAG_CHUNKS("agent.rag.chunks", "RAG检索结果", false),
+
     // ====== PlanAndExecute 事件 ======
     EXECUTION_STEP_STARTED("agent.plan.task.started", "执行步骤开始执行", true),
     EXECUTION_STEP_COMPLETED("agent.plan.task.completed", "执行步骤执行完成", true),

@@ -1,13 +1,14 @@
-生成 SQL 题，题型代码固定为 sql，SQL 方言使用 {{sqlDialect}}。
+生成 SQL 题，type 固定为 "SQL题"，SQL 方言使用 {{sqlDialect}}。
 
 约束：
-1. optionsJson 必须是空数组 []。
-2. stem 给出表结构、字段含义、必要样例数据和明确查询任务。
+1. options 必须是空数组 []。
+2. question 给出表结构、字段含义、必要样例数据和明确查询任务。
 3. 多表查询必须明确主键、外键或关联条件。
-4. answerJson 格式：{"dialect":"{{sqlDialect}}","referenceSql":"可执行 SQL","expectedResultDescription":"期望结果说明","testCases":[{"tables":[],"expectedRows":[]}]}。
-5. referenceSql 必须可执行，不写伪代码。
-6. testCases 至少 1 组表数据和 expectedRows，用于验证 SQL 结果。
-7. SQL 和多行内容必须在 JSON 字符串中使用 \n 转义。
+4. answer 格式：完整的可执行 SQL 语句字符串（{{sqlDialect}} 方言），不写伪代码。
+5. SQL 和多行内容必须在 JSON 字符串中使用 \n 转义。
+6. analysis.correct_reason 简述 SQL 逻辑和关键子句说明。
+7. analysis.wrong_reason 为空对象 {}。
+8. score 默认 15。
 
 # 最终输出
 只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
@@ -15,14 +16,17 @@
 # 短示例
 {
   "questions": [{
-    "questionType": "sql",
+    "question": "表 stack_ops(id INT, op VARCHAR(10)) 记录栈操作。请查询 op='push' 的记录数量，输出 push_count。",
+    "type": "SQL题",
+    "options": [],
+    "answer": "SELECT COUNT(*) AS push_count FROM stack_ops WHERE op = 'push'",
+    "score": 15,
     "difficulty": 4,
-    "abilityDimension": "application",
-    "stem": "表 stack_ops(id INT, op VARCHAR(10)) 记录栈操作。请查询 op='push' 的记录数量，输出 push_count。",
-    "optionsJson": [],
-    "answerJson": {"dialect":"MySQL","referenceSql":"SELECT COUNT(*) AS push_count FROM stack_ops WHERE op = 'push'","expectedResultDescription":"返回 push 操作数量","testCases":[{"tables":[{"name":"stack_ops","columns":["id","op"],"rows":[{"id":1,"op":"push"},{"id":2,"op":"pop"},{"id":3,"op":"push"}]}],"expectedRows":[{"push_count":2}]}]},
-    "explanation": "使用 WHERE 过滤 push 操作，再用 COUNT 聚合计数。",
-    "commonMistakesJson": [{"reason":"忘记过滤 op 条件","example":"统计了所有操作数量"}],
-    "tagsJson": ["数据结构","SQL","sql"]
+    "knowledge_points": ["SQL", "聚合查询"],
+    "ability_tags": ["数据库操作", "SQL编写"],
+    "analysis": {
+      "correct_reason": "使用 WHERE 过滤 push 操作，再用 COUNT 聚合计数。",
+      "wrong_reason": {}
+    }
   }]
 }

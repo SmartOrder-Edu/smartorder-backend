@@ -33,11 +33,14 @@ public class GenerateQuestionDTO {
     @Valid
     private List<QuestionTypeCountDTO> questionTypeCountList;
 
+    /**
+     * 题型数量配置：描述某一题型要生成多少道题、难度与选项数。
+     */
     @Data
     public static class QuestionTypeCountDTO {
-        /** 题型列表：single_choice/scenario/sql/code 等 */
+        /** 题型编码：single_choice/scenario/sql/code 等 */
         private String questionType;
-        /** 生成题目数量 */
+        /** 生成题目数量（1~10） */
         @Min(value = 1, message = "题目数量不能小于1")
         @Max(value = 10, message = "题目数量不能大于10")
         private Integer count;
@@ -49,6 +52,7 @@ public class GenerateQuestionDTO {
         /** 选项数量（仅选择题有效，默认4） */
         private Integer optionCount;
 
+        /** 排序（可选） */
         private Integer sort;
     }
 }

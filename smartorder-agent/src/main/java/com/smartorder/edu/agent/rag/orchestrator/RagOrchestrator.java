@@ -150,8 +150,8 @@ public class RagOrchestrator {
      * 构建检索上下文
      */
     private RetrievalContext buildRetrievalContext(RagQueryRequest request,
-                                                    QueryAnalysisResult analysisResult,
-                                                    RetrievalRouteResult routeResult) {
+                                                   QueryAnalysisResult analysisResult,
+                                                   RetrievalRouteResult routeResult) {
         return RetrievalContext.builder()
                 .userId(request.getUserId())
                 .query(request.getQuery())
@@ -168,7 +168,7 @@ public class RagOrchestrator {
      * 执行检索（带降级机制）
      */
     private List<RagChunk> executeRetrievalWithDegrade(RetrievalContext context,
-                                                        RetrievalRouteResult routeResult) {
+                                                       RetrievalRouteResult routeResult) {
         String currentMode = routeResult.getRetrievalMode();
         boolean degraded = routeResult.isDegraded();
         StringBuilder degradeReason = new StringBuilder(
@@ -178,7 +178,7 @@ public class RagOrchestrator {
             RetrieverType type = RetrieverType.fromCode(currentMode);
             Retriever retriever = retrievers.get(type);
 
-       if (retriever == null) {
+            if (retriever == null) {
                 log.warn("[RagOrchestrator] 未找到检索器: {}", currentMode);
                 currentMode = type.degrade() != null ? type.degrade().getCode() : null;
                 degraded = true;

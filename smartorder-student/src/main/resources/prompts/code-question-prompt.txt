@@ -1,12 +1,13 @@
-生成编程题，题型代码固定为 code，编程语言使用 {{programmingLanguage}}。
+生成编程题，type 固定为 "编程题"，编程语言使用 {{programmingLanguage}}。
 
 约束：
-1. optionsJson 必须是空数组 []。
-2. stem 包含问题背景、输入格式、输出格式、约束条件和至少 2 组样例，不泄露核心代码。
-3. answerJson 格式：{"language":"{{programmingLanguage}}","referenceSolution":"完整可运行代码","inputFormat":"...","outputFormat":"...","testCases":[{"input":"...","expectedOutput":"...","hidden":false}],"timeComplexity":"...","spaceComplexity":"..."}。
-4. referenceSolution 必须是完整可运行程序或完整函数，不写伪代码。
-5. testCases 至少 2 个公开用例和 1 个隐藏用例，hidden 必须是 JSON 布尔值。
-6. 代码和多行内容必须在 JSON 字符串中使用 \n 转义。
+1. options 必须是空数组 []。
+2. question 包含问题背景、输入格式、输出格式、约束条件和至少 2 组样例，不泄露核心代码。
+3. answer 格式：完整的参考答案代码字符串（{{programmingLanguage}} 语言），必须是完整可运行程序或完整函数，不写伪代码。
+4. 代码和多行内容必须在 JSON 字符串中使用 \n 转义。
+5. analysis.correct_reason 简述解题思路和关键点。
+6. analysis.wrong_reason 为空对象 {}。
+7. score 默认 15。
 
 # 最终输出
 只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
@@ -14,14 +15,17 @@
 # 短示例
 {
   "questions": [{
-    "questionType": "code",
+    "question": "实现一个栈，支持 push、pop、peek。输入第一行为操作数 n，随后 n 行为操作；pop 和 peek 输出结果，空栈输出 EMPTY。约束：1 <= n <= 1000。\n样例1输入：3\npush 1\npeek\npop\n样例1输出：1\n1",
+    "type": "编程题",
+    "options": [],
+    "answer": "import java.util.*;\npublic class Main{public static void main(String[]a){Scanner sc=new Scanner(System.in);int n=Integer.parseInt(sc.nextLine());Deque<String>s=new ArrayDeque<>();StringBuilder out=new StringBuilder();for(int i=0;i<n;i++){String[] p=sc.nextLine().split(\" \");if(p[0].equals(\"push\"))s.push(p[1]);else if(p[0].equals(\"pop\"))out.append(s.isEmpty()?\"EMPTY\":s.pop()).append('\\n');else out.append(s.isEmpty()?\"EMPTY\":s.peek()).append('\\n');}System.out.print(out);}}",
+    "score": 15,
     "difficulty": 4,
-    "abilityDimension": "application",
-    "stem": "实现一个栈，支持 push、pop、peek。输入第一行为操作数 n，随后 n 行为操作；pop 和 peek 输出结果，空栈输出 EMPTY。约束：1 <= n <= 1000。\n样例1输入：3\npush 1\npeek\npop\n样例1输出：1\n1",
-    "optionsJson": [],
-    "answerJson": {"language":"Java","referenceSolution":"import java.util.*;\npublic class Main{public static void main(String[]a){Scanner sc=new Scanner(System.in);int n=Integer.parseInt(sc.nextLine());Deque<String>s=new ArrayDeque<>();StringBuilder out=new StringBuilder();for(int i=0;i<n;i++){String[] p=sc.nextLine().split(\" \");if(p[0].equals(\"push\"))s.push(p[1]);else if(p[0].equals(\"pop\"))out.append(s.isEmpty()?\"EMPTY\":s.pop()).append('\\n');else out.append(s.isEmpty()?\"EMPTY\":s.peek()).append('\\n');}System.out.print(out);}}","inputFormat":"第一行 n，随后 n 行操作","outputFormat":"pop 和 peek 输出一行","testCases":[{"input":"3\npush 1\npeek\npop","expectedOutput":"1\n1","hidden":false},{"input":"1\npop","expectedOutput":"EMPTY","hidden":false},{"input":"2\npush 7\npeek","expectedOutput":"7","hidden":true}],"timeComplexity":"O(n)","spaceComplexity":"O(n)"},
-    "explanation": "用栈保存元素，push 入栈，pop/peek 前判断是否为空。",
-    "commonMistakesJson": [{"reason":"空栈时直接弹出导致异常","example":"pop 空栈未输出 EMPTY"}],
-    "tagsJson": ["数据结构","栈","code"]
+    "knowledge_points": ["数据结构", "栈", "Java"],
+    "ability_tags": ["编程实现", "数据结构应用"],
+    "analysis": {
+      "correct_reason": "用Deque模拟栈，push入栈，pop/peek前判断空栈输出EMPTY。",
+      "wrong_reason": {}
+    }
   }]
 }

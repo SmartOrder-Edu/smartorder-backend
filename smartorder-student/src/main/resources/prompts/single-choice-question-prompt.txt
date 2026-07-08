@@ -1,12 +1,13 @@
-生成单选题，题型代码固定为 single_choice。
+生成单选题，type 固定为 "单选题"。
 
 约束：
-1. 每题必须有 {{optionCount}} 个选项，label 从 A 开始连续递增。
-2. answerJson 格式：{"correctOptions":["A"]}，且只能有 1 个正确选项。
-3. optionsJson 按 label 排序，不要出现“以上都对”“以上都不对”“无法判断”。
+1. 每题必须有 {{optionCount}} 个选项，options 为字符串数组，按顺序对应 A/B/C/D...
+2. answer 格式：单一字母字符串，如 "A"、"B"、"C"、"D"，且只能有 1 个正确选项。
+3. 不要出现"以上都对""以上都不对""无法判断"等选项。
 4. 干扰项要合理、有迷惑性，但严格意义下不能成立。
-5. explanation 简短说明正确项依据。
-6. commonMistakesJson 至少覆盖 2 个错误选项。
+5. analysis.correct_reason 简短说明正确项依据。
+6. analysis.wrong_reason 为对象，key 为错误选项字母，value 为该选项的错误原因，至少覆盖 2 个错误选项。
+7. score 默认 5。
 
 # 最终输出
 只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
@@ -14,14 +15,21 @@
 # 短示例
 {
   "questions": [{
-    "questionType": "single_choice",
+    "question": "数据结构中，栈的访问特点是什么？",
+    "type": "单选题",
+    "options": ["先进先出", "后进先出", "随机访问", "按优先级访问"],
+    "answer": "B",
+    "score": 5,
     "difficulty": 3,
-    "abilityDimension": "concept",
-    "stem": "数据结构中，栈的访问特点是什么？",
-    "optionsJson": [{"label":"A","content":"先进先出"},{"label":"B","content":"后进先出"},{"label":"C","content":"随机访问"},{"label":"D","content":"按优先级访问"}],
-    "answerJson": {"correctOptions":["B"]},
-    "explanation": "栈遵循后进先出，最后入栈的元素最先出栈。",
-    "commonMistakesJson": [{"option":"A","reason":"把栈和队列混淆","example":"认为先进入的元素先出来"},{"option":"C","reason":"误以为栈可任意下标访问","example":"把栈当数组使用"}],
-    "tagsJson": ["数据结构","栈","single_choice"]
+    "knowledge_points": ["数据结构", "栈"],
+    "ability_tags": ["数据结构基础", "概念理解"],
+    "analysis": {
+      "correct_reason": "栈遵循后进先出（LIFO），最后入栈的元素最先出栈。",
+      "wrong_reason": {
+        "A": "把栈和队列混淆，队列才是先进先出",
+        "C": "误以为栈可任意下标访问，栈只能访问栈顶",
+        "D": "把栈和优先队列混淆"
+      }
+    }
   }]
 }
