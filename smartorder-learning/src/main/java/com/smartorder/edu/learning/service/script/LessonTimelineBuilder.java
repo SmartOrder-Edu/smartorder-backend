@@ -184,6 +184,16 @@ public class LessonTimelineBuilder {
             copyPayloadField(block, payload, "type", "boardBlockType");
             copyPayloadField(block, payload, "id", "boardBlockId");
             copyPayloadField(block, payload, "language", "language");
+            copyPayloadField(block, payload, "term", "term");
+            copyPayloadField(block, payload, "definition", "definition");
+            copyPayloadField(block, payload, "intuition", "intuition");
+            copyPayloadField(block, payload, "formal", "formal");
+            copyPayloadField(block, payload, "keyPoints", "keyPoints");
+            copyPayloadField(block, payload, "boundaries", "boundaries");
+            copyPayloadField(block, payload, "conditions", "conditions");
+            copyPayloadField(block, payload, "examples", "examples");
+            copyPayloadField(block, payload, "nonExamples", "nonExamples");
+            copyPayloadField(block, payload, "takeaway", "takeaway");
             copyPayloadField(block, payload, "focusLine", "focusLine");
             copyPayloadField(block, payload, "highlights", "highlights");
             copyPayloadField(block, payload, "structureType", "structureType");
@@ -214,7 +224,6 @@ public class LessonTimelineBuilder {
             copyPayloadField(block, payload, "whyItMatters", "whyItMatters");
             copyPayloadField(block, payload, "checkpoints", "checkpoints");
             copyPayloadField(block, payload, "commonMistake", "commonMistake");
-            copyPayloadField(block, payload, "examples", "examples");
             copyPayloadField(block, payload, "time", "time");
             copyPayloadField(block, payload, "space", "space");
             copyPayloadField(block, payload, "caseHeaders", "caseHeaders");

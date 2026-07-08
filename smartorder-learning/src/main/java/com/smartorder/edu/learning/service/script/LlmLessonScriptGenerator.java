@@ -511,6 +511,8 @@ public class LlmLessonScriptGenerator {
     private boolean isAllowedBoardBlockType(String type) {
         return switch (safe(type, "markdown").toLowerCase()) {
             case "markdown", "code", "formula", "list", "quote", "diagram", "callout",
+                    "concept_card", "concept-card", "definition_card", "definition-card",
+                    "principle_card", "principle-card", "key_takeaway", "key-takeaway",
                     "structure", "trace", "operation_sequence", "operation-sequence", "invariant",
                     "complexity", "comparison", "vs_compare", "vs-compare" -> true;
             default -> false;
@@ -526,6 +528,15 @@ public class LlmLessonScriptGenerator {
             return true;
         }
         return switch (type) {
+            case "concept_card", "concept-card", "definition_card", "definition-card",
+                    "principle_card", "principle-card", "key_takeaway", "key-takeaway" ->
+                    !text(block, "term", "").isBlank()
+                            || !text(block, "definition", "").isBlank()
+                            || !text(block, "intuition", "").isBlank()
+                            || !text(block, "formal", "").isBlank()
+                            || nonEmptyArray(block.path("keyPoints"))
+                            || nonEmptyArray(block.path("examples"))
+                            || !text(block, "takeaway", "").isBlank();
             case "structure" -> !text(block, "structureType", "").isBlank()
                     || nonEmptyArray(block.path("items"))
                     || nonEmptyArray(block.path("nodes"));
@@ -833,6 +844,16 @@ public class LlmLessonScriptGenerator {
         String id = text(blockNode, "id", "board-block-" + index);
         Map<String, Object> block = boardBlock(type, title, language, content, tone, id);
         copyBoardBlockField(blockNode, block, "caption");
+        copyBoardBlockField(blockNode, block, "term");
+        copyBoardBlockField(blockNode, block, "definition");
+        copyBoardBlockField(blockNode, block, "intuition");
+        copyBoardBlockField(blockNode, block, "formal");
+        copyBoardBlockField(blockNode, block, "keyPoints");
+        copyBoardBlockField(blockNode, block, "boundaries");
+        copyBoardBlockField(blockNode, block, "conditions");
+        copyBoardBlockField(blockNode, block, "examples");
+        copyBoardBlockField(blockNode, block, "nonExamples");
+        copyBoardBlockField(blockNode, block, "takeaway");
         copyBoardBlockField(blockNode, block, "highlights");
         copyBoardBlockField(blockNode, block, "focusLine");
         copyBoardBlockField(blockNode, block, "errorLines");
@@ -865,7 +886,6 @@ public class LlmLessonScriptGenerator {
         copyBoardBlockField(blockNode, block, "whyItMatters");
         copyBoardBlockField(blockNode, block, "checkpoints");
         copyBoardBlockField(blockNode, block, "commonMistake");
-        copyBoardBlockField(blockNode, block, "examples");
         copyBoardBlockField(blockNode, block, "time");
         copyBoardBlockField(blockNode, block, "space");
         copyBoardBlockField(blockNode, block, "caseHeaders");
@@ -939,6 +959,13 @@ public class LlmLessonScriptGenerator {
         String type = String.valueOf(block.getOrDefault("type", "markdown"));
         String title = String.valueOf(block.getOrDefault("title", ""));
         return switch (type) {
+            case "concept_card", "definition_card", "principle_card", "key_takeaway" -> title + "\n\n"
+                    + "- 概念：" + block.getOrDefault("term", "") + "\n"
+                    + "- 定义：" + block.getOrDefault("definition", "") + "\n"
+                    + "- 直觉理解：" + block.getOrDefault("intuition", "") + "\n"
+                    + "- 形式化表达：" + block.getOrDefault("formal", "") + "\n"
+                    + "- 关键点：" + block.getOrDefault("keyPoints", List.of()) + "\n"
+                    + "- 结论：" + block.getOrDefault("takeaway", "");
             case "structure" -> title + "\n\n"
                     + "- 类型：" + block.getOrDefault("structureType", "数据结构") + "\n"
                     + "- 元素：" + block.getOrDefault("items", block.getOrDefault("nodes", List.of())) + "\n"
@@ -989,9 +1016,14 @@ public class LlmLessonScriptGenerator {
 
     private String normalizeBoardBlockType(String type) {
         return switch (safe(type, "markdown").toLowerCase()) {
-            case "code", "formula", "list", "quote", "diagram", "callout",
+            case "code", "formula", "list", "quote", "diagram", "callout", "concept_card",
+                    "definition_card", "principle_card", "key_takeaway",
                     "structure", "trace", "operation_sequence", "invariant",
                     "complexity", "comparison", "vs_compare" -> type.toLowerCase();
+            case "concept-card" -> "concept_card";
+            case "definition-card" -> "definition_card";
+            case "principle-card" -> "principle_card";
+            case "key-takeaway" -> "key_takeaway";
             case "operation-sequence" -> "operation_sequence";
             case "vs-compare" -> "vs_compare";
             default -> "markdown";
@@ -1004,6 +1036,10 @@ public class LlmLessonScriptGenerator {
             case "formula" -> "关键公式";
             case "diagram" -> "结构图";
             case "callout" -> "提示";
+            case "concept_card" -> "概念讲解";
+            case "definition_card" -> "定义说明";
+            case "principle_card" -> "规则说明";
+            case "key_takeaway" -> "关键结论";
             case "structure" -> "数据结构状态";
             case "trace" -> "算法过程";
             case "operation_sequence" -> "操作步骤";
@@ -1462,7 +1498,11 @@ public class LlmLessonScriptGenerator {
                 20. quiz 的干扰项必须对应真实常见误区，解析要解释为什么错误选项不对。
 
                 boardBlocks 选择原则：
-                - 定义/规则：markdown + callout。
+                - 概念定义：definition_card，必须填写 term、definition，最好补充 intuition 或 formal。
+                - 概念理解：concept_card，适合同时呈现定义、直觉、关键点、边界、正反例。
+                - 规则/原则：principle_card，必须填写 keyPoints、conditions 或 takeaway。
+                - 可迁移结论：key_takeaway，用一句判断规则帮助学生复用。
+                - 普通补充说明：markdown + callout。
                 - 公式含义和推导：formula。
                 - 代码或伪代码：code。
                 - 算法执行过程：trace，数据结构课程必须优先填写 traceKind、items、pointers、activeIndices、action、explanation。
@@ -1827,7 +1867,11 @@ public class LlmLessonScriptGenerator {
 
     private String boardBlockExamplesForPrompt() {
         return """
-                {"type": "markdown|code|formula|list|quote|diagram|callout|structure|trace|operation_sequence|invariant|complexity|comparison|vs_compare", "title": "板书块标题", "content": "普通文本或代码纯内容", "caption": "简短说明", "tone": "info|warning|success|error"},
+                {"type": "markdown|code|formula|list|quote|diagram|callout|concept_card|definition_card|principle_card|key_takeaway|structure|trace|operation_sequence|invariant|complexity|comparison|vs_compare", "title": "板书块标题", "content": "普通文本或代码纯内容", "caption": "简短说明", "tone": "info|warning|success|error"},
+                {"type": "definition_card", "title": "定义说明", "term": "队列", "definition": "队列是一种只允许在一端插入、另一端删除的线性结构", "intuition": "像排队买票，先来的人先被服务", "formal": "enqueue 在 rear 端插入，dequeue 在 front 端删除", "boundaries": ["只能从 front 删除", "只能从 rear 插入"], "takeaway": "判断队列题时，先找 front 和 rear 的含义"},
+                {"type": "concept_card", "title": "概念拆解", "term": "二叉搜索树", "definition": "每个节点的左子树值都小于节点值，右子树值都大于节点值", "intuition": "每个节点都把搜索范围分成左右两半", "keyPoints": ["左小右大必须对每个节点成立", "中序遍历会得到有序序列"], "examples": [{"label": "正例", "value": "根 8，左子树 3/6，右子树 10/14", "explanation": "每个局部都满足左小右大"}], "nonExamples": [{"label": "反例", "value": "某个右子树节点小于根节点", "explanation": "破坏全局搜索范围"}], "takeaway": "检查 BST 不能只看父子，还要看整棵子树的取值范围"},
+                {"type": "principle_card", "title": "规则说明", "term": "哈希冲突处理", "definition": "不同 key 映射到同一桶时必须用额外策略保存所有元素", "conditions": ["哈希函数可能产生相同下标", "桶内需要能区分原始 key"], "keyPoints": ["链地址法把冲突元素挂到同一 bucket", "开放寻址法继续探测下一个可用位置"], "takeaway": "哈希表不是避免冲突，而是设计冲突后还能正确查找"},
+                {"type": "key_takeaway", "title": "关键结论", "takeaway": "看到线性结构操作题，先明确操作端点，再判断元素顺序是否被改变", "keyPoints": ["栈：同一端进出", "队列：一端进一端出", "双端队列：两端都可操作"]},
                 {"type": "code", "title": "代码标题", "language": "c|cpp|java|python|javascript|typescript|go|rust|sql", "content": "纯代码，不要包含 Markdown 代码围栏", "highlights": [2, 3], "focusLine": 3},
                 {"type": "structure", "structureType": "array|stack|queue|linked_list|tree|heap|graph|hash_table|matrix", "title": "结构状态标题", "items": [1, 2, 3], "nodes": [{"id": "A", "label": "A", "depth": 0, "order": 0}], "edges": [{"from": "A", "to": "B", "label": "可选边权"}], "pointers": {"front": 0, "rear": 3, "top": 2}, "activeIndices": [0], "activeIds": ["A"], "visitedIds": ["A"], "frontierIds": ["B"], "pathIds": ["A", "B"], "compareIds": ["1", "4"], "directed": false, "animation": {"action": "enqueue|dequeue|push|pop|compare|swap", "durationMs": 1800}},
                 {"type": "trace", "traceKind": "array_step|pointer_walk|sort_step|tree_traversal|graph_traversal|heap_adjust", "algorithm": "binary_search|two_pointers|bubble_sort|dfs|bfs|heapify|...", "title": "过程标题", "items": [5, 2, 8], "pointers": {"left": 0, "mid": 1, "right": 2}, "activeIndices": [0, 1], "processedRange": [2, 2], "action": "compare|swap|insert|delete|visit|mark", "explanation": "当前步骤解释"},
