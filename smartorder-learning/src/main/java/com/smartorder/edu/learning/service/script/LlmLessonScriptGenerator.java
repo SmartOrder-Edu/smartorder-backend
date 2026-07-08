@@ -2,12 +2,15 @@ package com.smartorder.edu.learning.service.script;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartorder.edu.learning.domain.vo.StudyMasteryVO;
 import com.smartorder.edu.learning.domain.vo.StudySceneVO;
 import com.smartorder.edu.learning.domain.vo.StudyScriptStepVO;
 import com.smartorder.edu.learning.domain.vo.StudySessionVO;
 import com.smartorder.edu.learning.domain.vo.StudyTimelineVO;
 import dev.langchain4j.model.chat.ChatModel;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +22,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Component
+@Slf4j
 public class LlmLessonScriptGenerator {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
@@ -35,9 +39,45 @@ public class LlmLessonScriptGenerator {
     }
 
     public StudySessionVO generate(LessonScriptContext context) {
-        String raw = chatModel.chat(buildPrompt(context));
-        JsonNode root = parseAndValidateOrRepair(context, raw);
+        JsonNode root;
+        try {
+            root = generateByPipeline(context);
+        } catch (Exception pipelineError) {
+            log.warn("[LessonScript] staged LLM generation failed, fallback to monolithic prompt: taskId={}, topic={}, reason={}",
+                    context.getTaskId(), topic(context), pipelineError.getMessage());
+            root = generateByMonolithicPrompt(context);
+        }
         return buildSession(context, root);
+    }
+
+    private JsonNode generateByPipeline(LessonScriptContext context) {
+        JsonNode blueprint = parseAndValidateBlueprintOrRepair(context, chatModel.chat(buildBlueprintPrompt(context)));
+        JsonNode blueprintSteps = blueprint.path("steps");
+        if (!blueprintSteps.isArray() || blueprintSteps.isEmpty()) {
+            throw new IllegalStateException("LLM lesson blueprint steps is empty");
+        }
+
+        ObjectNode root = objectMapper.createObjectNode();
+        ArrayNode steps = root.putArray("steps");
+        int stepCount = Math.min(blueprintSteps.size(), 6);
+        for (int i = 0; i < stepCount; i++) {
+            JsonNode planStep = blueprintSteps.path(i);
+            JsonNode step = parseAndValidateStepOrRepair(context, blueprint, planStep, i + 1,
+                    chatModel.chat(buildStepPrompt(context, blueprint, planStep, i + 1, stepCount)));
+            steps.add(step);
+        }
+        root.set("mastery", blueprint.has("mastery") ? blueprint.path("mastery") : defaultMasteryNode());
+
+        List<String> errors = validateRoot(root);
+        if (!errors.isEmpty()) {
+            throw new IllegalStateException("LLM staged lesson script contract invalid: " + String.join("; ", errors));
+        }
+        return root;
+    }
+
+    private JsonNode generateByMonolithicPrompt(LessonScriptContext context) {
+        String raw = chatModel.chat(buildPrompt(context));
+        return parseAndValidateOrRepair(context, raw);
     }
 
     private StudySessionVO buildSession(LessonScriptContext context, JsonNode root) {
@@ -97,6 +137,178 @@ public class LlmLessonScriptGenerator {
                     + String.join("; ", repairedErrors));
         }
         return repairedRoot;
+    }
+
+    private JsonNode parseAndValidateBlueprintOrRepair(LessonScriptContext context, String raw) {
+        List<String> errors;
+        try {
+            JsonNode blueprint = parseJson(raw);
+            errors = validateBlueprint(blueprint);
+            if (errors.isEmpty()) {
+                return blueprint;
+            }
+        } catch (Exception e) {
+            errors = List.of("LLM blueprint JSON parse failed: " + e.getMessage());
+        }
+
+        String repaired = chatModel.chat(buildBlueprintRepairPrompt(context, raw, errors));
+        JsonNode repairedBlueprint = parseJson(repaired);
+        List<String> repairedErrors = validateBlueprint(repairedBlueprint);
+        if (!repairedErrors.isEmpty()) {
+            throw new IllegalStateException("LLM lesson blueprint invalid after repair: "
+                    + String.join("; ", repairedErrors));
+        }
+        return repairedBlueprint;
+    }
+
+    private JsonNode parseAndValidateStepOrRepair(LessonScriptContext context,
+                                                  JsonNode blueprint,
+                                                  JsonNode planStep,
+                                                  int stepIndex,
+                                                  String raw) {
+        List<String> errors;
+        try {
+            JsonNode step = unwrapStepNode(parseJson(raw));
+            errors = validateStepNode(step, stepIndex);
+            if (errors.isEmpty()) {
+                return step;
+            }
+        } catch (Exception e) {
+            errors = List.of("LLM step JSON parse failed: " + e.getMessage());
+        }
+
+        String repaired = chatModel.chat(buildStepRepairPrompt(context, blueprint, planStep, stepIndex, raw, errors));
+        JsonNode repairedStep = unwrapStepNode(parseJson(repaired));
+        List<String> repairedErrors = validateStepNode(repairedStep, stepIndex);
+        if (!repairedErrors.isEmpty()) {
+            throw new IllegalStateException("LLM lesson step " + stepIndex + " invalid after repair: "
+                    + String.join("; ", repairedErrors));
+        }
+        return repairedStep;
+    }
+
+    private JsonNode unwrapStepNode(JsonNode node) {
+        if (node != null && node.has("step") && node.path("step").isObject()) {
+            return node.path("step");
+        }
+        return node;
+    }
+
+    private List<String> validateBlueprint(JsonNode blueprint) {
+        List<String> errors = new ArrayList<>();
+        JsonNode steps = blueprint == null ? null : blueprint.path("steps");
+        if (steps == null || !steps.isArray()) {
+            errors.add("blueprint.steps must be an array");
+            return errors;
+        }
+        if (steps.size() < 4 || steps.size() > 6) {
+            errors.add("blueprint.steps size must be 4 to 6, actual=" + steps.size());
+        }
+
+        boolean hasConcept = false;
+        boolean hasExampleOrPractice = false;
+        boolean hasAssessment = false;
+        boolean hasSummary = false;
+        for (int i = 0; i < steps.size(); i++) {
+            JsonNode step = steps.path(i);
+            String phase = text(step, "phase", "");
+            String canvasType = text(step, "canvasType", "");
+            if (text(step, "title", "").isBlank()) {
+                errors.add("blueprint step " + (i + 1) + " title is blank");
+            }
+            if (text(step, "goal", "").isBlank()) {
+                errors.add("blueprint step " + (i + 1) + " goal is blank");
+            }
+            if (!step.path("segmentPlan").isArray() || step.path("segmentPlan").isEmpty()) {
+                errors.add("blueprint step " + (i + 1) + " segmentPlan must be a non-empty array");
+            }
+            hasConcept = hasConcept || "concept".equals(canvasType) || "derivation".equals(canvasType)
+                    || "concept".equals(phase);
+            hasExampleOrPractice = hasExampleOrPractice || "example".equals(canvasType) || "practice".equals(canvasType)
+                    || "example".equals(phase) || "practice".equals(phase);
+            hasAssessment = hasAssessment || "assessment".equals(canvasType) || "assessment".equals(phase);
+            hasSummary = hasSummary || "summary".equals(canvasType) || "summary".equals(phase);
+        }
+        if (!hasConcept) {
+            errors.add("blueprint must include a concept or derivation step");
+        }
+        if (!hasExampleOrPractice) {
+            errors.add("blueprint must include an example or practice step");
+        }
+        if (!hasAssessment) {
+            errors.add("blueprint must include an assessment step");
+        }
+        if (!hasSummary) {
+            errors.add("blueprint must include a summary step");
+        }
+        return errors;
+    }
+
+    private List<String> validateStepNode(JsonNode step, int stepIndex) {
+        List<String> errors = new ArrayList<>();
+        if (step == null || !step.isObject()) {
+            errors.add("step " + stepIndex + " must be an object");
+            return errors;
+        }
+        String title = text(step, "title", "");
+        String markdown = text(step, "markdown", "");
+        String teacherTalk = collectSegmentField(step.path("teachingSegments"), "teacherTalk");
+        String boardContent = collectSegmentField(step.path("teachingSegments"), "boardContent");
+        String boardBlocks = collectSegmentBoardBlocks(step.path("teachingSegments"));
+        String instructionalText = markdown + teacherTalk + boardContent + boardBlocks;
+        if (title.isBlank()) {
+            errors.add("step " + stepIndex + " title is blank");
+        }
+        if (!isAllowedCanvasType(text(step, "canvasType", ""))) {
+            errors.add("step " + stepIndex + " canvasType is invalid");
+        }
+        if (instructionalText.length() < 80) {
+            errors.add("step " + stepIndex + " instructional content is too short");
+        }
+        errors.addAll(validateTeachingSegments(step.path("teachingSegments"), stepIndex));
+        if (step.has("quiz")) {
+            errors.addAll(validateQuizNode(step.path("quiz"), "step " + stepIndex + " quiz"));
+        }
+        return errors;
+    }
+
+    private List<String> validateQuizNode(JsonNode quiz, String path) {
+        List<String> errors = new ArrayList<>();
+        if (quiz == null || !quiz.isObject()) {
+            errors.add(path + " must be an object");
+            return errors;
+        }
+        String answerType = normalizeAnswerType(text(quiz, "answerType", "text"), quiz);
+        String correctAnswer = text(quiz, "correctAnswer", text(quiz, "answer", ""));
+        if (text(quiz, "prompt", "").isBlank()) {
+            errors.add(path + " prompt is blank");
+        }
+        if (correctAnswer.isBlank()) {
+            errors.add(path + " correctAnswer is blank");
+        }
+        if ("single_select".equals(answerType) || "multi_select".equals(answerType)) {
+            JsonNode options = quiz.path("options");
+            if (!options.isArray() || options.size() < 2) {
+                errors.add(path + " options must contain at least 2 items");
+            } else if ("single_select".equals(answerType) && !optionValues(options).contains(correctAnswer)) {
+                errors.add(path + " correctAnswer must match one option value");
+            }
+        }
+        return errors;
+    }
+
+    private List<String> optionValues(JsonNode options) {
+        List<String> values = new ArrayList<>();
+        if (!options.isArray()) {
+            return values;
+        }
+        for (JsonNode option : options) {
+            String value = text(option, "value", "");
+            if (!value.isBlank()) {
+                values.add(value);
+            }
+        }
+        return values;
     }
 
     private List<String> validateRoot(JsonNode root) {
@@ -977,6 +1189,192 @@ public class LlmLessonScriptGenerator {
         return mastery;
     }
 
+    private String buildBlueprintPrompt(LessonScriptContext context) {
+        return """
+                你是一个严谨的中文课程教学设计专家。请先为当前知识点设计“学习教程脚本蓝图”，不要生成最终板书内容，不要生成完整 teachingSegments。
+
+                只输出一个 JSON 对象，不要 Markdown 代码块，不要解释，不要额外文本。
+
+                输出结构：
+                {
+                  "teachingStrategy": "本节课采用的整体教学策略",
+                  "coreMisconceptions": ["学生最可能出现的误区"],
+                  "steps": [
+                    {
+                      "phase": "review|concept|example|practice|assessment|summary",
+                      "nodeType": "concept_review|worked_example|guided_practice|diagnostic_quiz|summary",
+                      "title": "步骤标题",
+                      "subtitle": "一句话说明",
+                      "goal": "本步骤明确教学目标",
+                      "estimatedMinutes": 3-20,
+                      "canvasType": "concept|example|practice|assessment|derivation|summary",
+                      "keyPoints": ["必须讲清楚的关键点"],
+                      "commonMistakes": ["本步骤要预防或诊断的错误"],
+                      "expectedBoardTypes": ["markdown|formula|callout|structure|trace|complexity|vs_compare|code|diagram"],
+                      "interactionNeed": "none|teacher_question|student_try|quiz|self_check",
+                      "segmentPlan": [
+                        {"type": "hook|recall|explain|board_write|worked_example|teacher_question|student_try|diagnosis|mistake_warning|summary|transition|quiz|formula", "intent": "这一段为什么这样讲", "boardHint": "建议使用的板书类型"}
+                      ]
+                    }
+                  ],
+                  "mastery": {"level": "unknown|weak|progressing|mastered", "levelLabel": "中文标签", "hint": "学习判断", "nextSuggestion": "下一步建议"}
+                }
+
+                规则：
+                1. steps 数量 4 到 6 个，必须形成清晰递进：导入/回忆 → 概念 → 例题或练习 → 诊断 → 总结。
+                2. 必须至少包含一个 concept 或 derivation 步骤、一个 example 或 practice 步骤、一个 assessment 步骤、一个 summary 步骤。
+                3. 至少一个步骤要覆盖常见误区，至少三个步骤要安排互动或停顿。
+                4. 只做教学设计，不要生成 boardBlocks 的具体字段内容。
+                5. 内容必须围绕上下文知识点，不要使用无关默认示例。
+
+                学习上下文：
+                %s
+                """.formatted(contextSummary(context));
+    }
+
+    private String buildBlueprintRepairPrompt(LessonScriptContext context, String invalidJson, List<String> errors) {
+        return """
+                你是学习教程蓝图 JSON 修复器。只修复蓝图结构，不生成完整教学脚本。
+
+                只输出一个 JSON 对象，不要 Markdown 代码块，不要解释，不要额外文本。
+
+                必须满足：
+                - steps 数量 4 到 6。
+                - 每个 step 必须有 phase、nodeType、title、subtitle、goal、estimatedMinutes、canvasType、keyPoints、segmentPlan。
+                - canvasType 只能是 concept、example、practice、assessment、derivation、summary。
+                - 必须包含 concept 或 derivation、example 或 practice、assessment、summary。
+                - 每个 segmentPlan 至少 2 项，type 必须是课堂教学段类型。
+                - 内容必须围绕知识点，不要使用无关默认示例。
+
+                学习上下文：
+                %s
+
+                错误列表：
+                %s
+
+                待修复 JSON：
+                %s
+                """.formatted(
+                contextSummary(context),
+                "- " + String.join("\n- ", errors),
+                invalidJson == null ? "" : invalidJson
+        );
+    }
+
+    private String buildStepPrompt(LessonScriptContext context, JsonNode blueprint, JsonNode planStep,
+                                   int stepIndex, int totalSteps) {
+        return """
+                你是一个严谨的中文学习教程脚本生成器。请根据“整课蓝图”和“当前 step 计划”，只生成当前一个 step 的完整教学脚本。
+
+                只输出一个 JSON 对象，不要包在 {"steps":[...]} 中，不要 Markdown 代码块，不要解释，不要额外文本。
+
+                当前 step 序号：%s/%s
+
+                当前 step 计划：
+                %s
+
+                整课蓝图摘要：
+                %s
+
+                当前 step 输出结构：
+                {
+                  "phase": "review|concept|example|practice|assessment|summary",
+                  "nodeType": "concept_review|worked_example|guided_practice|diagnostic_quiz|summary",
+                  "title": "步骤标题",
+                  "subtitle": "一句话说明",
+                  "estimatedMinutes": 3-20,
+                  "canvasType": "concept|example|practice|assessment|derivation|summary",
+                  "markdown": "本步骤展示给学生的 Markdown 内容",
+                  "teachingSegments": [
+                    {
+                      "type": "hook|recall|explain|analogy|board_write|diagram|worked_example|teacher_question|student_try|diagnosis|mistake_warning|summary|transition|quiz|formula|self_check",
+                      "teacherTalk": "老师真实说出口的话，像面对学生讲课，不要写成资料摘要",
+                      "boardContent": "兼容字段：黑板/画布上逐步出现的 Markdown 内容",
+                      "boardBlocks": [%s],
+                      "markdown": "兼容字段，通常等于 boardContent 或本段展示内容",
+                      "teachingIntent": "说明本段为什么这样讲",
+                      "emotionTone": "curious|encourage|serious|warning|summary",
+                      "interaction": {"type": "pause|single_select|multi_select|text_answer|predict|self_check", "prompt": "课堂提问", "options": [{"label": "选项文本", "value": "a"}], "correctAnswer": "a", "feedbackWhenCorrect": "答对反馈", "feedbackWhenWrong": "答错反馈"},
+                      "pacing": {"autoAdvanceMs": 3600, "waitForUser": false}
+                    }
+                  ],
+                  "quiz": {"prompt": "题干，不要把 A/B/C 选项写在这里", "answerType": "text|single_select|multi_select|number", "options": [{"label": "展示给学生的选项文本", "value": "a"}], "answer": "参考答案或选项 value", "correctAnswer": "参考答案或选项 value", "hint": "提示", "explanation": "解析"},
+                  "exampleSteps": [{"id": "ex1", "label": "步骤名", "markdown": "例题步骤"}]
+                }
+
+                规则：
+                1. 只生成当前 step，不要改写其他 step。
+                2. 必须严格遵循当前 step 计划的 goal、keyPoints、segmentPlan。
+                3. teachingSegments 至少 2 段；teacherTalk 要自然口语，boardBlocks/boardContent 要精炼。
+                4. 当前 step 的 teacherTalk + boardContent + boardBlocks 内容总量至少 160 个中文字符。
+                5. 如果当前 step 是 assessment、student_try、teacher_question、quiz 或 self_check，必须提供可作答的 quiz 或 interaction。
+                6. 选择题 options 必须是 {"label":"展示给学生的选项文本","value":"a|b|c|d"}，correctAnswer 必须填写 option.value。
+                7. boardBlocks 优先使用当前 step 计划里的 expectedBoardTypes，不要只用普通 markdown。
+                8. 对比两个概念、方法、公式、解法、易混点时优先使用 vs_compare。
+                9. 复杂度分析必须使用 complexity；caseHeaders 可自定义表头，不需要时可省略。
+                10. 数据结构/算法讲解优先使用 structure、trace、complexity。
+                11. 内容必须围绕上下文知识点，不要使用无关默认示例。
+                12. boardBlocks[*].content 必须是纯内容：代码不要包 ```，Mermaid 图不要包 ```mermaid。
+
+                学习上下文：
+                %s
+                """.formatted(
+                stepIndex,
+                totalSteps,
+                compactJson(planStep),
+                compactBlueprintSummary(blueprint),
+                boardBlockExamplesForPrompt(),
+                contextSummary(context)
+        );
+    }
+
+    private String buildStepRepairPrompt(LessonScriptContext context, JsonNode blueprint, JsonNode planStep,
+                                         int stepIndex, String invalidJson, List<String> errors) {
+        return """
+                你是学习教程 step JSON 局部修复器。你只能修复当前一个 step，不要输出整课 steps。
+
+                只输出一个 JSON 对象，不要 Markdown 代码块，不要解释，不要额外文本。
+
+                当前 step 序号：%s
+
+                当前 step 计划：
+                %s
+
+                整课蓝图摘要：
+                %s
+
+                必须满足：
+                - 输出对象必须是单个 step，不要包在 {"steps":[...]} 中。
+                - 必须有 title、subtitle、estimatedMinutes、canvasType、markdown、teachingSegments。
+                - canvasType 只能是 concept、example、practice、assessment、derivation、summary。
+                - teachingSegments 必须是非空数组，每段必须有 teacherTalk、boardBlocks、boardContent 或 markdown 之一。
+                - boardBlocks[*].type 只能是 markdown、code、formula、list、quote、diagram、callout、structure、trace、complexity、comparison、vs_compare。
+                - code 必须有 language 和纯代码 content。
+                - structure 必须有 structureType。
+                - complexity 使用 time、space、caseHeaders、cases、reason。
+                - vs_compare 使用 left、right、criteria、summary、emphasis。
+                - quiz.answerType 只能是 text、single_select、multi_select、number。
+                - 选择题 correctAnswer 必须匹配 options.value。
+                - 内容必须围绕知识点，不要使用无关默认示例。
+
+                学习上下文：
+                %s
+
+                错误列表：
+                %s
+
+                待修复 step JSON：
+                %s
+                """.formatted(
+                stepIndex,
+                compactJson(planStep),
+                compactBlueprintSummary(blueprint),
+                contextSummary(context),
+                "- " + String.join("\n- ", errors),
+                invalidJson == null ? "" : invalidJson
+        );
+    }
+
     private String buildPrompt(LessonScriptContext context) {
         return """
                 你是一个严谨的中文学习教程脚本生成器。请根据学习上下文，为一个知识点生成可直接用于学习空间的教程脚本。
@@ -1121,6 +1519,68 @@ public class LlmLessonScriptGenerator {
         );
     }
 
+    private String contextSummary(LessonScriptContext context) {
+        return """
+                - 学习空间：%s
+                - 空间类型：%s
+                - 任务标题：%s
+                - 任务描述：%s
+                - 知识点标题：%s
+                - 知识点描述：%s
+                - 知识点类型：%s
+                - 学习模式：%s
+                - 难度等级：%s
+                - 预计时长：%s 分钟
+                """.formatted(
+                safe(context.getSpaceName(), "未命名学习空间"),
+                safe(context.getSpaceType(), ""),
+                safe(context.getTaskTitle(), ""),
+                safe(context.getTaskDescription(), ""),
+                safe(topic(context), "当前知识点"),
+                safe(context.getPathNodeDescription(), ""),
+                safe(context.getPathNodeType(), ""),
+                safe(context.getMode(), "learn"),
+                context.getDifficultyLevel() == null ? "未知" : context.getDifficultyLevel(),
+                context.getEstimatedDurationMinutes() == null ? "20" : context.getEstimatedDurationMinutes()
+        );
+    }
+
+    private String boardBlockExamplesForPrompt() {
+        return """
+                {"type": "markdown|code|formula|list|quote|diagram|callout|structure|trace|complexity|comparison|vs_compare", "title": "板书块标题", "content": "普通文本或代码纯内容", "caption": "简短说明", "tone": "info|warning|success|error"},
+                {"type": "code", "title": "代码标题", "language": "c|cpp|java|python|javascript|typescript|go|rust|sql", "content": "纯代码，不要包含 Markdown 代码围栏", "highlights": [2, 3], "focusLine": 3},
+                {"type": "structure", "structureType": "array|stack|queue|linked_list|tree|heap|graph", "title": "结构状态标题", "items": [1, 2, 3], "nodes": [{"id": "A", "label": "A", "depth": 0, "order": 0}], "edges": [{"from": "A", "to": "B", "label": "可选边权"}], "pointers": {"front": 0, "rear": 3, "top": 2}, "activeIndices": [0], "activeIds": ["A"], "visitedIds": ["A"], "frontierIds": ["B"], "pathIds": ["A", "B"], "compareIds": ["1", "4"], "directed": false, "animation": {"action": "enqueue|dequeue|push|pop|compare|swap", "durationMs": 1800}},
+                {"type": "trace", "algorithm": "bubble_sort|binary_search|dfs|bfs|...", "title": "过程标题", "items": [5, 2, 8], "activeIndices": [0, 1], "processedRange": [2, 2], "action": "compare|swap|insert|delete|visit|mark", "explanation": "当前步骤解释"},
+                {"type": "complexity", "title": "复杂度标题", "time": "O(n)", "space": "O(1)", "caseHeaders": {"label": "场景", "value": "复杂度", "description": "说明"}, "cases": [{"label": "最坏情况", "value": "O(n)", "description": "原因"}], "reason": "复杂度原因"},
+                {"type": "vs_compare", "title": "方法 A vs 方法 B", "left": {"title": "方法 A", "subtitle": "适用场景", "badge": "基础方法", "content": "核心步骤或公式", "strengths": ["优势"], "weaknesses": ["注意点"]}, "right": {"title": "方法 B", "subtitle": "适用场景", "badge": "进阶方法", "content": "核心步骤或公式", "strengths": ["优势"], "weaknesses": ["注意点"]}, "criteria": [{"label": "计算步数", "left": "较多", "right": "较少", "winner": "right", "explanation": "原因"}], "summary": "什么时候优先选哪种方法", "emphasis": "left|right|balanced"}
+                """;
+    }
+
+    private String compactBlueprintSummary(JsonNode blueprint) {
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("teachingStrategy", text(blueprint, "teachingStrategy", ""));
+        summary.set("coreMisconceptions", blueprint == null ? objectMapper.createArrayNode() : blueprint.path("coreMisconceptions"));
+        summary.set("steps", blueprint == null ? objectMapper.createArrayNode() : blueprint.path("steps"));
+        return compactJson(summary);
+    }
+
+    private ObjectNode defaultMasteryNode() {
+        ObjectNode mastery = objectMapper.createObjectNode();
+        mastery.put("level", "progressing");
+        mastery.put("levelLabel", "初步掌握");
+        mastery.put("hint", "本脚本由分阶段 LLM 流水线根据当前知识点生成。");
+        mastery.put("nextSuggestion", "完成本次学习后，根据小测结果安排复习或进入下一个知识点。");
+        return mastery;
+    }
+
+    private String compactJson(JsonNode node) {
+        try {
+            return objectMapper.writeValueAsString(node == null ? objectMapper.createObjectNode() : node);
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
     private String extractJson(String raw) {
         if (raw == null || raw.isBlank()) {
             throw new IllegalStateException("LLM returned empty content");
@@ -1199,6 +1659,13 @@ public class LlmLessonScriptGenerator {
         return switch (safe(value, "").toLowerCase()) {
             case "concept", "example", "practice", "assessment", "derivation", "summary" -> value.toLowerCase();
             default -> "concept";
+        };
+    }
+
+    private boolean isAllowedCanvasType(String value) {
+        return switch (safe(value, "").toLowerCase()) {
+            case "concept", "example", "practice", "assessment", "derivation", "summary" -> true;
+            default -> false;
         };
     }
 
