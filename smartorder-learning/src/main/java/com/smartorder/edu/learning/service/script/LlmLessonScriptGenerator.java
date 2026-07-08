@@ -511,7 +511,8 @@ public class LlmLessonScriptGenerator {
     private boolean isAllowedBoardBlockType(String type) {
         return switch (safe(type, "markdown").toLowerCase()) {
             case "markdown", "code", "formula", "list", "quote", "diagram", "callout",
-                    "structure", "trace", "complexity", "comparison", "vs_compare", "vs-compare" -> true;
+                    "structure", "trace", "operation_sequence", "operation-sequence", "invariant",
+                    "complexity", "comparison", "vs_compare", "vs-compare" -> true;
             default -> false;
         };
     }
@@ -529,8 +530,16 @@ public class LlmLessonScriptGenerator {
                     || nonEmptyArray(block.path("items"))
                     || nonEmptyArray(block.path("nodes"));
             case "trace" -> nonEmptyArray(block.path("items"))
+                    || !text(block, "traceKind", "").isBlank()
                     || !text(block, "action", "").isBlank()
                     || !text(block, "explanation", "").isBlank();
+            case "operation_sequence", "operation-sequence" -> nonEmptyArray(block.path("steps"))
+                    || !text(block, "operation", "").isBlank()
+                    || !text(block, "invariant", "").isBlank();
+            case "invariant" -> !text(block, "statement", "").isBlank()
+                    || !text(block, "whyItMatters", "").isBlank()
+                    || nonEmptyArray(block.path("checkpoints"))
+                    || !text(block, "commonMistake", "").isBlank();
             case "complexity" -> !text(block, "time", "").isBlank()
                     || !text(block, "space", "").isBlank()
                     || nonEmptyArray(block.path("cases"))
@@ -843,10 +852,20 @@ public class LlmLessonScriptGenerator {
         copyBoardBlockField(blockNode, block, "directed");
         copyBoardBlockField(blockNode, block, "layout");
         copyBoardBlockField(blockNode, block, "animation");
+        copyBoardBlockField(blockNode, block, "traceKind");
         copyBoardBlockField(blockNode, block, "algorithm");
         copyBoardBlockField(blockNode, block, "processedRange");
         copyBoardBlockField(blockNode, block, "action");
         copyBoardBlockField(blockNode, block, "explanation");
+        copyBoardBlockField(blockNode, block, "operation");
+        copyBoardBlockField(blockNode, block, "steps");
+        copyBoardBlockField(blockNode, block, "currentStep");
+        copyBoardBlockField(blockNode, block, "invariant");
+        copyBoardBlockField(blockNode, block, "statement");
+        copyBoardBlockField(blockNode, block, "whyItMatters");
+        copyBoardBlockField(blockNode, block, "checkpoints");
+        copyBoardBlockField(blockNode, block, "commonMistake");
+        copyBoardBlockField(blockNode, block, "examples");
         copyBoardBlockField(blockNode, block, "time");
         copyBoardBlockField(blockNode, block, "space");
         copyBoardBlockField(blockNode, block, "caseHeaders");
@@ -925,9 +944,20 @@ public class LlmLessonScriptGenerator {
                     + "- 元素：" + block.getOrDefault("items", block.getOrDefault("nodes", List.of())) + "\n"
                     + "- 指针：" + block.getOrDefault("pointers", Map.of());
             case "trace" -> title + "\n\n"
+                    + "- 过程类型：" + block.getOrDefault("traceKind", "") + "\n"
                     + "- 动作：" + block.getOrDefault("action", "标记") + "\n"
                     + "- 当前序列：" + block.getOrDefault("items", List.of()) + "\n"
+                    + "- 指针：" + block.getOrDefault("pointers", Map.of()) + "\n"
                     + "- 说明：" + block.getOrDefault("explanation", "");
+            case "operation_sequence" -> title + "\n\n"
+                    + "- 操作：" + block.getOrDefault("operation", "") + "\n"
+                    + "- 步骤：" + block.getOrDefault("steps", List.of()) + "\n"
+                    + "- 保持规则：" + block.getOrDefault("invariant", "");
+            case "invariant" -> title + "\n\n"
+                    + "- 不变量：" + block.getOrDefault("statement", "") + "\n"
+                    + "- 为什么重要：" + block.getOrDefault("whyItMatters", "") + "\n"
+                    + "- 检查点：" + block.getOrDefault("checkpoints", List.of()) + "\n"
+                    + "- 常见破坏方式：" + block.getOrDefault("commonMistake", "");
             case "complexity" -> title + "\n\n"
                     + "- 时间复杂度：" + block.getOrDefault("time", "待分析") + "\n"
                     + "- 空间复杂度：" + block.getOrDefault("space", "待分析") + "\n"
@@ -960,7 +990,9 @@ public class LlmLessonScriptGenerator {
     private String normalizeBoardBlockType(String type) {
         return switch (safe(type, "markdown").toLowerCase()) {
             case "code", "formula", "list", "quote", "diagram", "callout",
-                    "structure", "trace", "complexity", "comparison", "vs_compare" -> type.toLowerCase();
+                    "structure", "trace", "operation_sequence", "invariant",
+                    "complexity", "comparison", "vs_compare" -> type.toLowerCase();
+            case "operation-sequence" -> "operation_sequence";
             case "vs-compare" -> "vs_compare";
             default -> "markdown";
         };
@@ -974,6 +1006,8 @@ public class LlmLessonScriptGenerator {
             case "callout" -> "提示";
             case "structure" -> "数据结构状态";
             case "trace" -> "算法过程";
+            case "operation_sequence" -> "操作步骤";
+            case "invariant" -> "关键不变量";
             case "complexity" -> "复杂度分析";
             case "comparison", "vs_compare" -> "对比分析";
             default -> "板书";
@@ -1431,8 +1465,10 @@ public class LlmLessonScriptGenerator {
                 - 定义/规则：markdown + callout。
                 - 公式含义和推导：formula。
                 - 代码或伪代码：code。
-                - 执行过程：trace。
+                - 算法执行过程：trace，数据结构课程必须优先填写 traceKind、items、pointers、activeIndices、action、explanation。
                 - 数据结构状态：structure。
+                - 入栈/出栈、入队/出队、链表插入删除、堆调整等操作步骤：operation_sequence。
+                - 二分查找、循环、遍历、堆性质等必须始终保持的判断规则：invariant。
                 - 复杂度：complexity。
                 - 方法区别、易混概念、适用条件对比：vs_compare。
                 - 流程判断：diagram。
@@ -1791,10 +1827,12 @@ public class LlmLessonScriptGenerator {
 
     private String boardBlockExamplesForPrompt() {
         return """
-                {"type": "markdown|code|formula|list|quote|diagram|callout|structure|trace|complexity|comparison|vs_compare", "title": "板书块标题", "content": "普通文本或代码纯内容", "caption": "简短说明", "tone": "info|warning|success|error"},
+                {"type": "markdown|code|formula|list|quote|diagram|callout|structure|trace|operation_sequence|invariant|complexity|comparison|vs_compare", "title": "板书块标题", "content": "普通文本或代码纯内容", "caption": "简短说明", "tone": "info|warning|success|error"},
                 {"type": "code", "title": "代码标题", "language": "c|cpp|java|python|javascript|typescript|go|rust|sql", "content": "纯代码，不要包含 Markdown 代码围栏", "highlights": [2, 3], "focusLine": 3},
-                {"type": "structure", "structureType": "array|stack|queue|linked_list|tree|heap|graph", "title": "结构状态标题", "items": [1, 2, 3], "nodes": [{"id": "A", "label": "A", "depth": 0, "order": 0}], "edges": [{"from": "A", "to": "B", "label": "可选边权"}], "pointers": {"front": 0, "rear": 3, "top": 2}, "activeIndices": [0], "activeIds": ["A"], "visitedIds": ["A"], "frontierIds": ["B"], "pathIds": ["A", "B"], "compareIds": ["1", "4"], "directed": false, "animation": {"action": "enqueue|dequeue|push|pop|compare|swap", "durationMs": 1800}},
-                {"type": "trace", "algorithm": "bubble_sort|binary_search|dfs|bfs|...", "title": "过程标题", "items": [5, 2, 8], "activeIndices": [0, 1], "processedRange": [2, 2], "action": "compare|swap|insert|delete|visit|mark", "explanation": "当前步骤解释"},
+                {"type": "structure", "structureType": "array|stack|queue|linked_list|tree|heap|graph|hash_table|matrix", "title": "结构状态标题", "items": [1, 2, 3], "nodes": [{"id": "A", "label": "A", "depth": 0, "order": 0}], "edges": [{"from": "A", "to": "B", "label": "可选边权"}], "pointers": {"front": 0, "rear": 3, "top": 2}, "activeIndices": [0], "activeIds": ["A"], "visitedIds": ["A"], "frontierIds": ["B"], "pathIds": ["A", "B"], "compareIds": ["1", "4"], "directed": false, "animation": {"action": "enqueue|dequeue|push|pop|compare|swap", "durationMs": 1800}},
+                {"type": "trace", "traceKind": "array_step|pointer_walk|sort_step|tree_traversal|graph_traversal|heap_adjust", "algorithm": "binary_search|two_pointers|bubble_sort|dfs|bfs|heapify|...", "title": "过程标题", "items": [5, 2, 8], "pointers": {"left": 0, "mid": 1, "right": 2}, "activeIndices": [0, 1], "processedRange": [2, 2], "action": "compare|swap|insert|delete|visit|mark", "explanation": "当前步骤解释"},
+                {"type": "operation_sequence", "operation": "enqueue|dequeue|push|pop|insert_node|delete_node|heapify", "title": "操作步骤标题", "currentStep": 1, "steps": [{"label": "1", "action": "定位 rear", "description": "找到下一个可插入位置", "before": "rear=2", "after": "rear=3", "why": "rear 始终指向下一个空位"}], "invariant": "队列元素始终位于 [front, rear) 区间。currentStep 从 1 开始计数"},
+                {"type": "invariant", "title": "不变量标题", "statement": "目标值如果存在，一定在 [left, right] 区间内", "whyItMatters": "每次移动边界都不能排除可能答案", "checkpoints": ["mid 是否已经比较过", "移动边界后目标是否仍可能存在"], "commonMistake": "把可能答案直接跳过", "examples": [{"label": "满足", "value": "left=2,right=5,target 仍在区间", "valid": true, "explanation": "没有丢失可能答案"}]},
                 {"type": "complexity", "title": "复杂度标题", "time": "O(n)", "space": "O(1)", "caseHeaders": {"label": "场景", "value": "复杂度", "description": "说明"}, "cases": [{"label": "最坏情况", "value": "O(n)", "description": "原因"}], "reason": "复杂度原因"},
                 {"type": "vs_compare", "title": "方法 A vs 方法 B", "left": {"title": "方法 A", "subtitle": "适用场景", "badge": "基础方法", "content": "核心步骤或公式", "strengths": ["优势"], "weaknesses": ["注意点"]}, "right": {"title": "方法 B", "subtitle": "适用场景", "badge": "进阶方法", "content": "核心步骤或公式", "strengths": ["优势"], "weaknesses": ["注意点"]}, "criteria": [{"label": "计算步数", "left": "较多", "right": "较少", "winner": "right", "explanation": "原因"}], "summary": "什么时候优先选哪种方法", "emphasis": "left|right|balanced"}
                 """;
