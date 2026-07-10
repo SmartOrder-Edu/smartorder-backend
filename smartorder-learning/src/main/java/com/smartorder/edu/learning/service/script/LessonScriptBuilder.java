@@ -499,6 +499,13 @@ public class LessonScriptBuilder {
                             List.of(90, 72, 65, 44, 18, 31),
                             List.of(1, 4),
                             List.of("1", "4"),
+                            "max",
+                            6,
+                            1,
+                            List.of(3, 4),
+                            List.of(),
+                            List.of(),
+                            null,
                             "堆本质上常用数组存储，父子关系由下标计算得到。"
                     ),
                     traceBlock(
@@ -716,12 +723,27 @@ public class LessonScriptBuilder {
     }
 
     private Map<String, Object> heapBlock(String title, List<?> items, List<Integer> activeIndices,
-                                          List<String> compareIds, String caption) {
+                                          List<String> compareIds, String heapType, int heapSize,
+                                          Integer parentIndex, List<Integer> childIndices,
+                                          List<Integer> swapIndices, List<Integer> violationIndices,
+                                          List<Integer> sortedRange, String caption) {
         Map<String, Object> block = boardBlock("structure", title, null, caption, "info");
         block.put("structureType", "heap");
         block.put("items", items);
         block.put("activeIndices", activeIndices);
         block.put("compareIds", compareIds);
+        block.put("indexBase", 0);
+        block.put("heapType", heapType);
+        block.put("heapSize", heapSize);
+        if (parentIndex != null) {
+            block.put("parentIndex", parentIndex);
+        }
+        block.put("childIndices", childIndices);
+        block.put("swapIndices", swapIndices);
+        block.put("violationIndices", violationIndices);
+        if (sortedRange != null && sortedRange.size() == 2) {
+            block.put("sortedRange", sortedRange);
+        }
         block.put("caption", caption);
         return block;
     }
