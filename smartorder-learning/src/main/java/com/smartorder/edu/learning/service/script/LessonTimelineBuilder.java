@@ -241,6 +241,7 @@ public class LessonTimelineBuilder {
             copyPayloadField(block, payload, "compareIds", "compareIds");
             copyPayloadField(block, payload, "rootId", "rootId");
             copyPayloadField(block, payload, "directed", "directed");
+            copyPayloadField(block, payload, "displayLayout", "displayLayout");
             copyPayloadField(block, payload, "layout", "layout");
             copyPayloadField(block, payload, "animation", "animation");
             copyPayloadField(block, payload, "traceKind", "traceKind");
