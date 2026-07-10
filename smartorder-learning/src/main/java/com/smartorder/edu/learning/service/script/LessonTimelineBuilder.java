@@ -239,6 +239,7 @@ public class LessonTimelineBuilder {
             copyPayloadField(block, payload, "frontierIds", "frontierIds");
             copyPayloadField(block, payload, "pathIds", "pathIds");
             copyPayloadField(block, payload, "compareIds", "compareIds");
+            copyPayloadField(block, payload, "indexBase", "indexBase");
             copyPayloadField(block, payload, "heapType", "heapType");
             copyPayloadField(block, payload, "heapSize", "heapSize");
             copyPayloadField(block, payload, "parentIndex", "parentIndex");

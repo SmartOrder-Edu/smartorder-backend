@@ -732,6 +732,7 @@ public class LessonScriptBuilder {
         block.put("items", items);
         block.put("activeIndices", activeIndices);
         block.put("compareIds", compareIds);
+        block.put("indexBase", 0);
         block.put("heapType", heapType);
         block.put("heapSize", heapSize);
         if (parentIndex != null) {
