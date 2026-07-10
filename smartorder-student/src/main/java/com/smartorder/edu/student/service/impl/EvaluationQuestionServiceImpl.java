@@ -138,7 +138,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         if (learningSpaceId != null) {
             wrapper.eq(EvaluationQuestion::getLearningSpaceId, learningSpaceId);
         }
-        wrapper.orderByDesc(EvaluationQuestion::getCreatedAt);
+        wrapper.orderByAsc(EvaluationQuestion::getSortOrder);
         wrapper.last("LIMIT " + resolvedLimit);
         return evaluationQuestionMapper.selectList(wrapper)
                 .stream()
@@ -546,6 +546,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         }
 
         question.setQuestionCode(buildQuestionCode(courseName, question.getQuestionType(), sequence, questionId));
+        question.setSortOrder(sequence);
         question.setGenerationSource("agent_generated");
         question.setStatus(1);
         question.setCreatedAt(now);

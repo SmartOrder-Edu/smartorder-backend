@@ -25,7 +25,7 @@ public interface EvaluationQuestionMapper extends BaseMapper<EvaluationQuestion>
     @Select("SELECT q.* FROM evaluation_question_generation_item i "
             + "INNER JOIN evaluation_question q ON i.question_id = q.id "
             + "WHERE i.task_id = #{taskId} AND i.status = 'success' "
-            + "ORDER BY i.sequence_no ASC")
+            + "ORDER BY q.sort_order ASC, q.id ASC")
     @Results({
             @Result(property = "options", column = "options", typeHandler = JacksonTypeHandler.class),
             @Result(property = "correctAnswer", column = "correct_answer", typeHandler = JacksonTypeHandler.class),

@@ -35,6 +35,9 @@ public class EvaluationQuestionVO {
     /** 题型中文名 */
     private String questionTypeName;
 
+    /** 排序序号（同题型内排序，数值越小越靠前） */
+    private Integer sortOrder;
+
     /** 难度等级：1-5 */
     private Integer difficulty;
 
@@ -100,6 +103,7 @@ public class EvaluationQuestionVO {
         vo.setChapterId(q.getChapterId());
         vo.setQuestionType(q.getQuestionType());
         vo.setQuestionTypeName(resolveQuestionTypeName(q.getQuestionType()));
+        vo.setSortOrder(q.getSortOrder());
         vo.setDifficulty(q.getDifficulty());
         vo.setScore(q.getScore());
         vo.setAbilityDimension(q.getAbilityDimension());

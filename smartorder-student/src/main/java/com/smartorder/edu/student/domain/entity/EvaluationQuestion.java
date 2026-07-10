@@ -86,6 +86,9 @@ public class EvaluationQuestion {
     /** 来源：agent_generated/manual/rag/imported */
     private String generationSource;
 
+    /** 排序序号（同题型内排序，数值越小越靠前） */
+    private Integer sortOrder;
+
     /** 状态：1启用，0禁用 */
     private Integer status;
 

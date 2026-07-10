@@ -34,10 +34,10 @@ public class PracticeReminderRabbitConfig {
 
     // ==================== 可配置延迟 ====================
 
-    @Value("${practice.reminder.stage1-delay:1}")
+    @Value("${practice.reminder.stage1-delay:60}")
     private long stage1DelayMinutes;
 
-    @Value("${practice.reminder.stage2-delay:2}")
+    @Value("${practice.reminder.stage2-delay:1440}")
     private long stage2DelayMinutes;
 
     // ==================== DLX 交换机 ====================

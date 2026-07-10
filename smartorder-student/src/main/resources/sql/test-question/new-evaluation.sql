@@ -22,6 +22,7 @@ CREATE TABLE `evaluation_question`
     `learning_space_id` bigint                                                       NOT NULL COMMENT '学习空间ID',
     `chapter_id`        bigint NULL DEFAULT 0 COMMENT '章节ID',
     `question_type`     varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '题型：single_choice/multiple_choice/judge/fill_blank/short_answer/code/scenario/sql/multimodal',
+    `sort_order`        int                                                          NOT NULL DEFAULT 0 COMMENT '排序序号（同题型内排序，数值越小越靠前）',
     `difficulty`        int                                                          NOT NULL DEFAULT 1 COMMENT '难度等级：1-5',
     `score`             decimal(6, 2)                                                NOT NULL DEFAULT 5.00 COMMENT '题目分值',
     `ability_dimension` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '能力维度：concept/application/analysis/design/debug',
@@ -43,6 +44,7 @@ CREATE TABLE `evaluation_question`
     INDEX               `idx_learning_space_id`(`learning_space_id` ASC) USING BTREE,
     INDEX               `idx_chapter_id`(`chapter_id` ASC) USING BTREE,
     INDEX               `idx_question_type`(`question_type` ASC) USING BTREE,
+    INDEX               `idx_space_type_sort`(`learning_space_id`, `question_type`, `sort_order`) USING BTREE,
     INDEX               `uk_question_code`(`question_code` ASC) USING BTREE
 ) ENGINE = InnoDB AUTO_INCREMENT = 47745560000001 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '测评Agent题库表' ROW_FORMAT = Dynamic;
 
