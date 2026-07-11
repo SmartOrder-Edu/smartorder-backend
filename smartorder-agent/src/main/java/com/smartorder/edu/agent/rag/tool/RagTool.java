@@ -19,7 +19,7 @@ import java.util.Map;
 
 /**
  * RAG 检索工具
- * 允许 Agent 进行知识库检索，支持文件ID和知识库ID指定检索范围
+ * 允许 Agent 在系统绑定的引用资料范围内进行知识库检索。
  */
 @Slf4j
 @Component
@@ -36,8 +36,9 @@ public class RagTool implements ToolHandler {
 
     @Override
     public String description() {
-        return "从知识库中检索相关信息。支持指定文件ID集合和知识库ID集合进行精确检索。"
-                + "当用户询问知识库中的内容、文档内容、或需要基于知识库回答问题时使用。"
+        return "从用户当前已选择的知识库或文件中检索相关信息。"
+                + "检索范围由系统工具层自动绑定，模型调用时只需要提供检索查询。"
+                + "当用户询问已选资料、题单、文档、知识库中的内容，或需要基于这些资料回答问题时使用。"
                 + "检索模式可选：auto（自动判断）、simple（简单检索）、medium（中等检索）、complex（复杂图RAG检索）。";
     }
 
@@ -55,19 +56,19 @@ public class RagTool implements ToolHandler {
     public Object execute(Object request, ToolInvokeContext context) {
         RagRetrieveRequest req = (RagRetrieveRequest) request;
 
-        // 始终使用前端传递的 ID（runtimeContext），忽略 LLM 提取的 ID
+        // 始终使用后端运行上下文中绑定的引用范围，不接受模型指定范围。
         List<Long> knowledgeBaseIds = context.getRuntimeContext().getKnowledgeBaseIds();
         List<Long> fileIds = context.getRuntimeContext().getFileIds();
 
         log.info("[RagTool] 开始执行，query={}, fileIds={}, knowledgeBaseIds={}, mode={}",
                 req.getQuery(), fileIds, knowledgeBaseIds, req.getRetrievalMode());
 
-        // 如果仍然没有 ID，返回提示信息
+        // 如果仍然没有绑定引用范围，返回提示信息。
         if ((knowledgeBaseIds == null || knowledgeBaseIds.isEmpty())
                 && (fileIds == null || fileIds.isEmpty())) {
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("success", false);
-            result.put("errorMessage", "未指定知识库ID或文件ID，请用户提供要检索的知识库或文件");
+            result.put("errorMessage", "当前未选择可检索的引用资料，请先在界面选择知识库或文件");
             return result;
         }
 
@@ -130,12 +131,6 @@ public class RagTool implements ToolHandler {
     public static class RagRetrieveRequest {
         @dev.langchain4j.model.output.structured.Description("检索查询语句，应结合用户问题改写为清晰的检索查询")
         private String query;
-
-        @dev.langchain4j.model.output.structured.Description("文件ID列表，指定要检索的文件。可省略")
-        private List<Long> fileIds;
-
-        @dev.langchain4j.model.output.structured.Description("知识库ID列表，指定要检索的知识库。可省略")
-        private List<Long> knowledgeBaseIds;
 
         @dev.langchain4j.model.output.structured.Description("返回结果数量，默认10，最大20")
         private Integer topK;

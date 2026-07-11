@@ -84,6 +84,17 @@ public class SelfManagedReActEngine {
         return SystemMessage.from(prompt);
     }
 
+    private SystemMessage buildSelectedReferenceInstruction() {
+        return SystemMessage.from(
+                "[系统指令] 当前用户已在界面选择知识库或文件作为本轮回答依据。"
+                        + "这些引用资料的检索范围由系统工具层自动绑定，对你不可见。"
+                        + "你不需要知道、询问、推测或填写任何内部资料标识。"
+                        + "当用户提到\"这个题单\"、\"这份资料\"、\"这个知识库\"、\"上面的文件\"时，"
+                        + "默认指代当前已选引用资料。你必须先调用 ragRetrieve 工具，并只围绕用户问题构造 query，"
+                        + "再基于检索结果回答；不要编造资料内容。"
+        );
+    }
+
     /**
      * 执行 ReAct 循环
      */
@@ -106,11 +117,9 @@ public class SelfManagedReActEngine {
             log.info("[SelfManagedReActEngine] 注入 RAG 上下文，长度={}", runtimeContext.getRagContext().length());
         }
 
-        // 注入强制 ragRetrieve 指令（当前端传递了 fileIds 或 knowledgeBaseIds 时）
+        // 注入强制 ragRetrieve 指令（当前端传递了引用资料范围时）
         if (runtimeContext.isForceRagRetrieve()) {
-            String forceRagInstruction = "[系统指令] 当前用户已指定知识库ID或文件ID，你必须先调用 ragRetrieve 工具进行检索，然后再回答用户的问题。" +
-                    "不要尝试自己编造答案，必须基于检索结果回答。";
-            messages.add(Math.min(1, messages.size()), SystemMessage.from(forceRagInstruction));
+            messages.add(Math.min(1, messages.size()), buildSelectedReferenceInstruction());
             log.info("[SelfManagedReActEngine] 注入强制 ragRetrieve 指令");
         }
 
@@ -170,11 +179,9 @@ public class SelfManagedReActEngine {
             messages.add(SystemMessage.from(runtimeContext.getAttachmentContext()));
         }
 
-        // 注入强制 ragRetrieve 指令（当前端传递了 fileIds 或 knowledgeBaseIds 时）
+        // 注入强制 ragRetrieve 指令（当前端传递了引用资料范围时）
         if (runtimeContext.isForceRagRetrieve()) {
-            String forceRagInstruction = "[系统指令] 当前用户已指定知识库ID或文件ID，你必须先调用 ragRetrieve 工具进行检索，然后再回答用户的问题。" +
-                    "不要尝试自己编造答案，必须基于检索结果回答。";
-            messages.add(SystemMessage.from(forceRagInstruction));
+            messages.add(buildSelectedReferenceInstruction());
             log.info("[SelfManagedReActEngine] 注入强制 ragRetrieve 指令（executeWithTaskContext）");
         }
 
@@ -247,11 +254,9 @@ public class SelfManagedReActEngine {
             messages.add(SystemMessage.from(runtimeContext.getAttachmentContext()));
         }
 
-        // 注入强制 ragRetrieve 指令（当前端传递了 fileIds 或 knowledgeBaseIds 时）
+        // 注入强制 ragRetrieve 指令（当前端传递了引用资料范围时）
         if (runtimeContext.isForceRagRetrieve()) {
-            String forceRagInstruction = "[系统指令] 当前用户已指定知识库ID或文件ID，你必须先调用 ragRetrieve 工具进行检索，然后再回答用户的问题。" +
-                    "不要尝试自己编造答案，必须基于检索结果回答。";
-            messages.add(SystemMessage.from(forceRagInstruction));
+            messages.add(buildSelectedReferenceInstruction());
             log.info("[SelfManagedReActEngine] 注入强制 ragRetrieve 指令（buildTaskMessages）");
         }
 

@@ -130,7 +130,8 @@ public class VectorIndexService {
      */
     public List<AttachmentRagSearchResult> searchByKnowledgeBaseIds(String query, Long userId,
                                                                      List<Long> knowledgeBaseIds, int topK) {
-        if (query == null || query.isBlank() || knowledgeBaseIds == null || knowledgeBaseIds.isEmpty()) {
+        if (query == null || query.isBlank() || userId == null
+                || knowledgeBaseIds == null || knowledgeBaseIds.isEmpty()) {
             return Collections.emptyList();
         }
 
@@ -379,9 +380,7 @@ public class VectorIndexService {
                 .distinct()
                 .map(id -> "knowledge_base_id == " + id)
                 .collect(Collectors.joining(" || "));
-        // 按知识库检索时，不强制要求 user_id 匹配
-        // 因为知识库可能是共享的，或者数据的 user_id 可能与当前用户不同
-        return kbExpr;
+        return "user_id == " + userId + " && (" + kbExpr + ")";
     }
 
     private List<AttachmentRagSearchResult> parseAttachmentSearchResults(SearchResp resp) {
