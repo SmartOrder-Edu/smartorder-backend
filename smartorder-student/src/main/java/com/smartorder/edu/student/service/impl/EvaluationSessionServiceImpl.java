@@ -63,13 +63,14 @@ public class EvaluationSessionServiceImpl implements IEvaluationSessionService {
 
     @Override
     public EvaluationSession createSession(Long learningSpaceId, Long userId, String topic,
-                                            Long taskId, BigDecimal totalScore) {
+                                            Long taskId, BigDecimal totalScore, int totalQuestionCount) {
         EvaluationSession session = new EvaluationSession();
         session.setUserId(userId);
         session.setLearningSpaceId(learningSpaceId);
         session.setTopic(topic);
         session.setTaskId(taskId);
         session.setTotalScore(totalScore);
+        session.setTotalQuestionCount(totalQuestionCount);
         session.setStatus("todo");
         session.setCreatedAt(LocalDateTime.now());
         session.setUpdatedAt(LocalDateTime.now());

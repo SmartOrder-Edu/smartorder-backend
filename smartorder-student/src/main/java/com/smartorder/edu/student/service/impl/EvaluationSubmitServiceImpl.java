@@ -186,7 +186,7 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
 
         // 6. 标记作业已经写完了，写入 EvaluationSession 数据库
         LambdaQueryWrapper<EvaluationSession> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(EvaluationSession::getTaskId, taskId)
+        queryWrapper.eq(EvaluationSession::getId, taskId)
                 .eq(EvaluationSession::getUserId, userId);
 
         EvaluationSession session = sessionMapper.selectOne(queryWrapper);

@@ -19,7 +19,7 @@ public interface IEvaluationSessionService {
 
     /** 创建测评任务 */
     EvaluationSession createSession(Long learningSpaceId, Long userId, String topic,
-                                    Long taskId, BigDecimal totalScore);
+                                    Long taskId, BigDecimal totalScore, int totalQuestionCount);
 
     /** 开始答题 */
     void startSession(Long sessionId, Long userId);

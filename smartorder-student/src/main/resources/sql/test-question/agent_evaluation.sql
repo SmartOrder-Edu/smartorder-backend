@@ -23,6 +23,7 @@ CREATE TABLE `evaluation_answer_record`
     `judge_result`       json                                                         DEFAULT NULL COMMENT '判题结果JSON',
     `error_type`         varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '错误类型',
     `error_reason`       text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci COMMENT '错误原因',
+	`status`		int								 DEFAULT NULL COMMENT '0-没答题，1-存档，2-已经提交，3-分析好了',
     `created_at`         datetime                                                     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`         datetime                                                     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`) USING BTREE,

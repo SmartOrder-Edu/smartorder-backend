@@ -62,6 +62,9 @@ public class EvaluationAnswerRecord {
     /** 是否使用提示：0否，1是 */
     private Integer usedHint;
 
+    /** 状态：0-没答题，1-存档，2-已经提交，3-分析好了 */
+    private Integer status;
+
     /** 判题结果JSON */
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<String, Object> judgeResult;

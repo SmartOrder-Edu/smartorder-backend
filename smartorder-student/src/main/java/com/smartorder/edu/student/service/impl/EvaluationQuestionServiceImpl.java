@@ -1129,8 +1129,8 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         wrapper.eq(EvaluationQuestionGenerationItem::getTaskId, context.task().getId())
                 .eq(EvaluationQuestionGenerationItem::getStatus, "success")
                 .isNotNull(EvaluationQuestionGenerationItem::getQuestionId);
-        List<EvaluationQuestionGenerationItem> successItems = generationItemMapper.selectList(wrapper);
 
+        List<EvaluationQuestionGenerationItem> successItems = generationItemMapper.selectList(wrapper);
         if (successItems.isEmpty()) {
             throw new BusinessException("没有成功生成的题目，无法创建会话");
         }
@@ -1157,7 +1157,8 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                 context.task().getUserId(),
                 topic,
                 context.task().getId(),
-                totalScore
+                totalScore,
+                successItems.size()
         );
     }
 
