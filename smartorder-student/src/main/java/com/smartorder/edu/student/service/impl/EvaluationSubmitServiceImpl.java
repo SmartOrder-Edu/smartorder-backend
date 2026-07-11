@@ -4,13 +4,18 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.student.aiservice.QuestionAiService;
+import com.smartorder.edu.student.codejudge.CodeJudgeRequest;
+import com.smartorder.edu.student.codejudge.CodeJudgeResult;
+import com.smartorder.edu.student.codejudge.ICodeJudgeService;
 import com.smartorder.edu.student.domain.dto.SubmitAnswersDTO;
 import com.smartorder.edu.student.domain.entity.EvaluationAnswerRecord;
+import com.smartorder.edu.student.domain.entity.EvaluationCodeTestCase;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestion;
 import com.smartorder.edu.student.domain.entity.EvaluationSession;
 import com.smartorder.edu.student.domain.enums.QuestionScore;
 import com.smartorder.edu.student.domain.vo.TaskSubmitResultVO;
 import com.smartorder.edu.student.mapper.EvaluationAnswerRecordMapper;
+import com.smartorder.edu.student.mapper.EvaluationCodeTestCaseMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
 import com.smartorder.edu.student.mapper.EvaluationSessionMapper;
 import com.smartorder.edu.student.service.IEvaluationSubmitService;
@@ -55,6 +60,8 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
     private final StudentPromptFileLoader promptFileLoader;
     private final QuestionAiService questionAiService;
     private final ObjectMapper objectMapper;
+    private final ICodeJudgeService codeJudgeService;
+    private final EvaluationCodeTestCaseMapper codeTestCaseMapper;
 
     /** 主观题 AI 判分专用线程池（守护线程） */
     private final ExecutorService gradingExecutor = Executors.newFixedThreadPool(4, r -> {
@@ -65,7 +72,7 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
 
     // ======================== 主观题类型 ========================
     private static final Set<String> SUBJECTIVE_TYPES = Set.of(
-            "short_answer", "code", "scenario", "sql", "multimodal"
+            "short_answer", "scenario", "sql", "multimodal"
     );
 
     // ======================== prompt 路径 ========================
@@ -116,7 +123,21 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
             EvaluationAnswerRecord record = buildBaseRecord(taskId, spaceId, userId, question, item);
             QuestionScore qs = QuestionScore.fromCode(question.getQuestionType());
 
-            if (qs.isObjective()) {
+            if ("code".equals(question.getQuestionType())) {
+                // 代码题：Docker 沙箱判题
+                GradeCodeResult gcr = gradeCode(question, item.getUserAnswer());
+                record.setIsCorrect(gcr.accepted ? 1 : 0);
+                record.setScore(gcr.score);
+                record.setJudgeResult(gcr.judgeResult);
+                if (!gcr.accepted && gcr.errorType != null) {
+                    record.setErrorType(gcr.errorType);
+                    record.setErrorReason(gcr.errorReason);
+                }
+                // 代码题判题为确定性结果，计入客观分
+                objectiveScore = objectiveScore.add(gcr.score);
+                objectiveTotal = objectiveTotal.add(gcr.maxScore);
+                details.add(buildDetail(question.getId(), gcr.accepted, gcr.score, "graded", gcr.judgeResult));
+            } else if (qs.isObjective()) {
                 // 客观题：程序判分
                 GradeResult gr = gradeObjective(question, item.getUserAnswer());
                 record.setIsCorrect(gr.isCorrect ? 1 : 0);
@@ -236,7 +257,8 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
             actual = actual.add(r.getScore() != null ? r.getScore() : BigDecimal.ZERO);
 
             QuestionScore qs = q != null ? QuestionScore.fromCode(q.getQuestionType()) : QuestionScore.UNKNOWN;
-            if (qs.isObjective()) {
+            // 代码题也是确定性判题，计入客观分
+            if (qs.isObjective() || "code".equals(q.getQuestionType())) {
                 objScore = objScore.add(r.getScore() != null ? r.getScore() : BigDecimal.ZERO);
                 objTotal = objTotal.add(qScore);
             }
@@ -634,8 +656,95 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
         return null;
     }
 
+    // ======================== 代码题判分 ========================
+
+    /**
+     * 代码题判分：加载测试用例，调用 Docker 判题服务
+     */
+    private GradeCodeResult gradeCode(EvaluationQuestion question, Map<String, Object> userAnswer) {
+        // 1. 提取语言和源码
+        String language = extractString(userAnswer, "language", "cpp17");
+        String sourceCode = extractString(userAnswer, "code", "");
+
+        if (sourceCode == null || sourceCode.isBlank()) {
+            BigDecimal maxScore = question.getScore() != null
+                    ? question.getScore()
+                    : QuestionScore.CODE.getDefaultScore();
+            return new GradeCodeResult(false, BigDecimal.ZERO, maxScore,
+                    Map.of("status", "UNANSWERED", "message", "未提交代码"),
+                    "unanswered", "未提交代码");
+        }
+
+        // 2. 加载测试用例（仅启用状态的，按排序字段升序）
+        List<EvaluationCodeTestCase> testCases = codeTestCaseMapper.selectList(
+                new LambdaQueryWrapper<EvaluationCodeTestCase>()
+                        .eq(EvaluationCodeTestCase::getQuestionId, question.getId())
+                        .eq(EvaluationCodeTestCase::getStatus, 1)
+                        .orderByAsc(EvaluationCodeTestCase::getSortOrder));
+
+        BigDecimal maxScore = question.getScore() != null
+                ? question.getScore()
+                : QuestionScore.CODE.getDefaultScore();
+
+        if (testCases.isEmpty()) {
+            log.warn("代码题 {} 没有配置测试用例，回退为0分", question.getId());
+            return new GradeCodeResult(false, BigDecimal.ZERO, maxScore,
+                    Map.of("status", "SE", "message", "题目未配置测试用例"),
+                    "system_error", "题目未配置测试用例");
+        }
+
+        // 3. 从 correctAnswer 解析题目级时间/内存配置
+        Integer timeLimitMs = null;
+        Integer memoryLimitMb = null;
+        Map<String, Object> config = question.getCorrectAnswer();
+        if (config != null) {
+            if (config.get("timeLimitMs") instanceof Number tl) timeLimitMs = tl.intValue();
+            if (config.get("memoryLimitMb") instanceof Number ml) memoryLimitMb = ml.intValue();
+        }
+
+        // 4. 构建判题请求并执行
+        CodeJudgeRequest request = CodeJudgeRequest.builder()
+                .questionId(question.getId())
+                .language(language)
+                .sourceCode(sourceCode)
+                .maxScore(maxScore)
+                .testCases(testCases)
+                .timeLimitMs(timeLimitMs)
+                .memoryLimitMb(memoryLimitMb)
+                .build();
+
+        CodeJudgeResult result = codeJudgeService.judge(request);
+        Map<String, Object> judgeJson = result.toJudgeResultJson();
+
+        String errorType = result.getStatus() != null ? result.getStatus().name().toLowerCase() : "se";
+        String errorReason = result.getCompileMessage() != null && !result.getCompileMessage().isEmpty()
+                ? result.getCompileMessage()
+                : result.getRuntimeMessage();
+
+        return new GradeCodeResult(
+                result.getAccepted() != null && result.getAccepted(),
+                result.getScore() != null ? result.getScore() : BigDecimal.ZERO,
+                result.getMaxScore() != null ? result.getMaxScore() : maxScore,
+                judgeJson,
+                errorType,
+                errorReason);
+    }
+
+    /**
+     * 从 Map 中安全提取字符串值
+     */
+    private String extractString(Map<String, Object> map, String key, String defaultVal) {
+        if (map == null) return defaultVal;
+        Object val = map.get(key);
+        return val != null ? val.toString() : defaultVal;
+    }
+
     // ======================== 判分结果内部类 ========================
 
     private record GradeResult(boolean isCorrect, BigDecimal score, String message, String errorType) {
+    }
+
+    private record GradeCodeResult(boolean accepted, BigDecimal score, BigDecimal maxScore,
+                                    Map<String, Object> judgeResult, String errorType, String errorReason) {
     }
 }

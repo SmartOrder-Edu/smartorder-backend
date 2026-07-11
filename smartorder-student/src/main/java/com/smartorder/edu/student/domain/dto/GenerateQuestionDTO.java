@@ -52,6 +52,9 @@ public class GenerateQuestionDTO {
         /** 选项数量（仅选择题有效，默认4） */
         private Integer optionCount;
 
+        /** 编程语言（仅 code 题型生效），默认 C */
+        private String programmingLanguage;
+
         /** 排序（可选） */
         private Integer sort;
     }

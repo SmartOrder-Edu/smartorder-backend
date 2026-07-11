@@ -122,6 +122,20 @@ public class AgentConfiguration {
                 .build();
     }
 
+    @Bean
+    public StreamingChatModel streamingQuestionChatModel() {
+        return OpenAiStreamingChatModel.builder()
+                .httpClientBuilder(JdkLangChain4jHttpClientBuilder.withDefaults())
+                .apiKey(apiKey)
+                .baseUrl(baseUrl)
+                .modelName(modelName)
+                .responseFormat("json_object")
+                .returnThinking(false)
+                .sendThinking(false, "reasoning_content")
+                .timeout(Duration.ofSeconds(120))
+                .build();
+    }
+
     private final Map<String, ChatMemory> memoryStore = new ConcurrentHashMap<>();
 
     public ChatMemory getOrCreateMemory(String conversationId) {

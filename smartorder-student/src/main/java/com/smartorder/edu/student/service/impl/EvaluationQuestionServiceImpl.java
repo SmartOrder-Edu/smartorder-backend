@@ -11,6 +11,7 @@ import com.smartorder.edu.learning.domain.entity.LearningSpace;
 import com.smartorder.edu.learning.mapper.LearningSpaceMapper;
 import com.smartorder.edu.student.aiservice.QuestionAiService;
 import com.smartorder.edu.student.domain.dto.GenerateQuestionDTO;
+import com.smartorder.edu.student.domain.entity.EvaluationCodeTestCase;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestion;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationItem;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationTask;
@@ -19,6 +20,7 @@ import com.smartorder.edu.student.domain.enums.PromptFile;
 import com.smartorder.edu.student.domain.enums.QuestionTaskPlan;
 import com.smartorder.edu.student.domain.enums.QuestionScore;
 import com.smartorder.edu.student.domain.vo.EvaluationQuestionVO;
+import com.smartorder.edu.student.mapper.EvaluationCodeTestCaseMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationItemMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationTaskMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
@@ -86,6 +88,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     private final QuestionAiService questionAiService;
     private final IEvaluationSessionService sessionService;
     private final EvaluationSessionMapper sessionMapper;
+    private final EvaluationCodeTestCaseMapper codeTestCaseMapper;
 
     /** 每题型默认生成数量 */
     private static final int DEFAULT_COUNT = 3;
@@ -96,7 +99,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     /** 单条明细最大重试次数 */
     private static final int DEFAULT_MAX_RETRY_COUNT = 3;
     /** 编程题默认编程语言 */
-    private static final String DEFAULT_PROGRAMMING_LANGUAGE = "Java";
+    private static final String DEFAULT_PROGRAMMING_LANGUAGE = "C";
     /** SQL 题默认数据库方言 */
     private static final String DEFAULT_SQL_DIALECT = "MySQL";
     /** 提示词文件所在目录 */
@@ -328,6 +331,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                     count,
                     resolveDifficulty(typeCount.getDifficulty()),
                     resolveOptionCount(typeCount.getOptionCount()),
+                    resolveProgrammingLanguage(typeCount.getProgrammingLanguage()),
                     batchItems
             ));
         }
@@ -386,7 +390,8 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                 batch.questionType(),
                 batch.count(),
                 batch.difficulty(),
-                batch.optionCount()
+                batch.optionCount(),
+                batch.programmingLanguage()
         );
         log.debug("生成问题提示词构建完成: taskId={}, questionType={}, length={}",
                 context.task().getId(), batch.questionType(), userPrompt.length());
@@ -418,6 +423,18 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
             evaluationQuestionMapper.insert(question);
             markItemSuccess(item.getId(), questionId, llmJson);
             successfulItemIds.add(item.getId());
+
+            // 代码题：解析并保存 AI 生成的测试用例
+            if ("code".equals(batch.questionType())) {
+                List<EvaluationCodeTestCase> testCases = parseTestCases(questionsNode.get(i), questionId);
+                if (!testCases.isEmpty()) {
+                    codeTestCaseMapper.insertBatch(testCases);
+                    log.info("代码题测试用例已保存: questionId={}, testCaseCount={}", questionId, testCases.size());
+                } else {
+                    log.warn("代码题未生成测试用例，需手动补充: questionId={}", questionId);
+                }
+            }
+
             int generatedCount = successCount.incrementAndGet();
             updateTaskProgress(context.task().getId(), generatedCount, 0, context.task().getTotalCount(),
                     "generated " + generatedCount + "/" + context.task().getTotalCount());
@@ -434,7 +451,8 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                                    String questionType,
                                    int count,
                                    int difficulty,
-                                   int optionCount) {
+                                   int optionCount,
+                                   String programmingLanguage) {
 
         // 根据题型加载对应提示词文件（如 sql/code 等专属规则）
         PromptFile promptFile = PromptFile.fromCode(questionType);
@@ -451,7 +469,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                         "count", count,
                         "language", "zh-CN",
                         "optionCount", optionCount,
-                        "programmingLanguage", DEFAULT_PROGRAMMING_LANGUAGE,
+                        "programmingLanguage", programmingLanguage,
                         "sqlDialect", DEFAULT_SQL_DIALECT
                 ))
                 .text();
@@ -725,6 +743,51 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         return "";
     }
 
+    /**
+     * 从 AI 返回的 JSON 中解析测试用例列表。
+     *
+     * <p>仅 code 题型会包含 {@code test_cases} 数组。每个用例包含 input/expected_output/is_sample 等字段。
+     * 解析失败或 test_cases 缺失时返回空列表，不影响题目本身入库。</p>
+     *
+     * @param q          AI 返回的单个题目 JSON 节点
+     * @param questionId 已入库的题目 ID
+     * @return 解析后的测试用例实体列表（可能为空）
+     */
+    private List<EvaluationCodeTestCase> parseTestCases(JsonNode q, Long questionId) {
+        JsonNode testCasesNode = q.get("test_cases");
+        if (testCasesNode == null || !testCasesNode.isArray() || testCasesNode.isEmpty()) {
+            log.debug("题目未包含 test_cases 字段或为空: questionId={}", questionId);
+            return List.of();
+        }
+
+        List<EvaluationCodeTestCase> result = new ArrayList<>();
+        int sortOrder = 1;
+        LocalDateTime now = LocalDateTime.now();
+
+        for (JsonNode tcNode : testCasesNode) {
+            try {
+                EvaluationCodeTestCase tc = new EvaluationCodeTestCase();
+                tc.setId(IdGenerator.nextId());
+                tc.setQuestionId(questionId);
+                tc.setInput(readText(tcNode, "input", ""));
+                tc.setExpectedOutput(readRequiredText(tcNode, "expected_output"));
+                tc.setIsSample(tcNode.has("is_sample") && tcNode.get("is_sample").asBoolean() ? 1 : 0);
+                tc.setWeight(BigDecimal.valueOf(tcNode.has("weight") ? tcNode.get("weight").asDouble() : 1.0));
+                tc.setTimeLimitMs(readInt(tcNode, "time_limit_ms", 1000));
+                tc.setMemoryLimitMb(readInt(tcNode, "memory_limit_mb", 128));
+                tc.setSortOrder(sortOrder++);
+                tc.setStatus(1);
+                tc.setCreatedAt(now);
+                tc.setUpdatedAt(now);
+                result.add(tc);
+            } catch (Exception e) {
+                log.warn("解析测试用例失败，跳过该用例: questionId={}, caseIndex={}", questionId, sortOrder - 1, e);
+            }
+        }
+
+        return result;
+    }
+
     /** 新格式 analysis.wrong_reason（{A:"原因", C:"原因"}）→ 旧格式 [{option:"A", reason:"..."}] */
     private List<Map<String, Object>> parseWrongReason(JsonNode analysisNode) {
         JsonNode wrongReason = analysisNode.get("wrong_reason");
@@ -863,6 +926,11 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     /** 选项数参数兜底：为空时使用默认选项数（仅选择题生效） */
     private int resolveOptionCount(Integer optionCount) {
         return optionCount == null ? DEFAULT_OPTION_COUNT : optionCount;
+    }
+
+    /** 编程语言参数兜底：为空时使用默认语言 C */
+    private String resolveProgrammingLanguage(String programmingLanguage) {
+        return programmingLanguage == null || programmingLanguage.isBlank() ? DEFAULT_PROGRAMMING_LANGUAGE : programmingLanguage.strip();
     }
 
     /** 计算进度百分比：(成功+失败)/总数，封顶 100% */
@@ -1109,6 +1177,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
             int count,
             int difficulty,
             int optionCount,
+            String programmingLanguage,
             List<EvaluationQuestionGenerationItem> items
     ) {
     }
