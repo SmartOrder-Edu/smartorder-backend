@@ -51,6 +51,7 @@ public class LessonTimelineBuilder {
                     "",
                     durationMs,
                     waitForUser,
+                    List.of(),
                     Map.of()
             ));
         }
@@ -111,6 +112,8 @@ public class LessonTimelineBuilder {
             sceneActionCue.setPayload(sceneAction);
             timeline.getCues().add(sceneActionCue);
 
+            appendBoardRevealCues(timeline, spec, i, cursorMs, durationMs);
+
             if (waitForUser) {
                 StudyTimelineCueVO pauseCue = new StudyTimelineCueVO();
                 pauseCue.setId(spec.id() + "-wait");
@@ -135,7 +138,14 @@ public class LessonTimelineBuilder {
                 "stepTitle", step.getTitle(),
                 "nodeType", step.getNodeType(),
                 "contractVersion", 2,
-                "capabilities", List.of("segment_reveal", "scene_action", "pause_at_segment_end", "board_block_action_payload")
+                "capabilities", List.of(
+                        "segment_reveal",
+                        "scene_action",
+                        "pause_at_segment_end",
+                        "board_block_action_payload",
+                        "board_block_reveal",
+                        "board_item_reveal"
+                )
         )));
         return timeline;
     }
@@ -166,21 +176,43 @@ public class LessonTimelineBuilder {
             int autoAdvanceMs = intValue(segment.get("autoAdvanceMs"), 0);
             boolean waitForUser = autoAdvanceMs <= 0 || waitsForUser(type);
             long durationMs = Math.max(autoAdvanceMs, estimateSpeechDurationMs(speechText));
-            specs.add(new SegmentTimelineSpec(id, type, speechText, durationMs, waitForUser, boardActionPayload(segment)));
+            List<Map<String, Object>> boardBlocks = boardBlocks(segment);
+            specs.add(new SegmentTimelineSpec(
+                    id,
+                    type,
+                    speechText,
+                    durationMs,
+                    waitForUser,
+                    boardBlocks,
+                    boardActionPayload(boardBlocks)
+            ));
         }
         return specs;
     }
 
-    private Map<String, Object> boardActionPayload(Map<?, ?> segment) {
+    private List<Map<String, Object>> boardBlocks(Map<?, ?> segment) {
         Object rawBlocks = segment.get("boardBlocks");
         if (!(rawBlocks instanceof List<?> blocks) || blocks.isEmpty()) {
-            return Map.of();
+            return List.of();
         }
-        Map<String, Object> payload = new LinkedHashMap<>();
+        List<Map<String, Object>> result = new ArrayList<>();
         for (Object item : blocks) {
             if (!(item instanceof Map<?, ?> block)) {
                 continue;
             }
+            Map<String, Object> normalized = new LinkedHashMap<>();
+            block.forEach((key, value) -> normalized.put(String.valueOf(key), value));
+            result.add(normalized);
+        }
+        return result;
+    }
+
+    private Map<String, Object> boardActionPayload(List<Map<String, Object>> blocks) {
+        if (blocks.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        for (Map<String, Object> block : blocks) {
             copyPayloadField(block, payload, "type", "boardBlockType");
             copyPayloadField(block, payload, "id", "boardBlockId");
             copyPayloadField(block, payload, "language", "language");
@@ -207,8 +239,17 @@ public class LessonTimelineBuilder {
             copyPayloadField(block, payload, "frontierIds", "frontierIds");
             copyPayloadField(block, payload, "pathIds", "pathIds");
             copyPayloadField(block, payload, "compareIds", "compareIds");
+            copyPayloadField(block, payload, "indexBase", "indexBase");
+            copyPayloadField(block, payload, "heapType", "heapType");
+            copyPayloadField(block, payload, "heapSize", "heapSize");
+            copyPayloadField(block, payload, "parentIndex", "parentIndex");
+            copyPayloadField(block, payload, "childIndices", "childIndices");
+            copyPayloadField(block, payload, "swapIndices", "swapIndices");
+            copyPayloadField(block, payload, "violationIndices", "violationIndices");
+            copyPayloadField(block, payload, "sortedRange", "sortedRange");
             copyPayloadField(block, payload, "rootId", "rootId");
             copyPayloadField(block, payload, "directed", "directed");
+            copyPayloadField(block, payload, "displayLayout", "displayLayout");
             copyPayloadField(block, payload, "layout", "layout");
             copyPayloadField(block, payload, "animation", "animation");
             copyPayloadField(block, payload, "traceKind", "traceKind");
@@ -236,6 +277,104 @@ public class LessonTimelineBuilder {
             copyPayloadField(block, payload, "emphasis", "emphasis");
         }
         return payload;
+    }
+
+    private void appendBoardRevealCues(StudyTimelineVO timeline, SegmentTimelineSpec spec, int segmentIndex,
+                                       long segmentStartMs, long durationMs) {
+        List<Map<String, Object>> blocks = spec.boardBlocks();
+        if (blocks.isEmpty()) {
+            return;
+        }
+
+        long blockIntervalMs = revealInterval(durationMs, blocks.size());
+        for (int blockIndex = 0; blockIndex < blocks.size(); blockIndex++) {
+            Map<String, Object> block = blocks.get(blockIndex);
+            String blockId = text(block.get("id"), spec.id() + "-block-" + blockIndex);
+            String blockType = text(block.get("type"), "markdown");
+            long blockStartMs = Math.min(segmentStartMs + durationMs - 1L, segmentStartMs + blockIndex * blockIntervalMs);
+
+            StudyTimelineCueVO blockCue = new StudyTimelineCueVO();
+            blockCue.setId(spec.id() + "-block-" + blockIndex + "-reveal");
+            blockCue.setType("board_block_reveal");
+            blockCue.setStartMs(blockStartMs);
+            blockCue.setEndMs(blockStartMs);
+            blockCue.setPayload(new LinkedHashMap<>(Map.of(
+                    "segmentId", spec.id(),
+                    "segmentIndex", segmentIndex,
+                    "blockId", blockId,
+                    "blockIndex", blockIndex,
+                    "blockType", blockType
+            )));
+            timeline.getCues().add(blockCue);
+
+            appendBoardItemRevealCues(timeline, spec, segmentIndex, block, blockId, blockIndex, blockStartMs, blockIntervalMs);
+        }
+    }
+
+    private void appendBoardItemRevealCues(StudyTimelineVO timeline, SegmentTimelineSpec spec, int segmentIndex,
+                                           Map<String, Object> block, String blockId, int blockIndex,
+                                           long blockStartMs, long blockWindowMs) {
+        String itemKind = revealItemKind(block);
+        if (itemKind.isBlank()) {
+            return;
+        }
+        Object rawItems = block.get(itemKind);
+        if (!(rawItems instanceof List<?> items) || items.isEmpty()) {
+            return;
+        }
+
+        long itemIntervalMs = revealInterval(Math.max(blockWindowMs, 900L), items.size());
+        for (int itemIndex = 0; itemIndex < items.size(); itemIndex++) {
+            long itemStartMs = blockStartMs + Math.min(blockWindowMs - 1L, itemIndex * itemIntervalMs);
+            StudyTimelineCueVO itemCue = new StudyTimelineCueVO();
+            itemCue.setId(spec.id() + "-block-" + blockIndex + "-item-" + itemIndex + "-reveal");
+            itemCue.setType("board_item_reveal");
+            itemCue.setStartMs(itemStartMs);
+            itemCue.setEndMs(itemStartMs);
+            itemCue.setPayload(new LinkedHashMap<>(Map.of(
+                    "segmentId", spec.id(),
+                    "segmentIndex", segmentIndex,
+                    "blockId", blockId,
+                    "blockIndex", blockIndex,
+                    "itemIndex", itemIndex,
+                    "itemKind", itemKind
+            )));
+            timeline.getCues().add(itemCue);
+        }
+    }
+
+    private long revealInterval(long durationMs, int count) {
+        if (count <= 1) {
+            return Math.max(600L, durationMs);
+        }
+        return Math.max(600L, durationMs / count);
+    }
+
+    private String revealItemKind(Map<String, Object> block) {
+        String type = normalizeBlockType(text(block.get("type"), ""));
+        if ("reasoning_steps".equals(type) || "operation_sequence".equals(type)) {
+            return block.get("steps") instanceof List<?> ? "steps" : "";
+        }
+        if ("concept_breakdown".equals(type)) {
+            if (block.get("points") instanceof List<?>) {
+                return "points";
+            }
+            return block.get("items") instanceof List<?> ? "items" : "";
+        }
+        if ("numbered_points".equals(type) || "ordered_checklist".equals(type)) {
+            if (block.get("items") instanceof List<?>) {
+                return "items";
+            }
+            return block.get("points") instanceof List<?> ? "points" : "";
+        }
+        if ("invariant".equals(type)) {
+            return block.get("checkpoints") instanceof List<?> ? "checkpoints" : "";
+        }
+        return "";
+    }
+
+    private String normalizeBlockType(String type) {
+        return type == null ? "" : type.trim().toLowerCase().replace('-', '_').replace(' ', '_');
     }
 
     private void copyPayloadField(Map<?, ?> source, Map<String, Object> target, String sourceKey, String targetKey) {
@@ -325,6 +464,7 @@ public class LessonTimelineBuilder {
             String speechText,
             long durationMs,
             boolean waitForUser,
+            List<Map<String, Object>> boardBlocks,
             Map<String, Object> actionPayload
     ) {
     }
