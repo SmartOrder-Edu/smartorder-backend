@@ -14,12 +14,14 @@ CREATE TABLE IF NOT EXISTS `resource` (
     `cover_url`         VARCHAR(500)  DEFAULT NULL             COMMENT '封面图URL',
     `is_ai_generated`   TINYINT       NOT NULL DEFAULT 0       COMMENT '是否AI生成：0=否，1=是',
     `source`            VARCHAR(20)   NOT NULL DEFAULT 'user'  COMMENT '来源：ai/user/curated',
+    `status`            VARCHAR(20)   NOT NULL DEFAULT 'generated' COMMENT '资源状态：planned/generating/generated/failed',
     `metadata`          JSON          DEFAULT NULL             COMMENT '扩展元数据',
     `is_deleted`        TINYINT       NOT NULL DEFAULT 0       COMMENT '逻辑删除',
     `create_time`       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time`       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
     KEY `idx_space_id_type` (`space_id`, `resource_type`),
+    KEY `idx_space_status` (`space_id`, `status`),
     KEY `idx_path_node_id` (`path_node_id`),
     KEY `idx_task_id` (`task_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='学习资源表';

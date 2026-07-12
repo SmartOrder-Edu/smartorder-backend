@@ -17,4 +17,9 @@ public interface IResourceService {
      * @return 已插入的资源（带 id）
      */
     List<Resource> batchInsertPlanned(List<Resource> resources);
+
+    /**
+     * 批量插入已生成资源（资料包确认后使用）。
+     */
+    List<Resource> batchInsertGenerated(List<Resource> resources);
 }

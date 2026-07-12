@@ -48,4 +48,23 @@ public class ResourceServiceImpl implements IResourceService {
         log.info("[Resource] batchInsertPlanned: 已插入 {} 条计划中资源", resources.size());
         return resources;
     }
+
+    @Override
+    public List<Resource> batchInsertGenerated(List<Resource> resources) {
+        if (resources == null || resources.isEmpty()) {
+            return List.of();
+        }
+        for (Resource r : resources) {
+            r.setStatus("generated");
+            r.setSource(r.getSource() == null ? "ai" : r.getSource());
+            r.setIsDeleted(r.getIsDeleted() == null ? 0 : r.getIsDeleted());
+            r.setIsAiGenerated(r.getIsAiGenerated() == null ? 1 : r.getIsAiGenerated());
+            if (r.getUrl() == null) {
+                r.setUrl("");
+            }
+            resourceMapper.insert(r);
+        }
+        log.info("[Resource] batchInsertGenerated: 已插入 {} 条已生成资源", resources.size());
+        return resources;
+    }
 }

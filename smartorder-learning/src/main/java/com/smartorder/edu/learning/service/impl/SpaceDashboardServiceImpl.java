@@ -172,9 +172,33 @@ public class SpaceDashboardServiceImpl implements ISpaceDashboardService {
         vo.setDescription(r.getDescription());
         vo.setResourceType(r.getResourceType());
         vo.setUrl(r.getUrl());
+        vo.setFileFormat(r.getFileFormat());
+        vo.setCoverUrl(r.getCoverUrl());
         vo.setIsAiGenerated(r.getIsAiGenerated() != null && r.getIsAiGenerated() == 1);
         vo.setSource(r.getSource());
+        vo.setStatus(r.getStatus());
+        vo.setMetadata(r.getMetadata());
+        enrichResourceVOFromMetadata(vo, r.getMetadata());
         return vo;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void enrichResourceVOFromMetadata(ResourceVO vo, String metadata) {
+        if (metadata == null || metadata.isBlank()) {
+            return;
+        }
+        try {
+            Map<String, Object> map = objectMapper.readValue(metadata, Map.class);
+            vo.setAgentReason(asString(map.get("agentReason")));
+            vo.setKnowledgePoint(asString(map.get("knowledgePoint")));
+            vo.setStudyScenario(asString(map.get("studyScenario")));
+        } catch (Exception e) {
+            log.debug("Failed to parse resource metadata: {}", metadata, e);
+        }
+    }
+
+    private String asString(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     private LearningRecordVO toLearningRecordVO(LearningRecord r) {
