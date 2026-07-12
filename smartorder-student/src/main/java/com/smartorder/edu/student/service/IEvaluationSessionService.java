@@ -5,6 +5,7 @@ import com.smartorder.edu.student.domain.dto.SubmitAnswersDTO;
 import com.smartorder.edu.student.domain.vo.EvaluationQuestionVO;
 import com.smartorder.edu.student.domain.vo.SessionResultVO;
 import com.smartorder.edu.student.domain.vo.SessionReportVO;
+import com.smartorder.edu.student.domain.vo.DraftAnswerVO;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -29,6 +30,12 @@ public interface IEvaluationSessionService {
 
     /** 提交答案（批量判分 + 更新 session 分数） */
     SessionResultVO submitAnswers(Long sessionId, Long userId, SubmitAnswersDTO dto);
+
+    /** 保存答题进度（草稿，不判分，status=1） */
+    void saveProgress(Long sessionId, Long userId, SubmitAnswersDTO dto);
+
+    /** 获取草稿答案（用于恢复答题进度） */
+    List<DraftAnswerVO> getDraftAnswers(Long sessionId, Long userId);
 
     /** 查询判分结果（含主观题轮询） */
     SessionResultVO getSessionResult(Long sessionId, Long userId);

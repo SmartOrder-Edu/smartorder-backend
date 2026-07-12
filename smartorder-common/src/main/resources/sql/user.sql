@@ -15,12 +15,15 @@ CREATE TABLE IF NOT EXISTS `user` (
     `vip_expire_time` DATETIME     DEFAULT NULL             COMMENT 'VIP到期时间',
     `status`          TINYINT      NOT NULL DEFAULT 1       COMMENT '账号状态：0=禁用，1=正常',
     `is_deleted`      TINYINT      NOT NULL DEFAULT 0       COMMENT '逻辑删除：0=正常，1=已删除',
+    `github_id`       VARCHAR(50)  DEFAULT NULL             COMMENT 'GitHub用户唯一标识',
+    `github_username` VARCHAR(100) DEFAULT NULL             COMMENT 'GitHub用户名',
     `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_email` (`email`),
     UNIQUE KEY `uk_phone` (`phone`),
     UNIQUE KEY `uk_username` (`username`),
+    UNIQUE KEY `uk_github_id` (`github_id`),
     KEY `idx_role` (`role`),
     KEY `idx_vip_expire_time` (`vip_expire_time`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='user';

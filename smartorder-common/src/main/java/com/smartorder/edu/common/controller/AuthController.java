@@ -5,6 +5,7 @@ import com.smartorder.edu.common.constant.ResultCode;
 import com.smartorder.edu.common.model.dto.ChangePasswordDTO;
 import com.smartorder.edu.common.model.dto.LoginDTO;
 import com.smartorder.edu.common.model.dto.RegisterDTO;
+import com.smartorder.edu.common.model.dto.GithubLoginDTO;
 import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.model.vo.UserVO;
 import com.smartorder.edu.common.service.IAuthService;
@@ -178,5 +179,27 @@ public class AuthController {
             log.error("刷新令牌失败: {}", e.getMessage());
             return ResponseEntity.status(401).body(Result.fail(ResultCode.UNAUTHORIZED,"登录已过期，请重新登录"));
         }
+    }
+
+    /**
+     * GitHub OAuth 登录
+     * @param githubLoginDTO 包含 code 和 state 的数据传输对象
+     * @param response HttpServletResponse对象
+     * @return 登录成功后返回访问令牌（data中）和刷新令牌（Set-Cookie中）
+     */
+    @PostMapping("/github/login")
+    @Operation(summary="GitHub OAuth 登录", description = "GitHub 登录授权回调，登录成功后返回访问令牌（data中）和刷新令牌（Set-Cookie中）")
+    public ResponseEntity<Result<String>> githubLogin(@RequestBody GithubLoginDTO githubLoginDTO, HttpServletResponse response) {
+        log.info("收到 GitHub 登录请求，code: {}, state: {}", githubLoginDTO.getCode(), githubLoginDTO.getState());
+        Map<String, String> tokens = authService.githubLogin(githubLoginDTO);
+
+        ResponseCookie refreshCookie = ResponseCookie.from("refreshToken", tokens.get("refreshToken"))
+                .httpOnly(true)     //防止XSS攻击
+                .path("/")
+                .maxAge(JwtTokenUtils.REFRESH_TOKEN_EXPIRE / 1000)
+                .build();
+        response.addHeader("Set-Cookie", refreshCookie.toString());
+
+        return ResponseEntity.ok(Result.success(tokens.get("accessToken"), "登录成功"));
     }
 }

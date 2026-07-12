@@ -6,9 +6,9 @@ import com.smartorder.edu.student.domain.dto.GenerateQuestionDTO;
 import com.smartorder.edu.student.domain.dto.SubmitAnswersDTO;
 import com.smartorder.edu.student.domain.vo.EvaluationQuestionVO;
 import com.smartorder.edu.student.domain.entity.EvaluationSession;
-import com.smartorder.edu.student.domain.vo.GenerateQuestionVO;
 import com.smartorder.edu.student.domain.vo.SessionResultVO;
 import com.smartorder.edu.student.domain.vo.SessionReportVO;
+import com.smartorder.edu.student.domain.vo.DraftAnswerVO;
 import com.smartorder.edu.student.service.IEvaluationQuestionService;
 import com.smartorder.edu.student.service.IEvaluationSessionService;
 import io.jsonwebtoken.Claims;
@@ -53,8 +53,7 @@ public class EvaluationQuestionController {
     @GetMapping("/questions/task")
     @Operation(summary = "查询测评任务列表", description = "按学习空间查询测评会话（Session）列表，前端根据 status 判断是否已完成")
     public Result<List<EvaluationSession>> listQuestionsTaskList(
-            @RequestParam(required = false) Long learningSpaceId
-    ) throws Exception {
+            @RequestParam(required = false) Long learningSpaceId) throws Exception {
         log.info("查询测评任务列表: learningSpaceId={}", learningSpaceId);
         Long currentUserId = getCurrentUserId();
         return Result.success(evaluationQuestionService.listQuestionsTaskList(learningSpaceId, currentUserId));
@@ -131,6 +130,29 @@ public class EvaluationQuestionController {
                 id, userId, dto.getAnswers().size());
         SessionResultVO result = sessionService.submitAnswers(id, userId, dto);
         return Result.success(result);
+    }
+
+    /**
+     * 保存答题进度（草稿，不判分）。
+     */
+    @PostMapping("/session/{id}/save-progress")
+    @Operation(summary = "保存答题进度", description = "以草稿形式保存用户答题进度，不做判分")
+    public Result<Void> saveProgress(@PathVariable Long id,
+                                      @Validated @RequestBody SubmitAnswersDTO dto) throws Exception {
+        Long userId = getCurrentUserId();
+        log.info("保存答题进度: sessionId={}, userId={}, answerCount={}", id, userId, dto.getAnswers().size());
+        sessionService.saveProgress(id, userId, dto);
+        return Result.success("保存成功");
+    }
+
+    /**
+     * 获取草稿答案（用于恢复答题进度）。
+     */
+    @GetMapping("/session/{id}/draft")
+    @Operation(summary = "获取草稿答案", description = "查询存档答题记录，用于恢复答题进度")
+    public Result<List<DraftAnswerVO>> getDraftAnswers(@PathVariable Long id) throws Exception {
+        Long userId = getCurrentUserId();
+        return Result.success(sessionService.getDraftAnswers(id, userId));
     }
 
     /**

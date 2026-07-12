@@ -17,11 +17,17 @@ import com.smartorder.edu.student.domain.vo.TaskSubmitResultVO;
 import com.smartorder.edu.student.mapper.EvaluationAnswerRecordMapper;
 import com.smartorder.edu.student.mapper.EvaluationCodeTestCaseMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
+import com.smartorder.edu.student.config.EvaluationRabbitConfig;
+import com.smartorder.edu.student.config.EvaluationRedisConstants;
+import com.smartorder.edu.student.domain.mq.CodeGradingMessage;
+import com.smartorder.edu.student.domain.mq.SubjectiveGradingMessage;
 import com.smartorder.edu.student.mapper.EvaluationSessionMapper;
 import com.smartorder.edu.student.service.IEvaluationSubmitService;
+import com.smartorder.edu.student.service.impl.EvaluationCacheService;
 import com.smartorder.edu.student.util.StudentPromptFileLoader;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -29,9 +35,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * 测评答案提交与判分服务实现
@@ -62,13 +65,8 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
     private final ObjectMapper objectMapper;
     private final ICodeJudgeService codeJudgeService;
     private final EvaluationCodeTestCaseMapper codeTestCaseMapper;
-
-    /** 主观题 AI 判分专用线程池（守护线程） */
-    private final ExecutorService gradingExecutor = Executors.newFixedThreadPool(4, r -> {
-        Thread t = new Thread(r, "subjective-grading-" + System.currentTimeMillis());
-        t.setDaemon(true);
-        return t;
-    });
+    private final RabbitTemplate rabbitTemplate;
+    private final EvaluationCacheService cacheService;
 
     // ======================== 主观题类型 ========================
     private static final Set<String> SUBJECTIVE_TYPES = Set.of(
@@ -124,19 +122,43 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
             QuestionScore qs = QuestionScore.fromCode(question.getQuestionType());
 
             if ("code".equals(question.getQuestionType())) {
-                // 代码题：Docker 沙箱判题
-                GradeCodeResult gcr = gradeCode(question, item.getUserAnswer());
-                record.setIsCorrect(gcr.accepted ? 1 : 0);
-                record.setScore(gcr.score);
-                record.setJudgeResult(gcr.judgeResult);
-                if (!gcr.accepted && gcr.errorType != null) {
-                    record.setErrorType(gcr.errorType);
-                    record.setErrorReason(gcr.errorReason);
+                // 代码题：优先发 MQ 异步判题，失败时降级为同步 Docker 判题
+                boolean mqSent = false;
+                try {
+                    String language = extractString(item.getUserAnswer(), "language", "cpp17");
+                    String sourceCode = extractString(item.getUserAnswer(), "code", "");
+                    rabbitTemplate.convertAndSend(
+                            EvaluationRabbitConfig.GRADING_EXCHANGE,
+                            EvaluationRabbitConfig.RK_CODE,
+                            new CodeGradingMessage(record.getId(), question.getId(),
+                                    taskId, userId, language, sourceCode));
+                    mqSent = true;
+                    log.debug("代码题判分消息已发送: recordId={}, questionId={}", record.getId(), question.getId());
+                } catch (Exception e) {
+                    log.warn("发送代码题判分 MQ 消息失败，降级为同步判题: recordId={}", record.getId(), e);
                 }
-                // 代码题判题为确定性结果，计入客观分
-                objectiveScore = objectiveScore.add(gcr.score);
-                objectiveTotal = objectiveTotal.add(gcr.maxScore);
-                details.add(buildDetail(question.getId(), gcr.accepted, gcr.score, "graded", gcr.judgeResult));
+
+                if (mqSent) {
+                    // MQ 异步判题：暂时记为 pending
+                    record.setIsCorrect(null);
+                    record.setScore(BigDecimal.ZERO);
+                    record.setJudgeResult(Map.of("status", "pending_review", "message", "代码题等待沙箱判题"));
+                    subjectivePending++;
+                    details.add(buildDetail(question.getId(), null, BigDecimal.ZERO, "pending_review", record.getJudgeResult()));
+                } else {
+                    // 降级：同步 Docker 判题
+                    GradeCodeResult gcr = gradeCode(question, item.getUserAnswer());
+                    record.setIsCorrect(gcr.accepted ? 1 : 0);
+                    record.setScore(gcr.score);
+                    record.setJudgeResult(gcr.judgeResult);
+                    if (!gcr.accepted && gcr.errorType != null) {
+                        record.setErrorType(gcr.errorType);
+                        record.setErrorReason(gcr.errorReason);
+                    }
+                    objectiveScore = objectiveScore.add(gcr.score);
+                    objectiveTotal = objectiveTotal.add(gcr.maxScore);
+                    details.add(buildDetail(question.getId(), gcr.accepted, gcr.score, "graded", gcr.judgeResult));
+                }
             } else if (qs.isObjective()) {
                 // 客观题：程序判分
                 GradeResult gr = gradeObjective(question, item.getUserAnswer());
@@ -169,12 +191,12 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
             }
         });
 
-        // 4. 异步 AI 判分主观题
-        List<EvaluationAnswerRecord> subjectiveRecords = records.stream()
+        // 4. 异步判分：通过 MQ 发送主观题判分消息（含 MQ 降级的代码题）
+        List<EvaluationAnswerRecord> asyncRecords = records.stream()
                 .filter(r -> r.getIsCorrect() == null)
                 .toList();
-        if (!subjectiveRecords.isEmpty()) {
-            triggerAsyncSubjectiveGrading(subjectiveRecords, questionMap, taskId, userId);
+        if (!asyncRecords.isEmpty()) {
+            dispatchGradingToMq(asyncRecords, questionMap, taskId, userId);
         }
 
         // 5. 组装返回
@@ -206,7 +228,15 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
             log.warn("未找到对应的 EvaluationSession: sessionId={}, 跳过标记完成", taskId);
         }
 
-        //  . 返回值给前端
+        // 6. 清除结果缓存（判分中，旧缓存已失效）
+        try {
+            cacheService.delete(EvaluationRedisConstants.sessionResultKey(taskId, userId));
+            cacheService.delete(EvaluationRedisConstants.sessionReportKey(taskId, userId));
+        } catch (Exception e) {
+            log.warn("清除结果缓存失败（不影响主流程）: sessionId={}, userId={}", taskId, userId, e);
+        }
+
+        // 7. 返回值给前端
         return TaskSubmitResultVO.builder()
                 .taskId(taskId)
                 .totalScore(total)
@@ -479,28 +509,75 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
         return new GradeResult(false, partial, sb.toString(), "partial_correct");
     }
 
-    // ======================== 异步主观题判分 ========================
+    // ======================== MQ 判分分发 ========================
 
-    private void triggerAsyncSubjectiveGrading(List<EvaluationAnswerRecord> records,
-                                                Map<Long, EvaluationQuestion> questionMap,
-                                                Long taskId, Long userId) {
-        CompletableFuture.runAsync(() -> {
-            for (EvaluationAnswerRecord record : records) {
+    /**
+     * 将待判分记录通过 MQ 发送到对应的消费者。
+     * 主观题 → subjective queue，代码题 → code queue。
+     * MQ 不可用时降级为同步执行。
+     */
+    private void dispatchGradingToMq(List<EvaluationAnswerRecord> records,
+                                      Map<Long, EvaluationQuestion> questionMap,
+                                      Long taskId, Long userId) {
+        for (EvaluationAnswerRecord record : records) {
+            EvaluationQuestion question = questionMap.get(record.getQuestionId());
+            if (question == null) continue;
+
+            // 代码题：submit() 中已尝试 MQ 发送，这里只做 sync 降级兜底
+            if ("code".equals(question.getQuestionType())) {
+                log.info("代码题 MQ 发送已在前置流程处理，执行同步兜底: recordId={}", record.getId());
                 try {
-                    gradeSubjectiveByAI(record, questionMap.get(record.getQuestionId()));
-                } catch (Exception e) {
-                    log.error("主观题 AI 判分失败: recordId={}", record.getId(), e);
-                    record.setJudgeResult(Map.of("status", "error", "message", "AI判分异常: " + e.getMessage()));
-                    record.setIsCorrect(0);
-                    record.setScore(BigDecimal.ZERO);
-                    record.setUpdatedAt(LocalDateTime.now());
-                    answerRecordMapper.updateById(record);
+                    gradeCodeAndUpdate(record, question);
+                } catch (Exception ex) {
+                    log.error("代码题同步判分失败: recordId={}", record.getId(), ex);
+                    markRecordError(record, "判分异常: " + ex.getMessage());
+                }
+                continue;
+            }
+
+            // 主观题：发送 MQ 消息
+            try {
+                rabbitTemplate.convertAndSend(
+                        EvaluationRabbitConfig.GRADING_EXCHANGE,
+                        EvaluationRabbitConfig.RK_SUBJECTIVE,
+                        new SubjectiveGradingMessage(record.getId(), question.getId(),
+                                taskId, userId));
+                log.debug("主观题判分消息已发送: recordId={}, questionId={}", record.getId(), question.getId());
+            } catch (Exception e) {
+                log.warn("主观题 MQ 发送失败，降级为同步 AI 判分: recordId={}", record.getId(), e);
+                try {
+                    gradeSubjectiveByAI(record, question);
+                } catch (Exception ex) {
+                    log.error("主观题同步判分失败: recordId={}", record.getId(), ex);
+                    markRecordError(record, "判分异常: " + ex.getMessage());
                 }
             }
-        }, gradingExecutor).exceptionally(ex -> {
-            log.error("异步判分任务异常", ex);
-            return null;
-        });
+        }
+    }
+
+    private void markRecordError(EvaluationAnswerRecord record, String message) {
+        record.setJudgeResult(Map.of("status", "error", "message", message));
+        record.setIsCorrect(0);
+        record.setScore(BigDecimal.ZERO);
+        record.setUpdatedAt(LocalDateTime.now());
+        answerRecordMapper.updateById(record);
+    }
+
+    /**
+     * 代码题同步判分并更新记录（MQ 降级时使用）
+     */
+    private void gradeCodeAndUpdate(EvaluationAnswerRecord record, EvaluationQuestion question) {
+        GradeCodeResult gcr = gradeCode(question, record.getUserAnswer());
+        record.setIsCorrect(gcr.accepted ? 1 : 0);
+        record.setScore(gcr.score);
+        record.setJudgeResult(gcr.judgeResult);
+        if (!gcr.accepted && gcr.errorType != null) {
+            record.setErrorType(gcr.errorType);
+            record.setErrorReason(gcr.errorReason);
+        }
+        record.setStatus(3);
+        record.setUpdatedAt(LocalDateTime.now());
+        answerRecordMapper.updateById(record);
     }
 
     private void gradeSubjectiveByAI(EvaluationAnswerRecord record, EvaluationQuestion question) {

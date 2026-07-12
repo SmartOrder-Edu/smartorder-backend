@@ -10,6 +10,8 @@ import com.smartorder.edu.common.util.IdGenerator;
 import com.smartorder.edu.learning.domain.entity.LearningSpace;
 import com.smartorder.edu.learning.mapper.LearningSpaceMapper;
 import com.smartorder.edu.student.aiservice.QuestionAiService;
+import com.smartorder.edu.student.aiservice.QuestionJsonMapper;
+import com.smartorder.edu.student.aiservice.QuestionResponseParser;
 import com.smartorder.edu.student.domain.dto.GenerateQuestionDTO;
 import com.smartorder.edu.student.domain.entity.EvaluationCodeTestCase;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestion;
@@ -24,9 +26,11 @@ import com.smartorder.edu.student.mapper.EvaluationCodeTestCaseMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationItemMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationTaskMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
+import com.smartorder.edu.student.config.EvaluationRedisConstants;
 import com.smartorder.edu.student.mapper.EvaluationSessionMapper;
 import com.smartorder.edu.student.service.IEvaluationQuestionService;
 import com.smartorder.edu.student.service.IEvaluationSessionService;
+import com.smartorder.edu.student.service.impl.EvaluationCacheService;
 import com.smartorder.edu.student.util.StudentPromptFileLoader;
 import dev.langchain4j.model.input.PromptTemplate;
 import lombok.RequiredArgsConstructor;
@@ -39,12 +43,11 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -63,6 +66,9 @@ import static com.smartorder.edu.common.util.ThreadLocalUtils.getCurrentUserId;
  * </p>
  *
  * <p>任务执行在自定义守护线程池中异步进行，避免阻塞 HTTP 请求线程。</p>
+ *
+ * <p>JSON 解析职责已抽离至 {@link QuestionResponseParser}（响应解析）和
+ * {@link QuestionJsonMapper}（单题映射），本类只负责任务调度、LLM 调用、落库与进度推送。</p>
  */
 @Slf4j
 @Service
@@ -86,9 +92,14 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     private final EvaluationQuestionGenerationItemMapper generationItemMapper;
     private final TransactionTemplate transactionTemplate;
     private final QuestionAiService questionAiService;
+    /** LLM 响应解析器：从原始文本提取 questions JSON 数组 */
+    private final QuestionResponseParser responseParser;
+    /** 单题 JSON → 实体映射器：完成字段转换与题型适配 */
+    private final QuestionJsonMapper questionJsonMapper;
     private final IEvaluationSessionService sessionService;
     private final EvaluationSessionMapper sessionMapper;
     private final EvaluationCodeTestCaseMapper codeTestCaseMapper;
+    private final EvaluationCacheService cacheService;
 
     /** 每题型默认生成数量 */
     private static final int DEFAULT_COUNT = 3;
@@ -125,28 +136,35 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
     @Override
     public List<EvaluationQuestionVO> listQuestions(Long learningSpaceId, Integer limit, Long taskId) {
-        // 同时传 taskId 时优先按任务ID精确查询
+        // 传 taskId 时优先按任务 ID 精确查询（带缓存）
         if (taskId != null) {
-            return evaluationQuestionMapper.selectByTaskId(taskId)
-                    .stream()
-                    .map(EvaluationQuestionVO::from)
-                    .toList();
+            String cacheKey = EvaluationRedisConstants.questionsTaskKey(taskId);
+            return cacheService.getOrLoadList(cacheKey, EvaluationRedisConstants.TTL_QUESTIONS,
+                    () -> evaluationQuestionMapper.selectByTaskId(taskId)
+                            .stream()
+                            .map(EvaluationQuestionVO::from)
+                            .collect(Collectors.toList()));
         }
 
         // 默认走学习空间查询，limit 范围控制在 1~200，未传默认 100
-        // 使用 LambdaQueryWrapper 而非自定义 @Select，确保 autoResultMap 的 JacksonTypeHandler 生效
         int resolvedLimit = (limit == null || limit <= 0) ? 100 : Math.min(limit, 200);
-        LambdaQueryWrapper<EvaluationQuestion> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(EvaluationQuestion::getStatus, 1);
-        if (learningSpaceId != null) {
-            wrapper.eq(EvaluationQuestion::getLearningSpaceId, learningSpaceId);
-        }
-        wrapper.orderByAsc(EvaluationQuestion::getSortOrder);
-        wrapper.last("LIMIT " + resolvedLimit);
-        return evaluationQuestionMapper.selectList(wrapper)
-                .stream()
-                .map(EvaluationQuestionVO::from)
-                .toList();
+        String cacheKey = EvaluationRedisConstants.questionsSpaceKey(
+                learningSpaceId != null ? learningSpaceId : 0L, resolvedLimit);
+
+        return cacheService.getOrLoadList(cacheKey, EvaluationRedisConstants.TTL_QUESTIONS,
+                () -> {
+                    LambdaQueryWrapper<EvaluationQuestion> wrapper = new LambdaQueryWrapper<>();
+                    wrapper.eq(EvaluationQuestion::getStatus, 1);
+                    if (learningSpaceId != null) {
+                        wrapper.eq(EvaluationQuestion::getLearningSpaceId, learningSpaceId);
+                    }
+                    wrapper.orderByAsc(EvaluationQuestion::getSortOrder);
+                    wrapper.last("LIMIT " + resolvedLimit);
+                    return evaluationQuestionMapper.selectList(wrapper)
+                            .stream()
+                            .map(EvaluationQuestionVO::from)
+                            .collect(Collectors.toList());
+                });
     }
 
     @Override
@@ -158,6 +176,28 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                 .orderByDesc(EvaluationSession::getCreatedAt);
 
         return sessionMapper.selectList(queryWrapper);
+    }
+
+    /**
+     * 出题完成后清除题目列表缓存
+     * <p>新题目入库后，按 learningSpaceId 维度的缓存已过时，需要主动删除。
+     * 由于 limit 参数可变，使用 pattern 批量删除该 space 下的所有题目列表 key。</p>
+     */
+    private void invalidateQuestionCache(GenerationContext context) {
+        try {
+            Long spaceId = context.dto().getLearningSpaceId();
+            if (spaceId != null) {
+                String pattern = String.format(EvaluationRedisConstants.QUESTIONS_SPACE, spaceId, 0)
+                        .replace(":limit:0", ":limit:*");
+                cacheService.deleteByPattern(pattern);
+            }
+            // 同时删除按 taskId 的缓存
+            String taskKey = EvaluationRedisConstants.questionsTaskKey(context.task().getId());
+            cacheService.delete(taskKey);
+            log.info("题目列表缓存已清除: spaceId={}, taskId={}", spaceId, context.task().getId());
+        } catch (Exception e) {
+            log.warn("清除题目列表缓存失败（不影响主流程）: taskId={}", context.task().getId(), e);
+        }
     }
 
     /**
@@ -217,6 +257,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     private List<EvaluationQuestionGenerationItem> createGenerationItems(Long taskId, GenerateQuestionDTO dto, LocalDateTime now) {
         List<EvaluationQuestionGenerationItem> items = new ArrayList<>();
         int sequenceNo = 1;
+        IdGenerator.setWorkerId(1);
 
         for (GenerateQuestionDTO.QuestionTypeCountDTO typeCount : dto.getQuestionTypeCountList()) {
             int count = resolveCount(typeCount.getCount());
@@ -260,8 +301,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
             // 把待生成的 item 分成多个批次，每个批次包含同一题型的若干题目，批次之间可以并行生成
             List<GenerationBatch> batches = createGenerationBatches(context);
             validateGenerationBatches(batches);
-            log.info("并行生成问题开始: taskId={}, batchCount={}, totalCount={}",
-                    context.task().getId(), batches.size(), context.task().getTotalCount());
+            log.info("并行生成问题开始: taskId={}, batchCount={}, totalCount={}", context.task().getId(), batches.size(), context.task().getTotalCount());
 
             // 每个批次提交到线程池并行生成
             List<CompletableFuture<Void>> futures = batches.stream()
@@ -287,6 +327,9 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                 ));
                 log.info("测评会话已创建并推送: sessionId={}, taskId={}",
                         session.getId(), context.task().getId());
+
+                // 出题完成后清除题目列表缓存（新题目入库，旧缓存失效）
+                invalidateQuestionCache(context);
             } catch (Exception e) {
                 log.error("创建测评会话失败: taskId={}", context.task().getId(), e);
                 sendEvent(emitter, "session-error", Map.of("message", "会话创建失败: " + e.getMessage()));
@@ -322,8 +365,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
             }
 
             // 从全局 item 列表中截取属于该题型的 count 条明细
-            List<EvaluationQuestionGenerationItem> batchItems =
-                    List.copyOf(context.items().subList(itemCursor, itemCursor + count));
+            List<EvaluationQuestionGenerationItem> batchItems = List.copyOf(context.items().subList(itemCursor, itemCursor + count));
             itemCursor += count;
 
             batches.add(new GenerationBatch(
@@ -370,6 +412,9 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
     /**
      * 生成单个题型批次：构建提示词 → 调用大模型流式生成 → 解析 JSON → 逐题落库 → 更新进度。
+     *
+     * <p>JSON 解析委托给 {@link QuestionResponseParser}（响应解析）和
+     * {@link QuestionJsonMapper}（单题映射），本方法只负责编排流程。</p>
      */
     private void generateBatch(GenerationContext context,
                                GenerationBatch batch,
@@ -399,7 +444,9 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         updateTaskStep(context.task().getId(), "generating " + batch.questionType());
         // 流式调用大模型并等待完整响应，过程中通过 SSE 实时推送 token
         String llmJson = callStreamingModelAndWait(userPrompt, emitter, batch.questionType(), context.task().getId());
-        JsonNode questionsNode = parseLlmResponse(llmJson);
+
+        // 委托响应解析器提取 questions 数组
+        JsonNode questionsNode = responseParser.parseQuestionsArray(llmJson);
 
         // 校验返回题目数量是否与请求一致
         if (questionsNode.size() != batch.count()) {
@@ -410,15 +457,18 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         for (int i = 0; i < questionsNode.size(); i++) {
             EvaluationQuestionGenerationItem item = batch.items().get(i);
             Long questionId = IdGenerator.nextId();
-            EvaluationQuestion question = mapJsonToQuestion(
+
+            // 构建映射上下文，委托给 QuestionJsonMapper 完成单题 JSON → 实体映射
+            QuestionJsonMapper.MappingContext mappingCtx = new QuestionJsonMapper.MappingContext(
                     questionId,
-                    questionsNode.get(i),
-                    context.dto(),
+                    context.dto().getLearningSpaceId(),
+                    context.dto().getChapterId(),
                     context.courseName(),
                     batch.questionType(),
                     batch.difficulty(),
                     item.getSequenceNo()
             );
+            EvaluationQuestion question = questionJsonMapper.mapToEntity(questionsNode.get(i), mappingCtx);
 
             evaluationQuestionMapper.insert(question);
             markItemSuccess(item.getId(), questionId, llmJson);
@@ -426,7 +476,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
             // 代码题：解析并保存 AI 生成的测试用例
             if ("code".equals(batch.questionType())) {
-                List<EvaluationCodeTestCase> testCases = parseTestCases(questionsNode.get(i), questionId);
+                List<EvaluationCodeTestCase> testCases = questionJsonMapper.parseTestCases(questionsNode.get(i), questionId);
                 if (!testCases.isEmpty()) {
                     codeTestCaseMapper.insertBatch(testCases);
                     log.info("代码题测试用例已保存: questionId={}, testCaseCount={}", questionId, testCases.size());
@@ -527,280 +577,6 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
             throw new BusinessException("LLM响应为空");
         }
 
-        return result;
-    }
-
-    /**
-     * 将大模型返回的单个题目 JSON 节点映射为 {@link EvaluationQuestion} 题库实体。
-     *
-     * <p>兼容新旧两种 JSON 格式：</p>
-     * <ul>
-     *   <li>新格式：{@code question/type/options/answer/score/knowledge_points/ability_tags/analysis}</li>
-     *   <li>旧格式：{@code stem/questionType/optionsJson/answerJson/explanation/tagsJson}</li>
-     * </ul>
-     */
-    private EvaluationQuestion mapJsonToQuestion(Long questionId,
-                                                 JsonNode q,
-                                                 GenerateQuestionDTO dto,
-                                                 String courseName,
-                                                 String questionType,
-                                                 int difficulty,
-                                                 int sequence) {
-
-        LocalDateTime now = LocalDateTime.now();
-        EvaluationQuestion question = new EvaluationQuestion();
-
-        question.setId(questionId);
-        question.setLearningSpaceId(dto.getLearningSpaceId());
-        question.setChapterId(dto.getChapterId());
-
-        // 判断格式：新格式有 "type" 字段（中文题型名），旧格式有 "questionType" 字段（英文代码）
-        boolean isNewFormat = q.has("type") && !q.has("questionType");
-
-        if (isNewFormat) {
-            parseNewFormat(q, questionType, difficulty, question);
-        } else {
-            parseOldFormat(q, questionType, difficulty, question);
-        }
-
-        question.setQuestionCode(buildQuestionCode(courseName, question.getQuestionType(), sequence, questionId));
-        question.setSortOrder(sequence);
-        question.setGenerationSource("agent_generated");
-        question.setStatus(1);
-        question.setCreatedAt(now);
-        question.setUpdatedAt(now);
-
-        return question;
-    }
-
-    /** 解析新格式 JSON（question/type/options/answer/score/knowledge_points/ability_tags/analysis） */
-    private void parseNewFormat(JsonNode q, String fallbackQuestionType, int fallbackDifficulty,
-                                EvaluationQuestion question) {
-        // type: 中文题型名 → 英文代码
-        String typeChinese = readRequiredText(q, "type");
-        String resolvedType = resolveQuestionTypeFromChinese(typeChinese);
-        question.setQuestionType(resolvedType);
-
-        question.setDifficulty(readInt(q, "difficulty", fallbackDifficulty));
-        int defaultScore = QuestionScore.fromCode(resolvedType).getDefaultScore().intValue();
-        question.setScore(BigDecimal.valueOf(readInt(q, "score", defaultScore)));
-        question.setStem(readRequiredText(q, "question"));
-        question.setOptions(parseOptions(q));
-        question.setCorrectAnswer(parseAnswer(q, resolvedType));
-
-        // analysis 对象
-        JsonNode analysisNode = q.get("analysis");
-        if (analysisNode != null && analysisNode.isObject()) {
-            question.setAnalysisJson(objectMapper.convertValue(analysisNode, Map.class));
-            question.setExplanation(parseCorrectReason(analysisNode));
-            question.setCommonMistakes(parseWrongReason(analysisNode));
-        } else {
-            question.setExplanation("");
-            question.setCommonMistakes(List.of());
-        }
-
-        // knowledge_points / ability_tags
-        List<String> knowledgePoints = readJsonArrayAsStringList(q, "knowledge_points");
-        question.setKnowledgePoints(knowledgePoints);
-        question.setAbilityTagsJson(readJsonArrayAsStringList(q, "ability_tags"));
-
-        // tags: 合并 knowledge_points + ability_tags + 题型代码
-        List<String> tags = new LinkedList<>(knowledgePoints);
-        tags.addAll(readJsonArrayAsStringList(q, "ability_tags"));
-        tags.add(resolvedType);
-        question.setTags(tags);
-    }
-
-    /** 解析旧格式 JSON（stem/questionType/optionsJson/answerJson/explanation/tagsJson） */
-    private void parseOldFormat(JsonNode q, String fallbackQuestionType, int fallbackDifficulty,
-                                EvaluationQuestion question) {
-        question.setQuestionType(readText(q, "questionType", fallbackQuestionType));
-        question.setDifficulty(readInt(q, "difficulty", fallbackDifficulty));
-        question.setScore(BigDecimal.valueOf(1));
-        question.setStem(readRequiredText(q, "stem"));
-        question.setOptions(readJsonArrayAsList(q, "optionsJson"));
-        question.setCorrectAnswer(readJsonObjectAsMap(q, "answerJson"));
-        question.setExplanation(readText(q, "explanation", ""));
-        question.setAbilityDimension(readText(q, "abilityDimension", null));
-        question.setCommonMistakes(readJsonArrayAsList(q, "commonMistakesJson"));
-        question.setTags(readJsonArrayAsStringList(q, "tagsJson"));
-    }
-
-    /** 中文题型名 → 英文题型代码（如 "单选题" → "single_choice"） */
-    private String resolveQuestionTypeFromChinese(String chinese) {
-        if (chinese == null) return "unknown";
-        return switch (chinese) {
-            case "单选题" -> "single_choice";
-            case "多选题" -> "multiple_choice";
-            case "填空题" -> "fill_blank";
-            case "判断题" -> "judge";
-            case "简答题" -> "short_answer";
-            case "编程题" -> "code";
-            case "场景题" -> "scenario";
-            case "SQL题" -> "sql";
-            case "多模态题" -> "multimodal";
-            default -> "unknown";
-        };
-    }
-
-    /** 新格式 options（字符串数组）→ 旧格式 [{label:"A", content:"..."}] */
-    private List<Map<String, Object>> parseOptions(JsonNode q) {
-        JsonNode optionsNode = q.get("options");
-        if (optionsNode == null || !optionsNode.isArray()) {
-            return List.of();
-        }
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (int i = 0; i < optionsNode.size(); i++) {
-            Map<String, Object> option = new LinkedHashMap<>();
-            option.put("label", String.valueOf((char) ('A' + i)));
-            option.put("content", optionsNode.get(i).asText());
-            result.add(option);
-        }
-        return result;
-    }
-
-    /** 新格式 answer → 旧格式 answerJson（按题型转换） */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> parseAnswer(JsonNode q, String questionType) {
-        JsonNode answerNode = q.get("answer");
-        if (answerNode == null || answerNode.isNull()) {
-            return Map.of();
-        }
-        return switch (questionType) {
-            case "single_choice" -> {
-                Map<String, Object> m = new LinkedHashMap<>();
-                m.put("correctOptions", List.of(answerNode.asText()));
-                yield m;
-            }
-            case "multiple_choice" -> {
-                Map<String, Object> m = new LinkedHashMap<>();
-                if (answerNode.isArray()) {
-                    m.put("correctOptions", objectMapper.convertValue(answerNode, List.class));
-                } else {
-                    m.put("correctOptions", List.of(answerNode.asText()));
-                }
-                yield m;
-            }
-            case "judge" -> {
-                Map<String, Object> m = new LinkedHashMap<>();
-                m.put("correctValue", answerNode.asBoolean());
-                yield m;
-            }
-            case "fill_blank" -> {
-                Map<String, Object> m = new LinkedHashMap<>();
-                List<Map<String, Object>> blanks = new ArrayList<>();
-                if (answerNode.isArray()) {
-                    for (int i = 0; i < answerNode.size(); i++) {
-                        Map<String, Object> blank = new LinkedHashMap<>();
-                        blank.put("index", i + 1);
-                        blank.put("answer", answerNode.get(i).asText());
-                        blanks.add(blank);
-                    }
-                }
-                m.put("blanks", blanks);
-                yield m;
-            }
-            case "short_answer", "code", "scenario", "sql", "multimodal" -> {
-                Map<String, Object> m = new LinkedHashMap<>();
-                m.put("referenceAnswer", answerNode.asText());
-                yield m;
-            }
-            default -> {
-                if (answerNode.isTextual()) {
-                    Map<String, Object> m = new LinkedHashMap<>();
-                    m.put("answer", answerNode.asText());
-                    yield m;
-                }
-                yield objectMapper.convertValue(answerNode, Map.class);
-            }
-        };
-    }
-
-    /** 新格式 analysis.correct_reason：
-     *  <ul>
-     *    <li>字符串 → 直接返回（判断题/填空题等）</li>
-     *    <li>对象（如 {"B":"依据"}）→ 提取各 value 拼接</li>
-     *  </ul>
-     */
-    private String parseCorrectReason(JsonNode analysisNode) {
-        JsonNode correctReason = analysisNode.get("correct_reason");
-        if (correctReason == null || correctReason.isNull()) {
-            return "";
-        }
-        if (correctReason.isTextual()) {
-            return correctReason.asText();
-        }
-        if (correctReason.isObject()) {
-            StringBuilder sb = new StringBuilder();
-            correctReason.fields().forEachRemaining(entry -> {
-                if (!sb.isEmpty()) {
-                    sb.append("；");
-                }
-                sb.append(entry.getKey()).append("：").append(entry.getValue().asText());
-            });
-            return sb.toString();
-        }
-        return "";
-    }
-
-    /**
-     * 从 AI 返回的 JSON 中解析测试用例列表。
-     *
-     * <p>仅 code 题型会包含 {@code test_cases} 数组。每个用例包含 input/expected_output/is_sample 等字段。
-     * 解析失败或 test_cases 缺失时返回空列表，不影响题目本身入库。</p>
-     *
-     * @param q          AI 返回的单个题目 JSON 节点
-     * @param questionId 已入库的题目 ID
-     * @return 解析后的测试用例实体列表（可能为空）
-     */
-    private List<EvaluationCodeTestCase> parseTestCases(JsonNode q, Long questionId) {
-        JsonNode testCasesNode = q.get("test_cases");
-        if (testCasesNode == null || !testCasesNode.isArray() || testCasesNode.isEmpty()) {
-            log.debug("题目未包含 test_cases 字段或为空: questionId={}", questionId);
-            return List.of();
-        }
-
-        List<EvaluationCodeTestCase> result = new ArrayList<>();
-        int sortOrder = 1;
-        LocalDateTime now = LocalDateTime.now();
-
-        for (JsonNode tcNode : testCasesNode) {
-            try {
-                EvaluationCodeTestCase tc = new EvaluationCodeTestCase();
-                tc.setId(IdGenerator.nextId());
-                tc.setQuestionId(questionId);
-                tc.setInput(readText(tcNode, "input", ""));
-                tc.setExpectedOutput(readRequiredText(tcNode, "expected_output"));
-                tc.setIsSample(tcNode.has("is_sample") && tcNode.get("is_sample").asBoolean() ? 1 : 0);
-                tc.setWeight(BigDecimal.valueOf(tcNode.has("weight") ? tcNode.get("weight").asDouble() : 1.0));
-                tc.setTimeLimitMs(readInt(tcNode, "time_limit_ms", 1000));
-                tc.setMemoryLimitMb(readInt(tcNode, "memory_limit_mb", 128));
-                tc.setSortOrder(sortOrder++);
-                tc.setStatus(1);
-                tc.setCreatedAt(now);
-                tc.setUpdatedAt(now);
-                result.add(tc);
-            } catch (Exception e) {
-                log.warn("解析测试用例失败，跳过该用例: questionId={}, caseIndex={}", questionId, sortOrder - 1, e);
-            }
-        }
-
-        return result;
-    }
-
-    /** 新格式 analysis.wrong_reason（{A:"原因", C:"原因"}）→ 旧格式 [{option:"A", reason:"..."}] */
-    private List<Map<String, Object>> parseWrongReason(JsonNode analysisNode) {
-        JsonNode wrongReason = analysisNode.get("wrong_reason");
-        if (wrongReason == null || !wrongReason.isObject() || wrongReason.isEmpty()) {
-            return List.of();
-        }
-        List<Map<String, Object>> result = new ArrayList<>();
-        wrongReason.fields().forEachRemaining(entry -> {
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("option", entry.getKey());
-            item.put("reason", entry.getValue().asText());
-            result.add(item);
-        });
         return result;
     }
 
@@ -957,12 +733,6 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         return topic.strip();
     }
 
-    /** 拼接题目唯一编码：课程名-题型-序号-题目ID */
-    private String buildQuestionCode(String courseName, String questionType, int sequence, Long questionId) {
-        String normalizedCourse = courseName == null ? "course" : courseName.strip().replaceAll("\\s+", "-");
-        return normalizedCourse + "-" + questionType + "-" + sequence + "-" + questionId;
-    }
-
     /** 安全发送 SSE 事件：连接已断开时静默跳过 */
     private void sendEvent(SseEmitter emitter, String name, Object data) {
         try {
@@ -989,134 +759,6 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         } catch (Exception e) {
             log.debug("SSE 错误完成已跳过: {}", e.getMessage());
         }
-    }
-
-    /**
-     * 解析大模型响应文本为题目 JSON 数组。
-     *
-     * <p>兼容大模型在 JSON 外包 ```json 代码块围栏的情况；最终从根节点的 {@code questions} 数组提取题目。</p>
-     */
-    private JsonNode parseLlmResponse(String response) {
-        if (response == null) {
-            throw new BusinessException("LLM响应为空");
-        }
-
-        String json = response.strip();
-        if (json.startsWith("```")) {
-            int firstNewline = json.indexOf('\n');
-            int lastFence = json.lastIndexOf("```");
-
-            if (firstNewline > 0 && lastFence > firstNewline) {
-                json = json.substring(firstNewline + 1, lastFence).strip();
-            }
-        }
-
-        try {
-            JsonNode root = objectMapper.readTree(json);
-            JsonNode questions = root.get("questions");
-            if (questions == null || !questions.isArray()) {
-                throw new BusinessException("LLM响应JSON缺少questions数组");
-            }
-            return questions;
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("解析 LLM 响应失败: {}", response, e);
-            throw new BusinessException("解析LLM响应为有效JSON失败");
-        }
-    }
-
-    /** 从 JSON 节点读取文本字段，缺失或为空时返回默认值 */
-    private String readText(JsonNode node, String fieldName, String defaultValue) {
-        JsonNode value = node.get(fieldName);
-        if (value == null || value.isNull()) {
-            return defaultValue;
-        }
-
-        String text = value.asText();
-        return text == null || text.isBlank() ? defaultValue : text;
-    }
-
-    /** 从 JSON 节点读取整数字段，兼容数字与字符串两种形态，异常时返回默认值 */
-    private int readInt(JsonNode node, String fieldName, int defaultValue) {
-        JsonNode value = node.get(fieldName);
-        if (value == null || value.isNull()) {
-            return defaultValue;
-        }
-
-        if (value.isInt() || value.isLong()) {
-            return value.asInt();
-        }
-
-        if (value.isTextual()) {
-            try {
-                return Integer.parseInt(value.asText());
-            } catch (NumberFormatException e) {
-                return defaultValue;
-            }
-        }
-
-        return defaultValue;
-    }
-
-    /** 读取并转换 JSON 数组字段为 List<Map>，非数组则抛异常 */
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> readJsonArrayAsList(JsonNode node, String fieldName) {
-        JsonNode value = node.get(fieldName);
-        if (value == null || value.isNull()) {
-            return List.of();
-        }
-
-        if (!value.isArray()) {
-            throw new BusinessException("字段fieldName " + fieldName + " 必须是JSON数组");
-        }
-
-        return objectMapper.convertValue(value, List.class);
-    }
-
-    /** 读取并转换 JSON 数组字段为 List<String>，非数组则抛异常 */
-    @SuppressWarnings("unchecked")
-    private List<String> readJsonArrayAsStringList(JsonNode node, String fieldName) {
-        JsonNode value = node.get(fieldName);
-        if (value == null || value.isNull()) {
-            return List.of();
-        }
-
-        if (!value.isArray()) {
-            throw new BusinessException("字段fieldName " + fieldName + " 必须是JSON数组");
-        }
-
-        return objectMapper.convertValue(value, List.class);
-    }
-
-    /** 读取并转换 JSON 对象字段为 Map，非对象则抛异常 */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> readJsonObjectAsMap(JsonNode node, String fieldName) {
-        JsonNode value = node.get(fieldName);
-        if (value == null || value.isNull()) {
-            return Map.of();
-        }
-
-        if (!value.isObject()) {
-            throw new BusinessException("字段fieldName " + fieldName + " 必须是JSON对象");
-        }
-
-        return objectMapper.convertValue(value, Map.class);
-    }
-
-    /** 读取必填文本字段，缺失或为空时抛业务异常（大模型题目校验） */
-    private String readRequiredText(JsonNode node, String fieldName) {
-        JsonNode value = node.get(fieldName);
-        if (value == null || value.isNull()) {
-            throw new BusinessException("LLM题目缺少必填字段fieldName: " + fieldName);
-        }
-
-        String text = value.asText();
-        if (text == null || text.isBlank()) {
-            throw new BusinessException("LLM题目字段fieldName为空: " + fieldName);
-        }
-
-        return text;
     }
 
     /**

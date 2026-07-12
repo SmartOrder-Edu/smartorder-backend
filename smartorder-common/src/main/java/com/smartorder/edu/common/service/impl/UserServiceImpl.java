@@ -325,9 +325,13 @@ public class UserServiceImpl implements IUserService {
             BeanUtils.copyProperties(user, userVO);
             return userVO;
         }).collect(Collectors.toList());
-
-
     }
 
-
+    @Override
+    public User getUserByGithubId(String githubId) {
+        if (githubId == null || githubId.isBlank()) {
+            return null;
+        }
+        return userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getGithubId, githubId));
+    }
 }

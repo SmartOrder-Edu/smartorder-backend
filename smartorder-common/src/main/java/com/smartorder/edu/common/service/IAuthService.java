@@ -51,4 +51,10 @@ public interface IAuthService {
      */
     void sendPhoneVerificationCode(String phone,String userIP);
 
+    /**
+     * GitHub OAuth 登录
+     * @param githubLoginDTO 包含 code 和 state 的 DTO
+     * @return 包含 accessToken 和 refreshToken 的 Map
+     */
+    Map<String, String> githubLogin(com.smartorder.edu.common.model.dto.GithubLoginDTO githubLoginDTO);
 }

@@ -42,4 +42,17 @@ public enum QuestionTypeIsObjective {
         }
         throw new IllegalArgumentException("未知题型: " + code);
     }
+
+    /** 中文题型名 → 题型枚举（如 "单选题" → SINGLE_CHOICE），未匹配返回 UNKNOWN */
+    public static QuestionTypeIsObjective fromChineseName(String name) {
+        if (name == null) {
+            return UNKNOWN;
+        }
+        for (QuestionTypeIsObjective type : values()) {
+            if (type.name.equals(name)) {
+                return type;
+            }
+        }
+        return UNKNOWN;
+    }
 }

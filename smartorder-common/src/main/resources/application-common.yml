@@ -399,3 +399,10 @@ logging:
   charset:
     console: UTF-8
     file: UTF-8
+
+github:
+  # 支持多种小写或大写形式的系统环境变量读取，依次尝试：github_client_id -> client_id -> GITHUB_CLIENT_ID -> 兜底 MOCK
+  client-id: ${github_client_id:${client_id:${GITHUB_CLIENT_ID:MOCK}}}
+  # 支持多种形式的密钥读取，依次尝试：github_client_secret -> client_secret -> GITHUB_CLIENT_SECRET -> 兜底空字符串
+  client-secret: ${github_client_secret:${client_secret:${GITHUB_CLIENT_SECRET:}}}
+  redirect-uri: ${github_redirect_uri:${redirect_uri:${GITHUB_REDIRECT_URI:http://localhost:5172/oauth/callback/github}}}

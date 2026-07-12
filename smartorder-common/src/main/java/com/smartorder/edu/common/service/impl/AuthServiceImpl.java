@@ -5,13 +5,18 @@ import com.smartorder.edu.common.event.UserRegisteredEvent;
 import com.smartorder.edu.common.model.dto.ChangePasswordDTO;
 import com.smartorder.edu.common.model.dto.LoginDTO;
 import com.smartorder.edu.common.model.dto.RegisterDTO;
+import com.smartorder.edu.common.model.dto.GithubLoginDTO;
+import com.smartorder.edu.common.model.vo.GithubUserVO;
 import com.smartorder.edu.common.model.entity.User;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.common.exception.ValidationException;
 import com.smartorder.edu.common.service.IAuthService;
 import com.smartorder.edu.common.service.IUserService;
+import com.smartorder.edu.common.service.IGithubService;
+import com.smartorder.edu.common.mapper.UserMapper;
 import com.smartorder.edu.common.util.EmailVerificationCodeUtils;
 import com.smartorder.edu.common.util.JwtTokenUtils;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -53,6 +58,14 @@ public class AuthServiceImpl implements IAuthService {
      * Spring 事件发布器
      */
     private final ApplicationEventPublisher eventPublisher;
+    /**
+     * GitHub 外部接口调用服务
+     */
+    private final IGithubService githubService;
+    /**
+     * 用户数据库 Mapper
+     */
+    private final UserMapper userMapper;
 
     private static final String REDIS_KEY_PREFIX = "refreshToken:";
 
@@ -219,5 +232,93 @@ public class AuthServiceImpl implements IAuthService {
      */
     public boolean checkPassword(String rawPassword, String encodedPassword) {
         return passwordEncoder.matches(rawPassword, encodedPassword);
+    }
+
+    @Override
+    public Map<String, String> githubLogin(GithubLoginDTO githubLoginDTO) {
+        String code = githubLoginDTO.getCode();
+        if (!StringUtils.hasText(code)) {
+            throw new ValidationException("授权码不能为空");
+        }
+
+        // 1. 获取 GitHub 用户信息
+        GithubUserVO githubUserVO = githubService.getGithubUser(code);
+
+        // 2. 根据 github_id 查询数据库
+        User user = userService.getUserByGithubId(githubUserVO.getId());
+
+        if (user == null) {
+            log.info("未找到绑定了 GitHub ID: {} 的用户，开始尝试关联或新建用户", githubUserVO.getId());
+
+            // 2.1 优先尝试使用 GitHub 返回的邮箱来关联系统中的已有用户
+            if (StringUtils.hasText(githubUserVO.getEmail())) {
+                user = userService.getUserByEmailWithPassword(githubUserVO.getEmail());
+                if (user != null) {
+                    log.info("根据邮箱 {} 找到已有用户 {}, 直接绑定该 GitHub 账号", githubUserVO.getEmail(), user.getUsername());
+                    user.setGithubId(githubUserVO.getId());
+                    user.setGithubUsername(githubUserVO.getLogin());
+                    userMapper.updateById(user);
+                }
+            }
+
+            // 2.2 如果没关联成功，则自动创建新用户
+            if (user == null) {
+                log.info("本地无匹配邮箱或账号，创建全新用户并绑定 GitHub ID: {}", githubUserVO.getId());
+                user = new User();
+                
+                // 处理用户名唯一性
+                String originalUsername = githubUserVO.getName();
+                if (!StringUtils.hasText(originalUsername)) {
+                    originalUsername = githubUserVO.getLogin();
+                }
+                if (!StringUtils.hasText(originalUsername)) {
+                    originalUsername = "Github用户";
+                }
+                
+                String finalUsername = originalUsername;
+                int suffix = 1;
+                while (userMapper.selectCount(new LambdaQueryWrapper<User>().eq(User::getUsername, finalUsername)) > 0) {
+                    finalUsername = originalUsername + "_" + suffix++;
+                }
+
+                user.setUsername(finalUsername);
+                
+                // 如果 GitHub 邮箱有效且未在系统被占用，则绑定之
+                if (StringUtils.hasText(githubUserVO.getEmail()) && 
+                    userMapper.selectCount(new LambdaQueryWrapper<User>().eq(User::getEmail, githubUserVO.getEmail())) == 0) {
+                    user.setEmail(githubUserVO.getEmail());
+                }
+
+                // 随机生成一个不可直接登录的密码进行加密
+                String rawPassword = cn.hutool.core.util.IdUtil.simpleUUID();
+                user.setPassword(passwordEncoder.encode(rawPassword));
+
+                // 写入头像
+                if (StringUtils.hasText(githubUserVO.getAvatarUrl())) {
+                    user.setAvatarUrl(githubUserVO.getAvatarUrl());
+                }
+
+                user.setGithubId(githubUserVO.getId());
+                user.setGithubUsername(githubUserVO.getLogin());
+                user.setRole(0); // 默认学生角色
+                user.setStatus(1); // 正常启用
+
+                // 插入用户数据
+                userService.insertUser(user);
+
+                // 发布用户注册事件，以便下游模块（如测评、引导等）能正常为这个新用户初始化数据
+                eventPublisher.publishEvent(new UserRegisteredEvent(this, user.getId()));
+            }
+        } else {
+            log.info("找到匹配的 GitHub 用户: {}, 直接登录", user.getUsername());
+            // 如果 githubUsername 发生改变，则顺手更新一下
+            if (!githubUserVO.getLogin().equals(user.getGithubUsername())) {
+                user.setGithubUsername(githubUserVO.getLogin());
+                userMapper.updateById(user);
+            }
+        }
+
+        // 3. 生成双 token 返回
+        return generateTokens(user);
     }
 }
