@@ -8,6 +8,8 @@ public interface IResourceService {
 
     List<Resource> getBySpaceId(Long spaceId);
 
+    Resource getById(Long resourceId);
+
     /**
      * 批量插入"计划中"的资源（草案确认时使用）。
      * 统一设置：status='planned'、isDeleted=0；

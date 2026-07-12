@@ -25,6 +25,16 @@ public class ResourceServiceImpl implements IResourceService {
     }
 
     @Override
+    public Resource getById(Long resourceId) {
+        if (resourceId == null) {
+            return null;
+        }
+        QueryWrapper<Resource> qw = new QueryWrapper<>();
+        qw.eq("id", resourceId).eq("is_deleted", 0).last("LIMIT 1");
+        return resourceMapper.selectOne(qw);
+    }
+
+    @Override
     public List<Resource> batchInsertPlanned(List<Resource> resources) {
         if (resources == null || resources.isEmpty()) {
             return List.of();
