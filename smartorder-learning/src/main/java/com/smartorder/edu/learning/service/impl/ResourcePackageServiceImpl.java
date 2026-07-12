@@ -201,6 +201,9 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
         vo.setDescription(resourceDescription(type, knowledgePoint, dto));
         vo.setUrl(resourceUrl(type, knowledgePoint, packageId));
         vo.setFileFormat(fileFormat(type));
+        if ("link".equals(type)) {
+            vo.setCoverUrl("https://i0.hdslb.com/bfs/archive/8f3f96e7f7a2a70c8d3d3a0b4cf9d114f6a6bb9b.jpg");
+        }
         vo.setIsAiGenerated(!"link".equals(type));
         vo.setSource("link".equals(type) ? "curated" : "ai");
         vo.setStatus(generated ? "generated" : "planned");
@@ -314,6 +317,13 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
         if ("link".equals(type)) {
             map.put("recommendationSource", "bilibili");
             map.put("recommendationPolicy", "按当前知识点生成检索入口，后续可接入真实视频筛选服务");
+            map.put("bilibiliPreview", Map.of(
+                    "title", knowledgePoint + " 入门到例题讲解",
+                    "coverUrl", "https://i0.hdslb.com/bfs/archive/8f3f96e7f7a2a70c8d3d3a0b4cf9d114f6a6bb9b.jpg",
+                    "upName", "知序智学推荐",
+                    "durationSeconds", 720,
+                    "fitStage", "强化"
+            ));
         }
         return map;
     }
@@ -351,6 +361,11 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
             return "https://search.bilibili.com/all?keyword=" + encoded;
         }
         return "/learning-resources/generated/" + packageId + "/" + type;
+    }
+
+    private String bilibiliSearchUrl(String query) {
+        return "https://search.bilibili.com/all?keyword="
+                + URLEncoder.encode(query, StandardCharsets.UTF_8);
     }
 
     private String fileFormat(String type) {
@@ -497,13 +512,54 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
     }
 
     private String linkContent(Resource resource, String knowledgePoint, String reason) {
+        String query = knowledgePoint + " 讲解 例题";
         return toJson(Map.of(
+                "type", "bilibili_recommendation",
                 "title", resource.getTitle(),
-                "url", resource.getUrl(),
+                "url", bilibiliSearchUrl(query),
                 "platform", "bilibili",
                 "knowledgePoint", knowledgePoint,
+                "query", query,
                 "reason", reason,
-                "usageAdvice", "先看 8-15 分钟的概念讲解，再回到本空间完成练习题。"
+                "usageAdvice", "建议按推荐顺序观看 1-2 个短视频，再回到本空间完成练习题。",
+                "videos", List.of(
+                        Map.of(
+                                "title", knowledgePoint + " 入门到例题讲解",
+                                "coverUrl", "https://i0.hdslb.com/bfs/archive/8f3f96e7f7a2a70c8d3d3a0b4cf9d114f6a6bb9b.jpg",
+                                "url", bilibiliSearchUrl(knowledgePoint + " 入门 例题"),
+                                "upName", "知序智学推荐",
+                                "durationSeconds", 720,
+                                "playCount", 120000,
+                                "publishTime", "2026-01-01",
+                                "reason", "优先覆盖核心概念和例题识别，适合作为当前任务的第一段补充讲解。",
+                                "fitStage", "入门",
+                                "matchScore", 88
+                        ),
+                        Map.of(
+                                "title", knowledgePoint + " 易错点与条件判断",
+                                "coverUrl", "https://i0.hdslb.com/bfs/archive/4df93dff86dd908b4c8f798d3fd536ec3e977ad7.jpg",
+                                "url", bilibiliSearchUrl(knowledgePoint + " 易错点"),
+                                "upName", "知序智学推荐",
+                                "durationSeconds", 960,
+                                "playCount", 86000,
+                                "publishTime", "2026-01-01",
+                                "reason", "重点放在误用条件和反例辨析，适合修正当前知识点的常见错因。",
+                                "fitStage", "强化",
+                                "matchScore", 84
+                        ),
+                        Map.of(
+                                "title", knowledgePoint + " 高频题型速练",
+                                "coverUrl", "https://i0.hdslb.com/bfs/archive/9f88e4f70f34277468406f0666dbb1f64f4f5d2d.jpg",
+                                "url", bilibiliSearchUrl(knowledgePoint + " 题型 速练"),
+                                "upName", "知序智学推荐",
+                                "durationSeconds", 1080,
+                                "playCount", 64000,
+                                "publishTime", "2026-01-01",
+                                "reason", "更偏题型归纳和快速练习，适合看完概念后做即时巩固。",
+                                "fitStage", "巩固",
+                                "matchScore", 79
+                        )
+                )
         ));
     }
 
