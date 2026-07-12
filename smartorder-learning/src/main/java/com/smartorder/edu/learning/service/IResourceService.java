@@ -8,6 +8,8 @@ public interface IResourceService {
 
     List<Resource> getBySpaceId(Long spaceId);
 
+    Resource getById(Long resourceId);
+
     /**
      * 批量插入"计划中"的资源（草案确认时使用）。
      * 统一设置：status='planned'、isDeleted=0；
@@ -17,4 +19,13 @@ public interface IResourceService {
      * @return 已插入的资源（带 id）
      */
     List<Resource> batchInsertPlanned(List<Resource> resources);
+
+    /**
+     * 批量插入已生成资源（资料包确认后使用）。
+     */
+    List<Resource> batchInsertGenerated(List<Resource> resources);
+
+    void updateStatus(Long resourceId, String status);
+
+    void markGenerated(Long resourceId, String fileFormat);
 }
