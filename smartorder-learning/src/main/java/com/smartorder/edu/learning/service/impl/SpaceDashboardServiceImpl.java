@@ -20,6 +20,9 @@ import java.util.stream.Collectors;
 public class SpaceDashboardServiceImpl implements ISpaceDashboardService {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final String PATH_STATUS_COMPLETED = "completed";
+    private static final String PATH_STATUS_CURRENT = "current";
+    private static final String PATH_STATUS_LOCKED = "locked";
 
     private final ILearningSpaceService learningSpaceService;
     private final ITaskService taskService;
@@ -63,8 +66,8 @@ public class SpaceDashboardServiceImpl implements ISpaceDashboardService {
                 .collect(Collectors.toCollection(ArrayList::new));
         dashboard.setPathNodes(pathNodeVOs);
 
-        // Compute node statuses
-        computeNodeStatuses(pathNodeVOs);
+        // Compute node statuses from real task progress
+        computeNodeStatuses(pathNodeVOs, nodeTasksMap);
         pathNodeVOs.forEach(n -> log.debug("Node {} status: {}", n.getTitle(), n.getStatus()));
 
         // 5. Path edges
@@ -201,32 +204,154 @@ public class SpaceDashboardServiceImpl implements ISpaceDashboardService {
         }
     }
 
-    private void computeNodeStatuses(List<PathNodeVO> nodes) {
+    private void computeNodeStatuses(List<PathNodeVO> nodes, Map<Long, List<Task>> nodeTasksMap) {
         if (nodes.isEmpty()) return;
 
-        // Sort by sortOrder
         nodes.sort(Comparator.comparingInt(n -> n.getSortOrder() != null ? n.getSortOrder() : 0));
+        Map<Long, PathNodeVO> nodeById = nodes.stream()
+                .filter(n -> n.getId() != null)
+                .collect(Collectors.toMap(PathNodeVO::getId, n -> n, (a, b) -> a, LinkedHashMap::new));
+        Map<Long, List<PathNodeVO>> childrenByParentId = nodes.stream()
+                .filter(n -> n.getParentNodeId() != null)
+                .collect(Collectors.groupingBy(
+                        PathNodeVO::getParentNodeId,
+                        LinkedHashMap::new,
+                        Collectors.collectingAndThen(Collectors.toList(), list -> {
+                            list.sort(Comparator.comparingInt(n -> n.getSortOrder() != null ? n.getSortOrder() : 0));
+                            return list;
+                        })
+                ));
 
-        // Find the first node that is not completed (due to lack of data, all nodes
-        // default to "locked" in toPathNodeVO; we only mark as "completed" or "current" here)
-        //
-        // For MVP: first node = "current", rest = "locked"
-        // In the future, we can compute "completed" based on task completion data
-        boolean foundCurrent = false;
+        Set<Long> visiting = new HashSet<>();
         for (PathNodeVO node : nodes) {
-            if (!foundCurrent) {
-                node.setStatus("current");
-                foundCurrent = true;
+            computeNodeStatus(node, nodeTasksMap, childrenByParentId, visiting);
+        }
+
+        boolean hasCurrent = nodes.stream().anyMatch(n -> PATH_STATUS_CURRENT.equals(n.getStatus()));
+        boolean hasUnlocked = nodes.stream().anyMatch(n -> !PATH_STATUS_LOCKED.equals(n.getStatus()));
+        if (!hasCurrent && !hasUnlocked) {
+            firstPathNode(nodes).ifPresent(n -> n.setStatus(PATH_STATUS_CURRENT));
+            return;
+        }
+
+        if (!hasCurrent) {
+            firstLockedPathNode(nodes).ifPresent(n -> n.setStatus(PATH_STATUS_CURRENT));
+        }
+
+        // Keep descendants consistent when a stage becomes current only because it is next in sequence.
+        nodeById.values().forEach(node -> {
+            if (PATH_STATUS_CURRENT.equals(node.getStatus())) {
+                markFirstLockedChildCurrent(node, childrenByParentId);
             }
-            // rest remain "locked" (default)
+        });
+    }
+
+    private String computeNodeStatus(
+            PathNodeVO node,
+            Map<Long, List<Task>> nodeTasksMap,
+            Map<Long, List<PathNodeVO>> childrenByParentId,
+            Set<Long> visiting
+    ) {
+        if (node.getId() == null) {
+            node.setStatus(PATH_STATUS_LOCKED);
+            return node.getStatus();
+        }
+        if (!visiting.add(node.getId())) {
+            log.warn("Detected circular learning path node hierarchy at node {}", node.getId());
+            node.setStatus(PATH_STATUS_LOCKED);
+            return node.getStatus();
+        }
+
+        List<PathNodeVO> children = childrenByParentId.getOrDefault(node.getId(), Collections.emptyList());
+        String taskStatus = statusFromTasks(nodeTasksMap.getOrDefault(node.getId(), Collections.emptyList()));
+        if (children.isEmpty()) {
+            node.setStatus(taskStatus);
+            visiting.remove(node.getId());
+            return node.getStatus();
+        }
+
+        List<String> childStatuses = children.stream()
+                .map(child -> computeNodeStatus(child, nodeTasksMap, childrenByParentId, visiting))
+                .toList();
+
+        if (!childStatuses.isEmpty() && childStatuses.stream().allMatch(PATH_STATUS_COMPLETED::equals)) {
+            node.setStatus(PATH_STATUS_COMPLETED);
+        } else if (PATH_STATUS_CURRENT.equals(taskStatus)
+                || PATH_STATUS_COMPLETED.equals(taskStatus)
+                || childStatuses.stream().anyMatch(s -> PATH_STATUS_CURRENT.equals(s) || PATH_STATUS_COMPLETED.equals(s))) {
+            node.setStatus(PATH_STATUS_CURRENT);
+        } else {
+            node.setStatus(PATH_STATUS_LOCKED);
+        }
+
+        visiting.remove(node.getId());
+        return node.getStatus();
+    }
+
+    private String statusFromTasks(List<Task> tasks) {
+        List<Task> effectiveTasks = tasks.stream()
+                .filter(task -> !"cancelled".equals(task.getStatus()))
+                .toList();
+        if (effectiveTasks.isEmpty()) {
+            return PATH_STATUS_LOCKED;
+        }
+        boolean allCompleted = effectiveTasks.stream().allMatch(task -> PATH_STATUS_COMPLETED.equals(task.getStatus()));
+        if (allCompleted) {
+            return PATH_STATUS_COMPLETED;
+        }
+        boolean hasStarted = effectiveTasks.stream().anyMatch(task ->
+                PATH_STATUS_COMPLETED.equals(task.getStatus())
+                        || PATH_STATUS_CURRENT.equals(task.getStatus())
+                        || "in_progress".equals(task.getStatus())
+                        || "doing".equals(task.getStatus())
+                        || "overdue".equals(task.getStatus())
+        );
+        return hasStarted ? PATH_STATUS_CURRENT : PATH_STATUS_LOCKED;
+    }
+
+    private Optional<PathNodeVO> firstPathNode(List<PathNodeVO> nodes) {
+        return visiblePathNodes(nodes).stream().findFirst()
+                .or(() -> nodes.stream().findFirst());
+    }
+
+    private Optional<PathNodeVO> firstLockedPathNode(List<PathNodeVO> nodes) {
+        return visiblePathNodes(nodes).stream()
+                .filter(n -> PATH_STATUS_LOCKED.equals(n.getStatus()))
+                .findFirst()
+                .or(() -> nodes.stream().filter(n -> PATH_STATUS_LOCKED.equals(n.getStatus())).findFirst());
+    }
+
+    private List<PathNodeVO> visiblePathNodes(List<PathNodeVO> nodes) {
+        return nodes.stream()
+                .filter(this::isVisiblePathNode)
+                .sorted(Comparator.comparingInt(n -> n.getSortOrder() != null ? n.getSortOrder() : 0))
+                .toList();
+    }
+
+    private boolean isVisiblePathNode(PathNodeVO node) {
+        return node.getParentNodeId() == null || "stage".equals(node.getNodeType());
+    }
+
+    private void markFirstLockedChildCurrent(PathNodeVO node, Map<Long, List<PathNodeVO>> childrenByParentId) {
+        List<PathNodeVO> children = childrenByParentId.getOrDefault(node.getId(), Collections.emptyList());
+        Optional<PathNodeVO> childToOpen = children.stream()
+                .filter(child -> PATH_STATUS_LOCKED.equals(child.getStatus()))
+                .findFirst();
+        if (childToOpen.isPresent()
+                && children.stream().noneMatch(child -> PATH_STATUS_CURRENT.equals(child.getStatus()))) {
+            childToOpen.get().setStatus(PATH_STATUS_CURRENT);
         }
     }
 
     private PathProgress computePathProgress(List<PathNodeVO> nodes) {
-        int total = nodes.size();
-        long completed = nodes.stream().filter(n -> "completed".equals(n.getStatus())).count();
-        Long currentNodeId = nodes.stream()
-                .filter(n -> "current".equals(n.getStatus()))
+        List<PathNodeVO> progressNodes = visiblePathNodes(nodes);
+        if (progressNodes.isEmpty()) {
+            progressNodes = nodes;
+        }
+        int total = progressNodes.size();
+        long completed = progressNodes.stream().filter(n -> PATH_STATUS_COMPLETED.equals(n.getStatus())).count();
+        Long currentNodeId = progressNodes.stream()
+                .filter(n -> PATH_STATUS_CURRENT.equals(n.getStatus()))
                 .map(PathNodeVO::getId)
                 .findFirst()
                 .orElse(null);
