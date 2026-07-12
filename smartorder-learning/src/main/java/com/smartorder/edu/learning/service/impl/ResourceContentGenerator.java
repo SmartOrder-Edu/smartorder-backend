@@ -5,17 +5,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.learning.domain.entity.Resource;
 import com.smartorder.edu.learning.domain.entity.ResourceContent;
+import com.smartorder.edu.learning.service.recommendation.BilibiliVideoRecommendationService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
 @Component
+@RequiredArgsConstructor
 public class ResourceContentGenerator {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private final BilibiliVideoRecommendationService bilibiliVideoRecommendationService;
 
     public ResourceContent generate(Resource resource) {
         ResourceContent content = new ResourceContent();
@@ -177,67 +179,14 @@ public class ResourceContentGenerator {
     }
 
     private String linkContent(Resource resource, String knowledgePoint, String reason) {
-        String query = knowledgePoint + " 讲解 例题";
-        String url = bilibiliSearchUrl(query);
-        List<Map<String, Object>> videos = bilibiliRecommendations(knowledgePoint, reason);
-        return toJson(Map.of(
-                "type", "bilibili_recommendation",
-                "title", resource.getTitle(),
-                "url", url,
-                "platform", "bilibili",
-                "knowledgePoint", knowledgePoint,
-                "query", query,
-                "reason", reason,
-                "usageAdvice", "建议按推荐顺序观看 1-2 个短视频，再回到本空间完成练习题。",
-                "videos", videos
+        BilibiliVideoRecommendationService.RecommendationResult recommendation =
+                bilibiliVideoRecommendationService.recommend(knowledgePoint, reason, 3);
+        return toJson(bilibiliVideoRecommendationService.contentPayload(
+                resource.getTitle(),
+                knowledgePoint,
+                reason,
+                recommendation
         ));
-    }
-
-    private List<Map<String, Object>> bilibiliRecommendations(String knowledgePoint, String reason) {
-        String encodedCore = URLEncoder.encode(knowledgePoint, StandardCharsets.UTF_8);
-        return List.of(
-                Map.of(
-                        "title", knowledgePoint + " 入门到例题讲解",
-                        "coverUrl", "https://i0.hdslb.com/bfs/archive/8f3f96e7f7a2a70c8d3d3a0b4cf9d114f6a6bb9b.jpg",
-                        "url", bilibiliSearchUrl(knowledgePoint + " 入门 例题"),
-                        "upName", "知序智学推荐",
-                        "durationSeconds", 720,
-                        "playCount", 120000,
-                        "publishTime", "2026-01-01",
-                        "reason", "优先覆盖核心概念和例题识别，适合作为当前任务的第一段补充讲解。",
-                        "fitStage", "入门",
-                        "matchScore", 88
-                ),
-                Map.of(
-                        "title", knowledgePoint + " 易错点与条件判断",
-                        "coverUrl", "https://i0.hdslb.com/bfs/archive/4df93dff86dd908b4c8f798d3fd536ec3e977ad7.jpg",
-                        "url", "https://search.bilibili.com/all?keyword=" + encodedCore + "%20%E6%98%93%E9%94%99%E7%82%B9",
-                        "upName", "知序智学推荐",
-                        "durationSeconds", 960,
-                        "playCount", 86000,
-                        "publishTime", "2026-01-01",
-                        "reason", "重点放在误用条件和反例辨析，适合修正当前知识点的常见错因。",
-                        "fitStage", "强化",
-                        "matchScore", 84
-                ),
-                Map.of(
-                        "title", knowledgePoint + " 高频题型速练",
-                        "coverUrl", "https://i0.hdslb.com/bfs/archive/9f88e4f70f34277468406f0666dbb1f64f4f5d2d.jpg",
-                        "url", "https://search.bilibili.com/all?keyword=" + encodedCore + "%20%E9%A2%98%E5%9E%8B%20%E9%80%9F%E7%BB%83",
-                        "upName", "知序智学推荐",
-                        "durationSeconds", 1080,
-                        "playCount", 64000,
-                        "publishTime", "2026-01-01",
-                        "reason", "更偏题型归纳和快速练习，适合看完概念后做即时巩固。",
-                        "fitStage", "巩固",
-                        "matchScore", 79
-                )
-        );
-    }
-
-    private String bilibiliSearchUrl(String query) {
-        return "https://search.bilibili.com/all?keyword="
-                + URLEncoder.encode(query, StandardCharsets.UTF_8);
     }
 
     private String imageGuideContent(Resource resource, String knowledgePoint, String reason) {

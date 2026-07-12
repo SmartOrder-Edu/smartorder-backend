@@ -16,6 +16,7 @@ import com.smartorder.edu.learning.service.IResourceContentService;
 import com.smartorder.edu.learning.service.IResourcePackageService;
 import com.smartorder.edu.learning.service.IResourceService;
 import com.smartorder.edu.learning.service.ITaskService;
+import com.smartorder.edu.learning.service.recommendation.BilibiliVideoRecommendationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -45,6 +46,7 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
     private final IResourceService resourceService;
     private final IResourceContentService resourceContentService;
     private final ResourceContentGenerator resourceContentGenerator;
+    private final BilibiliVideoRecommendationService bilibiliVideoRecommendationService;
 
     @Override
     public ResourcePackageVO previewPackage(Long userId, Long spaceId, ResourcePackageGenerateDTO dto) {
@@ -192,6 +194,8 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
             String packageId,
             boolean generated
     ) {
+        BilibiliVideoRecommendationService.RecommendationResult linkRecommendation =
+                "link".equals(type) ? bilibiliVideoRecommendationService.recommend(knowledgePoint, reason, 3) : null;
         ResourceVO vo = new ResourceVO();
         vo.setSpaceId(spaceId);
         vo.setTaskId(taskId);
@@ -199,10 +203,13 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
         vo.setResourceType(type);
         vo.setTitle(resourceTitle(type, knowledgePoint));
         vo.setDescription(resourceDescription(type, knowledgePoint, dto));
-        vo.setUrl(resourceUrl(type, knowledgePoint, packageId));
+        vo.setUrl(linkRecommendation != null ? linkRecommendation.url() : resourceUrl(type, knowledgePoint, packageId));
         vo.setFileFormat(fileFormat(type));
-        if ("link".equals(type)) {
-            vo.setCoverUrl("https://i0.hdslb.com/bfs/archive/8f3f96e7f7a2a70c8d3d3a0b4cf9d114f6a6bb9b.jpg");
+        if (linkRecommendation != null) {
+            Object coverUrl = bilibiliVideoRecommendationService.preview(linkRecommendation).get("coverUrl");
+            if (coverUrl != null && !String.valueOf(coverUrl).isBlank()) {
+                vo.setCoverUrl(String.valueOf(coverUrl));
+            }
         }
         vo.setIsAiGenerated(!"link".equals(type));
         vo.setSource("link".equals(type) ? "curated" : "ai");
@@ -210,7 +217,7 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
         vo.setAgentReason(reason);
         vo.setKnowledgePoint(knowledgePoint);
         vo.setStudyScenario(studyScenario(type));
-        vo.setMetadata(toJson(metadata(packageId, knowledgePoint, reason, dto, type)));
+        vo.setMetadata(toJson(metadata(packageId, knowledgePoint, reason, dto, type, linkRecommendation)));
         return vo;
     }
 
@@ -304,7 +311,8 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
             String knowledgePoint,
             String reason,
             ResourcePackageGenerateDTO dto,
-            String type
+            String type,
+            BilibiliVideoRecommendationService.RecommendationResult linkRecommendation
     ) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("packageId", packageId);
@@ -316,14 +324,15 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
         map.put("userIntent", dto.getUserIntent());
         if ("link".equals(type)) {
             map.put("recommendationSource", "bilibili");
-            map.put("recommendationPolicy", "按当前知识点生成检索入口，后续可接入真实视频筛选服务");
-            map.put("bilibiliPreview", Map.of(
-                    "title", knowledgePoint + " 入门到例题讲解",
-                    "coverUrl", "https://i0.hdslb.com/bfs/archive/8f3f96e7f7a2a70c8d3d3a0b4cf9d114f6a6bb9b.jpg",
-                    "upName", "知序智学推荐",
-                    "durationSeconds", 720,
-                    "fitStage", "强化"
-            ));
+            map.put("recommendationProvider", linkRecommendation == null ? "unknown" : linkRecommendation.sourceType());
+            map.put("recommendationCacheHit", linkRecommendation != null && linkRecommendation.cacheHit());
+            map.put("recommendationPolicy", "按当前知识点实时检索 B站候选视频，结合标题匹配、播放量、时长和发布时间进行评分；接口不可用时降级为搜索入口。");
+            if (linkRecommendation != null) {
+                Map<String, Object> preview = bilibiliVideoRecommendationService.preview(linkRecommendation);
+                if (!preview.isEmpty()) {
+                    map.put("bilibiliPreview", preview);
+                }
+            }
         }
         return map;
     }
@@ -350,7 +359,7 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
             case "quiz" -> "围绕当前任务生成巩固题，用于学习后即时检测。";
             case "image" -> "把抽象概念转成一张图解卡片，适合快速理解。";
             case "video" -> "生成可用于后续合成视频的讲解脚本和分镜结构。";
-            case "link" -> "按当前知识点生成 B站检索推荐入口，标记为 AI 筛选推荐。";
+            case "link" -> "按当前知识点检索并筛选 B站学习视频，标记为 AI 筛选推荐。";
             default -> "Agent 为当前学习任务生成的配套资料。";
         };
     }
@@ -361,11 +370,6 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
             return "https://search.bilibili.com/all?keyword=" + encoded;
         }
         return "/learning-resources/generated/" + packageId + "/" + type;
-    }
-
-    private String bilibiliSearchUrl(String query) {
-        return "https://search.bilibili.com/all?keyword="
-                + URLEncoder.encode(query, StandardCharsets.UTF_8);
     }
 
     private String fileFormat(String type) {
@@ -512,54 +516,13 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
     }
 
     private String linkContent(Resource resource, String knowledgePoint, String reason) {
-        String query = knowledgePoint + " 讲解 例题";
-        return toJson(Map.of(
-                "type", "bilibili_recommendation",
-                "title", resource.getTitle(),
-                "url", bilibiliSearchUrl(query),
-                "platform", "bilibili",
-                "knowledgePoint", knowledgePoint,
-                "query", query,
-                "reason", reason,
-                "usageAdvice", "建议按推荐顺序观看 1-2 个短视频，再回到本空间完成练习题。",
-                "videos", List.of(
-                        Map.of(
-                                "title", knowledgePoint + " 入门到例题讲解",
-                                "coverUrl", "https://i0.hdslb.com/bfs/archive/8f3f96e7f7a2a70c8d3d3a0b4cf9d114f6a6bb9b.jpg",
-                                "url", bilibiliSearchUrl(knowledgePoint + " 入门 例题"),
-                                "upName", "知序智学推荐",
-                                "durationSeconds", 720,
-                                "playCount", 120000,
-                                "publishTime", "2026-01-01",
-                                "reason", "优先覆盖核心概念和例题识别，适合作为当前任务的第一段补充讲解。",
-                                "fitStage", "入门",
-                                "matchScore", 88
-                        ),
-                        Map.of(
-                                "title", knowledgePoint + " 易错点与条件判断",
-                                "coverUrl", "https://i0.hdslb.com/bfs/archive/4df93dff86dd908b4c8f798d3fd536ec3e977ad7.jpg",
-                                "url", bilibiliSearchUrl(knowledgePoint + " 易错点"),
-                                "upName", "知序智学推荐",
-                                "durationSeconds", 960,
-                                "playCount", 86000,
-                                "publishTime", "2026-01-01",
-                                "reason", "重点放在误用条件和反例辨析，适合修正当前知识点的常见错因。",
-                                "fitStage", "强化",
-                                "matchScore", 84
-                        ),
-                        Map.of(
-                                "title", knowledgePoint + " 高频题型速练",
-                                "coverUrl", "https://i0.hdslb.com/bfs/archive/9f88e4f70f34277468406f0666dbb1f64f4f5d2d.jpg",
-                                "url", bilibiliSearchUrl(knowledgePoint + " 题型 速练"),
-                                "upName", "知序智学推荐",
-                                "durationSeconds", 1080,
-                                "playCount", 64000,
-                                "publishTime", "2026-01-01",
-                                "reason", "更偏题型归纳和快速练习，适合看完概念后做即时巩固。",
-                                "fitStage", "巩固",
-                                "matchScore", 79
-                        )
-                )
+        BilibiliVideoRecommendationService.RecommendationResult recommendation =
+                bilibiliVideoRecommendationService.recommend(knowledgePoint, reason, 3);
+        return toJson(bilibiliVideoRecommendationService.contentPayload(
+                resource.getTitle(),
+                knowledgePoint,
+                reason,
+                recommendation
         ));
     }
 

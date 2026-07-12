@@ -16,18 +16,25 @@ import com.smartorder.edu.learning.service.IResourceContentService;
 import com.smartorder.edu.learning.service.IResourceService;
 import com.smartorder.edu.learning.service.ITaskService;
 import com.smartorder.edu.learning.service.impl.ResourceContentGenerator;
+import com.smartorder.edu.learning.service.recommendation.BilibiliVideoRecommendationService;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -43,6 +50,7 @@ public class ResourceController {
     private final ILearningSpaceService learningSpaceService;
     private final ITaskService taskService;
     private final ResourceContentGenerator resourceContentGenerator;
+    private final BilibiliVideoRecommendationService bilibiliVideoRecommendationService;
 
     @GetMapping("/{id}")
     @Operation(summary = "获取学习资源详情", description = "返回资源元信息与最新可预览内容")
@@ -54,6 +62,17 @@ public class ResourceController {
         }
 
         return Result.success(buildDetail(userId, resource));
+    }
+
+    @GetMapping("/bilibili/cover")
+    @Operation(summary = "代理 B站视频封面", description = "仅代理 hdslb.com 封面图片，避免浏览器直连 B站图片触发防盗链 403")
+    public ResponseEntity<byte[]> bilibiliCover(@RequestParam String url) {
+        BilibiliVideoRecommendationService.CoverImage image = bilibiliVideoRecommendationService.fetchCover(url);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(image.contentType()))
+                .cacheControl(CacheControl.maxAge(7, TimeUnit.DAYS).cachePublic())
+                .header(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                .body(image.body());
     }
 
     @PostMapping("/{id}/generate")
