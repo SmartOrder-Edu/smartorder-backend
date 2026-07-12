@@ -238,7 +238,7 @@ langchain4j:
 #      api-key: ${MIMO_API_KEY}
 #      base-url: https://token-plan-cn.xiaomimimo.com/v1
 #      model-name: mimo-v2.5-pro
-      api-key: sk-00d1dcd9a07048e3906331d6bf085e19
+      api-key: ${DEEPSEEK_API_KEY}
       base-url: https://api.deepseek.com/v1
       model-name: deepseek-v4-flash
       log-requests: true
@@ -250,7 +250,7 @@ langchain4j:
       # DeepSeek 提供了完全兼容 OpenAI 格式的接口，通常需要在 URL 后加上 /v1
 #      base-url: https://token-plan-cn.xiaomimimo.com/v1
 #      model-name: mimo-v2.5-pro
-      api-key: sk-00d1dcd9a07048e3906331d6bf085e19
+      api-key: ${DEEPSEEK_API_KEY}
       base-url: https://api.deepseek.com/v1
       model-name: deepseek-v4-flash
       # 强烈建议在开发阶段开启以下两项日志！
