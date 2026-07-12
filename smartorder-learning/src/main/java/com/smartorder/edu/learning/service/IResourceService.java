@@ -24,4 +24,8 @@ public interface IResourceService {
      * 批量插入已生成资源（资料包确认后使用）。
      */
     List<Resource> batchInsertGenerated(List<Resource> resources);
+
+    void updateStatus(Long resourceId, String status);
+
+    void markGenerated(Long resourceId, String fileFormat);
 }

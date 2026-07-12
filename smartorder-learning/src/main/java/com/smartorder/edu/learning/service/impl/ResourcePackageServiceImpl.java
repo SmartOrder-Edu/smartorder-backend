@@ -44,6 +44,7 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
     private final ITaskService taskService;
     private final IResourceService resourceService;
     private final IResourceContentService resourceContentService;
+    private final ResourceContentGenerator resourceContentGenerator;
 
     @Override
     public ResourcePackageVO previewPackage(Long userId, Long spaceId, ResourcePackageGenerateDTO dto) {
@@ -66,7 +67,7 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
                 .toList();
         List<Resource> inserted = resourceService.batchInsertGenerated(resources);
         resourceContentService.batchCreate(inserted.stream()
-                .map(resource -> toContentEntity(resource, normalized))
+                .map(this::toContentEntity)
                 .toList());
 
         ResourcePackageVO generated = buildPackage(space, task, normalized, packageId, true);
@@ -232,19 +233,9 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
         return resource;
     }
 
-    private ResourceContent toContentEntity(Resource resource, ResourcePackageGenerateDTO dto) {
-        ResourceContent content = new ResourceContent();
-        content.setResourceId(resource.getId());
-        content.setContentType(contentType(resource.getResourceType()));
-        content.setContent(generatedContent(resource, dto));
+    private ResourceContent toContentEntity(Resource resource) {
+        ResourceContent content = resourceContentGenerator.generate(resource);
         content.setVersion(1);
-        content.setStatus("active");
-        content.setReviewResult(toJson(Map.of(
-                "status", "passed",
-                "checks", List.of("non_empty", "bound_to_space", "type_matches_content"),
-                "summary", "MVP 内容格式校验通过，后续可接入 Supervisor Agent 深度事实校验"
-        )));
-        content.setIsDeleted(0);
         return content;
     }
 

@@ -1,6 +1,7 @@
 package com.smartorder.edu.learning.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.smartorder.edu.learning.domain.entity.Resource;
 import com.smartorder.edu.learning.mapper.ResourceMapper;
 import com.smartorder.edu.learning.service.IResourceService;
@@ -76,5 +77,24 @@ public class ResourceServiceImpl implements IResourceService {
         }
         log.info("[Resource] batchInsertGenerated: 已插入 {} 条已生成资源", resources.size());
         return resources;
+    }
+
+    @Override
+    public void updateStatus(Long resourceId, String status) {
+        UpdateWrapper<Resource> uw = new UpdateWrapper<>();
+        uw.eq("id", resourceId).eq("is_deleted", 0)
+                .set("status", status);
+        resourceMapper.update(null, uw);
+    }
+
+    @Override
+    public void markGenerated(Long resourceId, String fileFormat) {
+        UpdateWrapper<Resource> uw = new UpdateWrapper<>();
+        uw.eq("id", resourceId).eq("is_deleted", 0)
+                .set("status", "generated");
+        if (fileFormat != null && !fileFormat.isBlank()) {
+            uw.set("file_format", fileFormat);
+        }
+        resourceMapper.update(null, uw);
     }
 }

@@ -15,6 +15,7 @@ import com.smartorder.edu.learning.service.ILearningSpaceService;
 import com.smartorder.edu.learning.service.IResourceContentService;
 import com.smartorder.edu.learning.service.IResourceService;
 import com.smartorder.edu.learning.service.ITaskService;
+import com.smartorder.edu.learning.service.impl.ResourceContentGenerator;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -22,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -40,6 +42,7 @@ public class ResourceController {
     private final IResourceContentService resourceContentService;
     private final ILearningSpaceService learningSpaceService;
     private final ITaskService taskService;
+    private final ResourceContentGenerator resourceContentGenerator;
 
     @GetMapping("/{id}")
     @Operation(summary = "获取学习资源详情", description = "返回资源元信息与最新可预览内容")
@@ -50,6 +53,46 @@ public class ResourceController {
             throw new BusinessException("学习资源不存在");
         }
 
+        return Result.success(buildDetail(userId, resource));
+    }
+
+    @PostMapping("/{id}/generate")
+    @Operation(summary = "生成待生成学习资源", description = "将 planned/failed 状态的资源生成可预览内容，并更新为 generated")
+    public Result<ResourceDetailVO> generate(@PathVariable Long id) {
+        Long userId = getCurrentUserId();
+        Resource resource = resourceService.getById(id);
+        if (resource == null) {
+            throw new BusinessException("学习资源不存在");
+        }
+
+        learningSpaceService.getSpaceById(userId, resource.getSpaceId());
+        if (!"planned".equals(resource.getStatus()) && !"failed".equals(resource.getStatus())) {
+            throw new BusinessException("当前资源状态不允许生成，仅支持 planned/failed");
+        }
+
+        resourceService.updateStatus(resource.getId(), "generating");
+        try {
+            ResourceContent content = resourceContentGenerator.generate(resource);
+            resourceContentService.createContent(
+                    resource.getId(),
+                    content.getContentType(),
+                    content.getContent(),
+                    content.getReviewResult()
+            );
+            resourceService.markGenerated(resource.getId(), resourceContentGenerator.fileFormat(resource.getResourceType()));
+            Resource generated = resourceService.getById(resource.getId());
+            return Result.success(buildDetail(userId, generated));
+        } catch (BusinessException e) {
+            resourceService.updateStatus(resource.getId(), "failed");
+            throw e;
+        } catch (Exception e) {
+            log.error("Failed to generate resource {}", resource.getId(), e);
+            resourceService.updateStatus(resource.getId(), "failed");
+            throw new BusinessException("学习资源生成失败，请稍后重试");
+        }
+    }
+
+    private ResourceDetailVO buildDetail(Long userId, Resource resource) {
         LearningSpaceVO space = learningSpaceService.getSpaceById(userId, resource.getSpaceId());
         ResourceContent content = resourceContentService.getLatestByResourceId(resource.getId());
 
@@ -58,7 +101,7 @@ public class ResourceController {
         detail.setContent(toContentVO(content));
         detail.setSpaceName(space.getName());
         detail.setTaskTitle(resolveTaskTitle(resource));
-        return Result.success(detail);
+        return detail;
     }
 
     private String resolveTaskTitle(Resource resource) {
