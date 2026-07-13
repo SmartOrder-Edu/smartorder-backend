@@ -15,7 +15,7 @@ import com.smartorder.edu.learning.service.ILearningSpaceService;
 import com.smartorder.edu.learning.service.IResourceContentService;
 import com.smartorder.edu.learning.service.IResourceService;
 import com.smartorder.edu.learning.service.ITaskService;
-import com.smartorder.edu.learning.service.impl.ResourceContentGenerator;
+import com.smartorder.edu.learning.service.ResourceGenerationService;
 import com.smartorder.edu.learning.service.recommendation.BilibiliVideoRecommendationService;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
@@ -49,7 +49,7 @@ public class ResourceController {
     private final IResourceContentService resourceContentService;
     private final ILearningSpaceService learningSpaceService;
     private final ITaskService taskService;
-    private final ResourceContentGenerator resourceContentGenerator;
+    private final ResourceGenerationService resourceGenerationService;
     private final BilibiliVideoRecommendationService bilibiliVideoRecommendationService;
 
     @GetMapping("/{id}")
@@ -79,36 +79,8 @@ public class ResourceController {
     @Operation(summary = "生成待生成学习资源", description = "将 planned/failed 状态的资源生成可预览内容，并更新为 generated")
     public Result<ResourceDetailVO> generate(@PathVariable Long id) {
         Long userId = getCurrentUserId();
-        Resource resource = resourceService.getById(id);
-        if (resource == null) {
-            throw new BusinessException("学习资源不存在");
-        }
-
-        learningSpaceService.getSpaceById(userId, resource.getSpaceId());
-        if (!"planned".equals(resource.getStatus()) && !"failed".equals(resource.getStatus())) {
-            throw new BusinessException("当前资源状态不允许生成，仅支持 planned/failed");
-        }
-
-        resourceService.updateStatus(resource.getId(), "generating");
-        try {
-            ResourceContent content = resourceContentGenerator.generate(resource);
-            resourceContentService.createContent(
-                    resource.getId(),
-                    content.getContentType(),
-                    content.getContent(),
-                    content.getReviewResult()
-            );
-            resourceService.markGenerated(resource.getId(), resourceContentGenerator.fileFormat(resource.getResourceType()));
-            Resource generated = resourceService.getById(resource.getId());
-            return Result.success(buildDetail(userId, generated));
-        } catch (BusinessException e) {
-            resourceService.updateStatus(resource.getId(), "failed");
-            throw e;
-        } catch (Exception e) {
-            log.error("Failed to generate resource {}", resource.getId(), e);
-            resourceService.updateStatus(resource.getId(), "failed");
-            throw new BusinessException("学习资源生成失败，请稍后重试");
-        }
+        Resource generated = resourceGenerationService.generateExisting(userId, id).resource();
+        return Result.success(buildDetail(userId, generated));
     }
 
     private ResourceDetailVO buildDetail(Long userId, Resource resource) {
