@@ -5,31 +5,44 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.learning.domain.entity.Resource;
 import com.smartorder.edu.learning.domain.entity.ResourceContent;
+import com.smartorder.edu.learning.service.ResourceGenerationContext;
+import com.smartorder.edu.learning.service.ResourceGenerationContextBuilder;
 import com.smartorder.edu.learning.service.recommendation.BilibiliVideoRecommendationService;
+import dev.langchain4j.model.chat.ChatModel;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class ResourceContentGenerator {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final String DOC_PROMPT_VERSION = "resource-doc-v1";
     private final BilibiliVideoRecommendationService bilibiliVideoRecommendationService;
+    private final ObjectProvider<ChatModel> chatModelProvider;
+    private final ResourceGenerationContextBuilder contextBuilder;
 
     public ResourceContent generate(Resource resource) {
+        return generate(resource, null);
+    }
+
+    public ResourceContent generate(Resource resource, Long userId) {
+        ResourceGenerationContext context = userId == null ? null : contextBuilder.build(userId, resource);
+        GeneratedContent generated = generatedContent(resource, context);
         ResourceContent content = new ResourceContent();
         content.setResourceId(resource.getId());
-        content.setContentType(contentType(resource.getResourceType()));
-        content.setContent(generatedContent(resource));
+        content.setContentType(generated.contentType());
+        content.setContent(generated.content());
         content.setStatus("active");
-        content.setReviewResult(toJson(Map.of(
-                "status", "passed",
-                "checks", List.of("non_empty", "bound_to_space", "type_matches_content"),
-                "summary", "MVP 内容格式校验通过，后续可接入 Supervisor Agent 深度事实校验"
-        )));
+        content.setReviewResult(generated.reviewResult());
         content.setIsDeleted(0);
         return content;
     }
@@ -54,20 +67,139 @@ public class ResourceContentGenerator {
         };
     }
 
-    private String generatedContent(Resource resource) {
-        String knowledgePoint = extractMetadataValue(resource.getMetadata(), "knowledgePoint", cleanTitle(resource));
-        String reason = extractMetadataValue(resource.getMetadata(), "agentReason", resource.getDescription());
-        int targetMinutes = extractTargetMinutes(resource.getMetadata());
+    private GeneratedContent generatedContent(Resource resource, ResourceGenerationContext context) {
+        String knowledgePoint = context == null
+                ? extractMetadataValue(resource.getMetadata(), "knowledgePoint", cleanTitle(resource))
+                : context.knowledgePoint();
+        String reason = context == null
+                ? extractMetadataValue(resource.getMetadata(), "agentReason", resource.getDescription())
+                : context.reason();
+        int targetMinutes = context == null ? extractTargetMinutes(resource.getMetadata()) : context.targetMinutes();
         return switch (resource.getResourceType()) {
-            case "doc" -> docContent(resource, knowledgePoint, reason, targetMinutes);
-            case "html" -> htmlContent(resource, knowledgePoint, reason);
-            case "mind_map" -> mindMapContent(resource, knowledgePoint, reason);
-            case "quiz" -> quizContent(resource, knowledgePoint);
-            case "link" -> linkContent(resource, knowledgePoint, reason);
-            case "image" -> imageGuideContent(resource, knowledgePoint, reason);
-            case "video" -> videoScriptContent(resource, knowledgePoint, reason);
-            default -> docContent(resource, knowledgePoint, reason, targetMinutes);
+            case "doc" -> docGeneratedContent(resource, context, knowledgePoint, reason, targetMinutes);
+            case "html" -> templateGeneratedContent("html", htmlContent(resource, knowledgePoint, reason));
+            case "mind_map" -> templateGeneratedContent("markdown", mindMapContent(resource, knowledgePoint, reason));
+            case "quiz" -> templateGeneratedContent("json", quizContent(resource, knowledgePoint));
+            case "link" -> templateGeneratedContent("external_link", linkContent(resource, knowledgePoint, reason));
+            case "image" -> templateGeneratedContent("markdown", imageGuideContent(resource, knowledgePoint, reason));
+            case "video" -> templateGeneratedContent("markdown", videoScriptContent(resource, knowledgePoint, reason));
+            default -> docGeneratedContent(resource, context, knowledgePoint, reason, targetMinutes);
         };
+    }
+
+    private GeneratedContent docGeneratedContent(
+            Resource resource,
+            ResourceGenerationContext context,
+            String knowledgePoint,
+            String reason,
+            int targetMinutes
+    ) {
+        String fallback = docContent(resource, knowledgePoint, reason, targetMinutes);
+        ChatModel chatModel = chatModelProvider.getIfAvailable();
+        if (chatModel == null || context == null) {
+            return new GeneratedContent("markdown", fallback,
+                    reviewResult("passed", "template", 70,
+                            List.of(check("format_valid", true), check("fallback_template", true)),
+                            "未发现可用 LLM 或缺少生成上下文，已使用模板内容。", null));
+        }
+
+        try {
+            String content = sanitizeMarkdown(chatModel.chat(buildDocPrompt(context)));
+            List<Map<String, Object>> checks = validateDocContent(content, context.knowledgePoint());
+            boolean passed = checks.stream().allMatch(check -> Boolean.TRUE.equals(check.get("passed")));
+            if (!passed) {
+                return new GeneratedContent("markdown", fallback,
+                        reviewResult("needs_review", "template_fallback", 60, checks,
+                                "LLM 输出未通过基础格式校验，已使用模板内容降级。", preview(content)));
+            }
+            return new GeneratedContent("markdown", content,
+                    reviewResult("passed", "llm", 86, checks,
+                            "LLM 生成内容通过基础格式校验，适合进入学习资料库。", null));
+        } catch (Exception e) {
+            log.warn("[ResourceContentGenerator] LLM doc generation failed, fallback to template. resourceId={}",
+                    resource.getId(), e);
+            return new GeneratedContent("markdown", fallback,
+                    reviewResult("needs_review", "template_fallback", 55,
+                            List.of(check("llm_call_success", false), check("fallback_template", true)),
+                            "LLM 调用失败，已使用模板内容降级：" + e.getMessage(), null));
+        }
+    }
+
+    private String buildDocPrompt(ResourceGenerationContext context) {
+        return """
+                你是严谨的学习资料生成 Agent。请根据上下文生成一份可直接学习的 Markdown 讲义。
+
+                约束：
+                - 只输出 Markdown，不要输出 JSON、代码围栏或额外解释。
+                - 内容必须围绕知识点，不要泛泛而谈。
+                - 必须包含这些二级标题：学习目标、核心概念、例题讲解、易错点、复盘问题。
+                - 例题讲解至少包含 1 个具体例子，不能只写抽象步骤。
+                - 语言要适合学生自学，避免空洞口号。
+
+                学习空间：%s
+                当前目标：%s
+                当前任务：%s
+                路径节点：%s
+                知识点：%s
+                使用场景：%s
+                用户意图：%s
+                目标学习时长：%d 分钟
+                生成原因：%s
+
+                请开始生成 Markdown 讲义。
+                """.formatted(
+                value(context.space() == null ? null : context.space().getName()),
+                value(context.space() == null ? null : context.space().getGoals()),
+                value(context.task() == null ? null : context.task().getTitle()),
+                value(context.pathNode() == null ? null : context.pathNode().getTitle()),
+                value(context.knowledgePoint()),
+                value(context.studyScenario()),
+                value(context.userIntent()),
+                context.targetMinutes(),
+                value(context.reason())
+        );
+    }
+
+    private List<Map<String, Object>> validateDocContent(String content, String knowledgePoint) {
+        List<Map<String, Object>> checks = new ArrayList<>();
+        checks.add(check("non_empty", content != null && content.trim().length() >= 300));
+        checks.add(check("markdown_heading", content != null && content.trim().startsWith("#")));
+        checks.add(check("has_learning_goals", containsHeading(content, "学习目标")));
+        checks.add(check("has_core_concepts", containsHeading(content, "核心概念")));
+        checks.add(check("has_example", containsHeading(content, "例题讲解") || containsHeading(content, "例题")));
+        checks.add(check("has_review_questions", containsHeading(content, "复盘问题")));
+        checks.add(check("knowledge_point_aligned", content != null && content.contains(knowledgePoint)));
+        return checks;
+    }
+
+    private boolean containsHeading(String content, String heading) {
+        return content != null && (content.contains("## " + heading) || content.contains("### " + heading));
+    }
+
+    private String sanitizeMarkdown(String content) {
+        if (content == null) {
+            return "";
+        }
+        String trimmed = content.trim();
+        if (trimmed.startsWith("```")) {
+            trimmed = trimmed.replaceFirst("^```[a-zA-Z]*\\s*", "");
+            int lastFence = trimmed.lastIndexOf("```");
+            if (lastFence >= 0) {
+                trimmed = trimmed.substring(0, lastFence).trim();
+            }
+        }
+        return trimmed;
+    }
+
+    private GeneratedContent templateGeneratedContent(String contentType, String content) {
+        return new GeneratedContent(contentType, content, reviewResult(
+                "passed",
+                "template",
+                70,
+                List.of(check("non_empty", content != null && !content.isBlank()), check("type_matches_content", true)),
+                "MVP 模板内容格式校验通过，后续可接入对应类型 LLM 生成器。",
+                null
+        ));
     }
 
     private String docContent(Resource resource, String knowledgePoint, String reason, int targetMinutes) {
@@ -289,5 +421,47 @@ public class ResourceContentGenerator {
         } catch (JsonProcessingException e) {
             throw new BusinessException("资源内容序列化失败");
         }
+    }
+
+    private String reviewResult(
+            String status,
+            String source,
+            int score,
+            List<Map<String, Object>> checks,
+            String summary,
+            String rejectedPreview
+    ) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("status", status);
+        result.put("source", source);
+        result.put("score", score);
+        result.put("checks", checks);
+        result.put("summary", summary);
+        result.put("promptVersion", DOC_PROMPT_VERSION);
+        if (rejectedPreview != null && !rejectedPreview.isBlank()) {
+            result.put("rejectedPreview", rejectedPreview);
+        }
+        return toJson(result);
+    }
+
+    private Map<String, Object> check(String name, boolean passed) {
+        Map<String, Object> check = new LinkedHashMap<>();
+        check.put("name", name);
+        check.put("passed", passed);
+        return check;
+    }
+
+    private String preview(String content) {
+        if (content == null) {
+            return "";
+        }
+        return content.length() <= 800 ? content : content.substring(0, 800) + "...";
+    }
+
+    private String value(String text) {
+        return text == null || text.isBlank() ? "无" : text;
+    }
+
+    private record GeneratedContent(String contentType, String content, String reviewResult) {
     }
 }

@@ -19,7 +19,6 @@ import com.smartorder.edu.learning.service.IResourceGenerationJobService;
 import com.smartorder.edu.learning.service.IResourceService;
 import com.smartorder.edu.learning.service.ITaskService;
 import com.smartorder.edu.learning.service.ResourceAsyncGenerationService;
-import com.smartorder.edu.learning.service.ResourceGenerationService;
 import com.smartorder.edu.learning.service.recommendation.BilibiliVideoRecommendationService;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
@@ -53,7 +52,6 @@ public class ResourceController {
     private final IResourceContentService resourceContentService;
     private final ILearningSpaceService learningSpaceService;
     private final ITaskService taskService;
-    private final ResourceGenerationService resourceGenerationService;
     private final IResourceGenerationJobService resourceGenerationJobService;
     private final ResourceAsyncGenerationService resourceAsyncGenerationService;
     private final BilibiliVideoRecommendationService bilibiliVideoRecommendationService;
@@ -82,11 +80,20 @@ public class ResourceController {
     }
 
     @PostMapping("/{id}/generate")
-    @Operation(summary = "生成待生成学习资源", description = "将 planned/failed 状态的资源生成可预览内容，并更新为 generated")
-    public Result<ResourceDetailVO> generate(@PathVariable Long id) {
+    @Operation(summary = "提交学习资源生成任务", description = "将 planned/failed 状态的资源提交到后台异步生成，立即返回生成任务状态")
+    public Result<ResourceGenerationJobVO> generate(@PathVariable Long id) {
         Long userId = getCurrentUserId();
-        Resource generated = resourceGenerationService.generateExisting(userId, id).resource();
-        return Result.success(buildDetail(userId, generated));
+        Resource resource = getOwnedResource(userId, id);
+        if ("generating".equals(resource.getStatus())) {
+            ResourceGenerationJob latest = resourceGenerationJobService.getLatestByResourceId(resource.getId());
+            if (latest == null) {
+                throw new BusinessException("资源正在生成中，请稍后刷新状态");
+            }
+            return Result.success(toJobVO(latest));
+        }
+        ResourceGenerationJob job = resourceGenerationJobService.createGeneratePending(userId, resource);
+        resourceAsyncGenerationService.submit(job);
+        return Result.success(toJobVO(job));
     }
 
     @GetMapping("/{id}/generation-job")

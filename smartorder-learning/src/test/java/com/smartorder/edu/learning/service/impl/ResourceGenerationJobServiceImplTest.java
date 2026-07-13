@@ -31,6 +31,60 @@ class ResourceGenerationJobServiceImplTest {
     }
 
     @Test
+    void createGeneratePendingCreatesJobAndMarksResourceGenerating() {
+        Resource resource = plannedResource();
+        resource.setDescription("围绕进程调度生成一份讲义");
+        when(mapper.insert(any(ResourceGenerationJob.class))).thenAnswer(invocation -> {
+            ResourceGenerationJob job = invocation.getArgument(0, ResourceGenerationJob.class);
+            job.setId(301L);
+            return 1;
+        });
+
+        ResourceGenerationJob job = service.createGeneratePending(7L, resource);
+
+        ArgumentCaptor<ResourceGenerationJob> captor = ArgumentCaptor.forClass(ResourceGenerationJob.class);
+        verify(mapper).insert(captor.capture());
+        ResourceGenerationJob inserted = captor.getValue();
+        assertThat(inserted.getUserId()).isEqualTo(7L);
+        assertThat(inserted.getSpaceId()).isEqualTo(10L);
+        assertThat(inserted.getResourceId()).isEqualTo(99L);
+        assertThat(inserted.getResourceType()).isEqualTo("doc");
+        assertThat(inserted.getTitle()).isEqualTo("讲义文档：进程调度");
+        assertThat(inserted.getReason()).isEqualTo("围绕进程调度生成一份讲义");
+        assertThat(inserted.getStatus()).isEqualTo("pending");
+        assertThat(inserted.getRetryCount()).isZero();
+        assertThat(job.getId()).isEqualTo(301L);
+        assertThat(resource.getStatus()).isEqualTo("generating");
+        verify(resourceService).updateStatus(99L, "generating");
+    }
+
+    @Test
+    void createGeneratePendingReturnsLatestJobWhenResourceIsGenerating() {
+        Resource resource = plannedResource();
+        resource.setStatus("generating");
+        ResourceGenerationJob latest = latestJob(0);
+        when(mapper.selectLatestByResourceId(99L)).thenReturn(latest);
+
+        ResourceGenerationJob job = service.createGeneratePending(7L, resource);
+
+        assertThat(job).isSameAs(latest);
+        verify(mapper, never()).insert(any(ResourceGenerationJob.class));
+        verify(resourceService, never()).updateStatus(any(), any());
+    }
+
+    @Test
+    void createGeneratePendingRejectsGeneratedResource() {
+        Resource resource = plannedResource();
+        resource.setStatus("generated");
+
+        assertThatThrownBy(() -> service.createGeneratePending(7L, resource))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("当前资源状态不允许生成");
+        verify(mapper, never()).insert(any(ResourceGenerationJob.class));
+        verify(resourceService, never()).updateStatus(any(), any());
+    }
+
+    @Test
     void createRetryPendingCreatesJobAndMarksResourceGenerating() {
         Resource resource = failedResource();
         ResourceGenerationJob latest = latestJob(2);
@@ -79,6 +133,16 @@ class ResourceGenerationJobServiceImplTest {
                 .hasMessageContaining("最大重试次数");
         verify(mapper, never()).insert(any(ResourceGenerationJob.class));
         verify(resourceService, never()).updateStatus(any(), any());
+    }
+
+    private Resource plannedResource() {
+        Resource resource = new Resource();
+        resource.setId(99L);
+        resource.setSpaceId(10L);
+        resource.setResourceType("doc");
+        resource.setTitle("讲义文档：进程调度");
+        resource.setStatus("planned");
+        return resource;
     }
 
     private Resource failedResource() {

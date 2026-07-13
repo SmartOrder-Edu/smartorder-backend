@@ -39,6 +39,38 @@ public class ResourceGenerationJobServiceImpl implements IResourceGenerationJobS
     }
 
     @Override
+    public ResourceGenerationJob createGeneratePending(Long userId, Resource resource) {
+        if (resource == null || resource.getId() == null) {
+            throw new BusinessException("学习资源不存在");
+        }
+        if ("generating".equals(resource.getStatus())) {
+            ResourceGenerationJob latest = getLatestByResourceId(resource.getId());
+            if (latest != null) {
+                return latest;
+            }
+            throw new BusinessException("资源正在生成中，请稍后刷新状态");
+        }
+        if ("failed".equals(resource.getStatus())) {
+            return createRetryPending(userId, resource);
+        }
+        if (!"planned".equals(resource.getStatus())) {
+            throw new BusinessException("当前资源状态不允许生成，仅支持 planned/failed");
+        }
+
+        ResourceGenerationJob job = createPending(
+                userId,
+                resource,
+                null,
+                resource.getDescription() != null && !resource.getDescription().isBlank()
+                        ? resource.getDescription()
+                        : "Resource Agent 生成「" + resource.getTitle() + "」"
+        );
+        resourceService.updateStatus(resource.getId(), "generating");
+        resource.setStatus("generating");
+        return job;
+    }
+
+    @Override
     public ResourceGenerationJob createRetryPending(Long userId, Resource resource) {
         if (resource == null || resource.getId() == null) {
             throw new BusinessException("学习资源不存在");

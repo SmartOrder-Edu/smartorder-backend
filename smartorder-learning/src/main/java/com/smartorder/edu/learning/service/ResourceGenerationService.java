@@ -72,7 +72,7 @@ public class ResourceGenerationService {
         Resource inserted = resourceService.batchInsertGenerated(List.of(resource)).stream()
                 .findFirst()
                 .orElseThrow(() -> new BusinessException("资源记录创建失败"));
-        ResourceContent content = createContent(inserted, safeRequest);
+        ResourceContent content = createContent(userId, inserted, safeRequest);
         log.info("[ResourceGeneration] generated resource id={} space={} type={} topic={}",
                 inserted.getId(), inserted.getSpaceId(), inserted.getResourceType(), knowledgePoint);
         return new ResourceGenerationResult(inserted, content, space, task);
@@ -103,7 +103,7 @@ public class ResourceGenerationService {
             resourceService.updateStatus(resource.getId(), "generating");
         }
         try {
-            ResourceContent generated = resourceContentGenerator.generate(resource);
+            ResourceContent generated = resourceContentGenerator.generate(resource, userId);
             ResourceContent content = resourceContentService.createContent(
                     resource.getId(),
                     generated.getContentType(),
@@ -124,7 +124,7 @@ public class ResourceGenerationService {
         }
     }
 
-    private ResourceContent createContent(Resource resource, ResourceGenerationRequest request) {
+    private ResourceContent createContent(Long userId, Resource resource, ResourceGenerationRequest request) {
         if (request.getGeneratedContent() != null && !request.getGeneratedContent().isBlank()) {
             return resourceContentService.createContent(
                     resource.getId(),
@@ -133,7 +133,7 @@ public class ResourceGenerationService {
                     reviewResult("passed", List.of("non_empty", "bound_to_space", "llm_generated"))
             );
         }
-        ResourceContent generated = resourceContentGenerator.generate(resource);
+        ResourceContent generated = resourceContentGenerator.generate(resource, userId);
         return resourceContentService.createContent(
                 resource.getId(),
                 generated.getContentType(),

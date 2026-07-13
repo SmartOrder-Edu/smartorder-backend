@@ -152,7 +152,7 @@ class ResourceGenerationServiceTest {
         generated.setContentType("markdown");
         generated.setContent("# 已生成内容");
         generated.setReviewResult("{\"status\":\"passed\"}");
-        when(resourceContentGenerator.generate(resource)).thenReturn(generated);
+        when(resourceContentGenerator.generate(resource, 7L)).thenReturn(generated);
 
         ResourceContent content = new ResourceContent();
         content.setId(100L);

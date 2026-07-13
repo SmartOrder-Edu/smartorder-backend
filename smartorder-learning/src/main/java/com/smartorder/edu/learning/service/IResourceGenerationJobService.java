@@ -9,6 +9,8 @@ public interface IResourceGenerationJobService {
 
     ResourceGenerationJob createPending(Long userId, Resource resource, String packageId, String reason);
 
+    ResourceGenerationJob createGeneratePending(Long userId, Resource resource);
+
     ResourceGenerationJob createRetryPending(Long userId, Resource resource);
 
     void markGenerating(Long jobId);
