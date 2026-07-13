@@ -128,4 +128,45 @@ class ResourceGenerationServiceTest {
         verify(resourceService, never()).batchInsertGenerated(any());
         verify(resourceContentService, never()).createContent(any(), any(), any(), any());
     }
+
+    @Test
+    void generateExistingInBackgroundAllowsGeneratingResource() {
+        Resource resource = new Resource();
+        resource.setId(99L);
+        resource.setSpaceId(10L);
+        resource.setTaskId(20L);
+        resource.setResourceType("doc");
+        resource.setStatus("generating");
+        when(resourceService.getById(99L)).thenReturn(resource);
+
+        LearningSpaceVO space = new LearningSpaceVO();
+        space.setId(10L);
+        when(learningSpaceService.getSpaceById(7L, 10L)).thenReturn(space);
+
+        Task task = new Task();
+        task.setId(20L);
+        task.setSpaceId(10L);
+        when(taskService.getBySpaceId(10L)).thenReturn(List.of(task));
+
+        ResourceContent generated = new ResourceContent();
+        generated.setContentType("markdown");
+        generated.setContent("# 已生成内容");
+        generated.setReviewResult("{\"status\":\"passed\"}");
+        when(resourceContentGenerator.generate(resource)).thenReturn(generated);
+
+        ResourceContent content = new ResourceContent();
+        content.setId(100L);
+        content.setResourceId(99L);
+        when(resourceContentService.createContent(99L, "markdown", "# 已生成内容", "{\"status\":\"passed\"}"))
+                .thenReturn(content);
+        when(resourceContentGenerator.fileFormat("doc")).thenReturn("md");
+        when(resourceService.getById(99L)).thenReturn(resource);
+
+        ResourceGenerationResult result = service.generateExistingInBackground(7L, 99L);
+
+        assertThat(result.resource()).isSameAs(resource);
+        assertThat(result.content()).isSameAs(content);
+        verify(resourceService, never()).updateStatus(99L, "generating");
+        verify(resourceService).markGenerated(99L, "md");
+    }
 }

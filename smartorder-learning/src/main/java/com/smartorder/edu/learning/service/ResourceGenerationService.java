@@ -79,16 +79,29 @@ public class ResourceGenerationService {
     }
 
     public ResourceGenerationResult generateExisting(Long userId, Long resourceId) {
+        return generateExisting(userId, resourceId, false);
+    }
+
+    public ResourceGenerationResult generateExistingInBackground(Long userId, Long resourceId) {
+        return generateExisting(userId, resourceId, true);
+    }
+
+    private ResourceGenerationResult generateExisting(Long userId, Long resourceId, boolean allowGenerating) {
         Resource resource = resourceService.getById(resourceId);
         if (resource == null) {
             throw new BusinessException("学习资源不存在");
         }
         LearningSpaceVO space = learningSpaceService.getSpaceById(userId, resource.getSpaceId());
-        if (!"planned".equals(resource.getStatus()) && !"failed".equals(resource.getStatus())) {
+        boolean canGenerate = "planned".equals(resource.getStatus())
+                || "failed".equals(resource.getStatus())
+                || (allowGenerating && "generating".equals(resource.getStatus()));
+        if (!canGenerate) {
             throw new BusinessException("当前资源状态不允许生成，仅支持 planned/failed");
         }
 
-        resourceService.updateStatus(resource.getId(), "generating");
+        if (!"generating".equals(resource.getStatus())) {
+            resourceService.updateStatus(resource.getId(), "generating");
+        }
         try {
             ResourceContent generated = resourceContentGenerator.generate(resource);
             ResourceContent content = resourceContentService.createContent(

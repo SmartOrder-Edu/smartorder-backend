@@ -18,7 +18,7 @@ public class ResourcePackageVO {
     private String knowledgePoint;
     private String packageMode;
     /**
-     * preview：仅预览方案；generated：确认后已落库；failed：生成失败。
+     * preview：仅预览方案；generating：确认后已落库并进入后台生成；generated：全部生成完成；failed：生成失败。
      */
     private String status;
     private List<ResourceVO> resources = new ArrayList<>();

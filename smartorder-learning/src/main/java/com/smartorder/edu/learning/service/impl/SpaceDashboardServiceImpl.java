@@ -29,6 +29,7 @@ public class SpaceDashboardServiceImpl implements ISpaceDashboardService {
     private final ILearningPathNodeService pathNodeService;
     private final ILearningPathEdgeService pathEdgeService;
     private final IResourceService resourceService;
+    private final IResourceGenerationJobService resourceGenerationJobService;
     private final ILearningRecordService learningRecordService;
 
     @Override
@@ -100,8 +101,9 @@ public class SpaceDashboardServiceImpl implements ISpaceDashboardService {
         // 12. Days remaining
         dashboard.setDaysRemaining(computeDaysRemaining(space));
 
-        // 13. Agent actions (empty for MVP)
-        dashboard.setRecentAgentActions(Collections.emptyList());
+        // 13. Recent Resource Agent actions
+        List<ResourceGenerationJob> recentResourceJobs = resourceGenerationJobService.getRecentBySpaceId(spaceId, 8);
+        dashboard.setRecentAgentActions(recentResourceJobs.stream().map(this::toAgentActionVO).toList());
 
         return dashboard;
     }
@@ -180,6 +182,31 @@ public class SpaceDashboardServiceImpl implements ISpaceDashboardService {
         vo.setMetadata(r.getMetadata());
         enrichResourceVOFromMetadata(vo, r.getMetadata());
         return vo;
+    }
+
+    private AgentActionVO toAgentActionVO(ResourceGenerationJob job) {
+        AgentActionVO vo = new AgentActionVO();
+        vo.setId(job.getId());
+        vo.setAgentType("resource");
+        vo.setActionType("generate_resource");
+        vo.setTargetType("resource");
+        vo.setTargetId(job.getResourceId());
+        vo.setReason(job.getReason() != null && !job.getReason().isBlank()
+                ? job.getReason()
+                : "Resource Agent 正在生成「" + job.getTitle() + "」");
+        vo.setStatus(mapJobStatus(job.getStatus()));
+        vo.setCreateTime(job.getCreateTime());
+        return vo;
+    }
+
+    private String mapJobStatus(String status) {
+        return switch (String.valueOf(status)) {
+            case "pending" -> "pending";
+            case "generating" -> "running";
+            case "generated" -> "success";
+            case "failed" -> "failed";
+            default -> "pending";
+        };
     }
 
     @SuppressWarnings("unchecked")
