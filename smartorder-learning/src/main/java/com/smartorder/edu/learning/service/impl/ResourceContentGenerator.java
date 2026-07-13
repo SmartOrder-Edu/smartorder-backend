@@ -101,6 +101,9 @@ public class ResourceContentGenerator {
         String fallback = docContent(resource, knowledgePoint, reason, targetMinutes);
         ChatModel chatModel = chatModelProvider.getIfAvailable();
         if (chatModel == null || context == null) {
+            log.warn("[ResourceContentGenerator] doc fallback to template because {}. resource={} space={} type={} topic={}",
+                    chatModel == null ? "chatModel_missing" : "context_missing",
+                    resource.getId(), resource.getSpaceId(), resource.getResourceType(), knowledgePoint);
             return new GeneratedContent("markdown", fallback,
                     reviewResult("passed", "template", 70,
                             List.of(check("format_valid", true), check("fallback_template", true)),
@@ -112,6 +115,8 @@ public class ResourceContentGenerator {
             List<Map<String, Object>> checks = validateDocContent(content, context.knowledgePoint());
             boolean passed = checks.stream().allMatch(check -> Boolean.TRUE.equals(check.get("passed")));
             if (!passed) {
+                log.warn("[ResourceContentGenerator] LLM doc validation failed, fallback to template. resource={} space={} topic={} checks={}",
+                        resource.getId(), resource.getSpaceId(), context.knowledgePoint(), checks);
                 return new GeneratedContent("markdown", fallback,
                         reviewResult("needs_review", "template_fallback", 60, checks,
                                 "LLM 输出未通过基础格式校验，已使用模板内容降级。", preview(content)));
@@ -139,6 +144,9 @@ public class ResourceContentGenerator {
         String fallback = quizContent(resource, knowledgePoint);
         ChatModel chatModel = chatModelProvider.getIfAvailable();
         if (chatModel == null || context == null) {
+            log.warn("[ResourceContentGenerator] quiz fallback to template because {}. resource={} space={} type={} topic={}",
+                    chatModel == null ? "chatModel_missing" : "context_missing",
+                    resource.getId(), resource.getSpaceId(), resource.getResourceType(), knowledgePoint);
             return new GeneratedContent("json", fallback,
                     reviewResult("passed", "template", 70,
                             List.of(check("format_valid", true), check("fallback_template", true)),
@@ -150,6 +158,8 @@ public class ResourceContentGenerator {
             String raw = chatModel.chat(buildQuizPrompt(context));
             QuizNormalization normalized = normalizeQuizContent(raw, resource, knowledgePoint);
             if (!normalized.passed()) {
+                log.warn("[ResourceContentGenerator] LLM quiz validation failed, fallback to template. resource={} space={} topic={} checks={} rawPreview={}",
+                        resource.getId(), resource.getSpaceId(), knowledgePoint, normalized.checks(), preview(raw));
                 return new GeneratedContent("json", fallback,
                         reviewResult("needs_review", "template_fallback", 62, normalized.checks(),
                                 "LLM 输出未通过练习题结构校验，已使用模板内容降级。", preview(raw),

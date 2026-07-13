@@ -53,6 +53,9 @@ public class ResourceGenerationService {
         String knowledgePoint = resolveKnowledgePoint(space, task, pathNode, safeRequest.getTopic());
         String generationId = UUID.randomUUID().toString();
         String reason = buildReason(task, knowledgePoint, safeRequest);
+        log.info("[ResourceGeneration] create new start user={} space={} task={} pathNode={} type={} topic={} mode={}",
+                userId, safeRequest.getSpaceId(), safeRequest.getTaskId(), safeRequest.getPathNodeId(),
+                resourceType, knowledgePoint, safeRequest.getPackageMode());
 
         Resource resource = new Resource();
         resource.setSpaceId(safeRequest.getSpaceId());
@@ -73,8 +76,9 @@ public class ResourceGenerationService {
                 .findFirst()
                 .orElseThrow(() -> new BusinessException("资源记录创建失败"));
         ResourceContent content = createContent(userId, inserted, safeRequest);
-        log.info("[ResourceGeneration] generated resource id={} space={} type={} topic={}",
-                inserted.getId(), inserted.getSpaceId(), inserted.getResourceType(), knowledgePoint);
+        log.info("[ResourceGeneration] create new completed resource={} space={} type={} topic={} contentType={}",
+                inserted.getId(), inserted.getSpaceId(), inserted.getResourceType(), knowledgePoint,
+                content == null ? null : content.getContentType());
         return new ResourceGenerationResult(inserted, content, space, task);
     }
 
@@ -92,6 +96,8 @@ public class ResourceGenerationService {
             throw new BusinessException("学习资源不存在");
         }
         LearningSpaceVO space = learningSpaceService.getSpaceById(userId, resource.getSpaceId());
+        log.info("[ResourceGeneration] existing start user={} resource={} space={} type={} status={} allowGenerating={}",
+                userId, resource.getId(), resource.getSpaceId(), resource.getResourceType(), resource.getStatus(), allowGenerating);
         boolean canGenerate = "planned".equals(resource.getStatus())
                 || "failed".equals(resource.getStatus())
                 || (allowGenerating && "generating".equals(resource.getStatus()));
@@ -113,12 +119,17 @@ public class ResourceGenerationService {
             resourceService.markGenerated(resource.getId(), resourceContentGenerator.fileFormat(resource.getResourceType()));
             Resource updated = resourceService.getById(resource.getId());
             Task task = resolveTask(updated.getSpaceId(), updated.getTaskId());
+            log.info("[ResourceGeneration] existing completed resource={} space={} type={} contentType={}",
+                    resource.getId(), resource.getSpaceId(), resource.getResourceType(), content.getContentType());
             return new ResourceGenerationResult(updated, content, space, task);
         } catch (BusinessException e) {
+            log.warn("[ResourceGeneration] existing business failed resource={} space={} type={} reason={}",
+                    resource.getId(), resource.getSpaceId(), resource.getResourceType(), e.getMessage());
             resourceService.updateStatus(resource.getId(), "failed");
             throw e;
         } catch (Exception e) {
-            log.error("[ResourceGeneration] failed to generate existing resource {}", resource.getId(), e);
+            log.error("[ResourceGeneration] existing unexpected failed resource={} space={} type={}",
+                    resource.getId(), resource.getSpaceId(), resource.getResourceType(), e);
             resourceService.updateStatus(resource.getId(), "failed");
             throw new BusinessException("学习资源生成失败，请稍后重试");
         }

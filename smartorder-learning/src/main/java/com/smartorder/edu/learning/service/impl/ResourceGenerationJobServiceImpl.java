@@ -8,12 +8,14 @@ import com.smartorder.edu.learning.mapper.ResourceGenerationJobMapper;
 import com.smartorder.edu.learning.service.IResourceGenerationJobService;
 import com.smartorder.edu.learning.service.IResourceService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ResourceGenerationJobServiceImpl implements IResourceGenerationJobService {
 
     private static final int MAX_RETRY_COUNT = 3;
@@ -35,6 +37,9 @@ public class ResourceGenerationJobServiceImpl implements IResourceGenerationJobS
         job.setRetryCount(0);
         job.setIsDeleted(0);
         resourceGenerationJobMapper.insert(job);
+        log.info("[ResourceGenerationJob] created job={} user={} resource={} space={} type={} package={} title={}",
+                job.getId(), userId, resource.getId(), resource.getSpaceId(), resource.getResourceType(),
+                packageId, resource.getTitle());
         return job;
     }
 
@@ -101,6 +106,9 @@ public class ResourceGenerationJobServiceImpl implements IResourceGenerationJobS
         resourceGenerationJobMapper.insert(job);
         resourceService.updateStatus(resource.getId(), "generating");
         resource.setStatus("generating");
+        log.info("[ResourceGenerationJob] retry created job={} user={} resource={} space={} type={} retryCount={} title={}",
+                job.getId(), userId, resource.getId(), resource.getSpaceId(), resource.getResourceType(),
+                retryCount, resource.getTitle());
         return job;
     }
 
@@ -146,6 +154,13 @@ public class ResourceGenerationJobServiceImpl implements IResourceGenerationJobS
             uw.setSql("retry_count = retry_count + 1");
         }
         resourceGenerationJobMapper.update(null, uw);
+        if ("failed".equals(status)) {
+            log.warn("[ResourceGenerationJob] status updated job={} status={} retryIncrement={} error={}",
+                    jobId, status, increaseRetry, truncate(errorMessage));
+        } else {
+            log.info("[ResourceGenerationJob] status updated job={} status={} retryIncrement={}",
+                    jobId, status, increaseRetry);
+        }
     }
 
     private String truncate(String message) {
