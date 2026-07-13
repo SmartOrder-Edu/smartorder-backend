@@ -16,7 +16,7 @@ import java.util.Map;
 
 /**
  * GitHub 认证与调用服务实现类
- * @author Antigravity
+ * @author Maq
  * @since 2026/07/12
  */
 @Slf4j
@@ -29,15 +29,10 @@ public class GithubServiceImpl implements IGithubService {
 
     @Override
     public GithubUserVO getGithubUser(String code) {
-        // 1. 判断是否启用模拟测试模式 (配置为 MOCK 或传入的 code 包含 mock 标记)
-        if ("MOCK".equalsIgnoreCase(githubProperties.getClientId()) || 
-            (code != null && code.toLowerCase().contains("mock"))) {
-            log.info("触发 GitHub 模拟登录模式，使用本地 Mock 数据");
-            return getMockGithubUser();
-        }
+
 
         try {
-            log.info("向 GitHub 发起 OAuth2 令牌交换请求, code: {}", code);
+            log.info("向 GitHub 发起 OAuth2 令牌交换请求, code: {}, redirect_uri: [{}]", code, githubProperties.getRedirectUri());
             
             // 2. 真实网络请求：获取 access_token
             HttpHeaders headers = new HttpHeaders();
@@ -60,7 +55,7 @@ public class GithubServiceImpl implements IGithubService {
             );
 
             if (tokenResponse == null || !tokenResponse.containsKey("access_token")) {
-                log.error("从 GitHub 获取 access_token 失败，响应内容为空或无 access_token");
+                log.error("从 GitHub 获取 access_token 失败，响应内容为空或无 access_token。实际响应: {}", tokenResponse);
                 throw new BusinessException("GitHub 登录授权码已过期或配置无效");
             }
 
@@ -127,22 +122,9 @@ public class GithubServiceImpl implements IGithubService {
             return githubUser;
 
         } catch (Exception e) {
-            log.warn("通过 GitHub 登录时遇到网络超时或错误: {}。自动降级至模拟调试模式！", e.getMessage());
-            // 自动容错降级：在局域网/国内网络不畅时，提供友好的 Mock 兜底体验
-            return getMockGithubUser();
+            log.error("通过 GitHub 登录时遇到网络超时或错误: {}", e.getMessage(), e);
+            throw new BusinessException("GitHub 登录失败，请稍后重试");
         }
     }
 
-    /**
-     * 生成模拟的 GitHub 用户资料
-     */
-    private GithubUserVO getMockGithubUser() {
-        GithubUserVO mockUser = new GithubUserVO();
-        mockUser.setId("mock_github_u99");
-        mockUser.setLogin("mock_developer");
-        mockUser.setName("模拟体验官");
-        mockUser.setAvatarUrl("https://avatars.githubusercontent.com/u/9919?v=4");
-        mockUser.setEmail("mock_dev@smartorder.edu.com");
-        return mockUser;
-    }
 }

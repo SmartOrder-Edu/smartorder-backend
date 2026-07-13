@@ -77,16 +77,19 @@ public class UserServiceImpl implements IUserService {
             }
         });
 
-        rabbitTemplate.convertAndSend(MQ_YUN_PAN_EXCHANGE, MQ_ROUTING_KEY_FILE_QUOTE, userId, new MessagePostProcessor() {
-            @Override
-            public Message postProcessMessage(Message message) throws AmqpException {
-                message.getMessageProperties()
-                        .setExpiration("10000");
-                return message;
-            }
-        },cd);//开启生产者确认模式，发送消息时会等待 RabbitMQ 的确认回调
-
-        log.info("消息发送成功！");
+        try {
+            rabbitTemplate.convertAndSend(MQ_YUN_PAN_EXCHANGE, MQ_ROUTING_KEY_FILE_QUOTE, userId, new MessagePostProcessor() {
+                @Override
+                public Message postProcessMessage(Message message) throws AmqpException {
+                    message.getMessageProperties()
+                            .setExpiration("10000");
+                    return message;
+                }
+            },cd);//开启生产者确认模式，发送消息时会等待 RabbitMQ 的确认回调
+            log.info("用户注册云盘初始化消息发送成功！");
+        } catch (Exception e) {
+            log.warn("用户注册成功，但发送云盘初始化消息失败（可能本地未运行 RabbitMQ）：{}", e.getMessage());
+        }
     }
 
     @Override

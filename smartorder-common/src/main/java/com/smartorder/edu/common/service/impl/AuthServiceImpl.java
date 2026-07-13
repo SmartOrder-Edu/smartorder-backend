@@ -252,7 +252,9 @@ public class AuthServiceImpl implements IAuthService {
 
             // 2.1 优先尝试使用 GitHub 返回的邮箱来关联系统中的已有用户
             if (StringUtils.hasText(githubUserVO.getEmail())) {
-                user = userService.getUserByEmailWithPassword(githubUserVO.getEmail());
+                user = userMapper.selectOne(new LambdaQueryWrapper<User>()
+                        .eq(User::getEmail, githubUserVO.getEmail())
+                        .eq(User::getIsDeleted, 0));
                 if (user != null) {
                     log.info("根据邮箱 {} 找到已有用户 {}, 直接绑定该 GitHub 账号", githubUserVO.getEmail(), user.getUsername());
                     user.setGithubId(githubUserVO.getId());

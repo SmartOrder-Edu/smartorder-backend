@@ -1,20 +1,20 @@
-package com.smartorder.edu.common.model.dto;
+﻿package com.smartorder.edu.common.model.dto;
 
 import lombok.Data;
 
 /**
- * GitHub 登录 DTO 对象
- * @author Antigravity
+ * GitHub 鐧诲綍 DTO 瀵硅薄
+ * @author Maq
  * @since 2026/07/12
  */
 @Data
 public class GithubLoginDTO {
     /**
-     * GitHub OAuth 授权 code
+     * GitHub OAuth 鎺堟潈 code
      */
     private String code;
     /**
-     * GitHub OAuth state，用于防御 CSRF 攻击
+     * GitHub OAuth state锛岀敤浜庨槻寰?CSRF 鏀诲嚮
      */
     private String state;
 }
