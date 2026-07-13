@@ -2,6 +2,7 @@ package com.smartorder.edu.agent.orchestrator;
 
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
+import com.smartorder.edu.agent.profile.ProfileUpdateCoordinator;
 import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.route.IntentRouteResult;
 import com.smartorder.edu.agent.route.IntentRouteService;
@@ -33,6 +34,7 @@ class AgentOrchestratorImplTest {
         TraceEventDispatcher dispatcher = mock(TraceEventDispatcher.class);
         ConversationMemoryService memoryService = mock(ConversationMemoryService.class);
         AgentConversationAttachmentService attachmentService = mock(AgentConversationAttachmentService.class);
+        ProfileUpdateCoordinator profileUpdateCoordinator = mock(ProfileUpdateCoordinator.class);
         AgentRunSupervisor runSupervisor = mock(AgentRunSupervisor.class);
         AgentOrchestratorImpl orchestrator = new AgentOrchestratorImpl(
                 routeService,
@@ -41,6 +43,7 @@ class AgentOrchestratorImplTest {
                 dispatcher,
                 memoryService,
                 attachmentService,
+                profileUpdateCoordinator,
                 runSupervisor
         );
         IntentRouteResult routeResult = IntentRouteResult.builder()
@@ -54,6 +57,7 @@ class AgentOrchestratorImplTest {
                 .reason("test")
                 .build();
         when(routeService.route(any(RouteContext.class))).thenReturn(routeResult);
+        when(memoryService.getRecentChatMessages("conversation-1", 30)).thenReturn(List.of());
         doAnswer(invocation -> {
             Runnable runnable = invocation.getArgument(3);
             runnable.run();

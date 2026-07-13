@@ -6,16 +6,19 @@ import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import com.smartorder.edu.learning.domain.entity.Resource;
 import com.smartorder.edu.learning.domain.entity.ResourceContent;
+import com.smartorder.edu.learning.domain.entity.ResourceGenerationJob;
 import com.smartorder.edu.learning.domain.entity.Task;
 import com.smartorder.edu.learning.domain.vo.LearningSpaceVO;
 import com.smartorder.edu.learning.domain.vo.ResourceContentVO;
 import com.smartorder.edu.learning.domain.vo.ResourceDetailVO;
+import com.smartorder.edu.learning.domain.vo.ResourceGenerationJobVO;
 import com.smartorder.edu.learning.domain.vo.ResourceVO;
 import com.smartorder.edu.learning.service.ILearningSpaceService;
 import com.smartorder.edu.learning.service.IResourceContentService;
+import com.smartorder.edu.learning.service.IResourceGenerationJobService;
 import com.smartorder.edu.learning.service.IResourceService;
 import com.smartorder.edu.learning.service.ITaskService;
-import com.smartorder.edu.learning.service.impl.ResourceContentGenerator;
+import com.smartorder.edu.learning.service.ResourceAsyncGenerationService;
 import com.smartorder.edu.learning.service.recommendation.BilibiliVideoRecommendationService;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
@@ -49,7 +52,8 @@ public class ResourceController {
     private final IResourceContentService resourceContentService;
     private final ILearningSpaceService learningSpaceService;
     private final ITaskService taskService;
-    private final ResourceContentGenerator resourceContentGenerator;
+    private final IResourceGenerationJobService resourceGenerationJobService;
+    private final ResourceAsyncGenerationService resourceAsyncGenerationService;
     private final BilibiliVideoRecommendationService bilibiliVideoRecommendationService;
 
     @GetMapping("/{id}")
@@ -76,39 +80,48 @@ public class ResourceController {
     }
 
     @PostMapping("/{id}/generate")
-    @Operation(summary = "生成待生成学习资源", description = "将 planned/failed 状态的资源生成可预览内容，并更新为 generated")
-    public Result<ResourceDetailVO> generate(@PathVariable Long id) {
+    @Operation(summary = "提交学习资源生成任务", description = "将 planned/failed 状态的资源提交到后台异步生成，立即返回生成任务状态")
+    public Result<ResourceGenerationJobVO> generate(@PathVariable Long id) {
         Long userId = getCurrentUserId();
-        Resource resource = resourceService.getById(id);
+        Resource resource = getOwnedResource(userId, id);
+        if ("generating".equals(resource.getStatus())) {
+            ResourceGenerationJob latest = resourceGenerationJobService.getLatestByResourceId(resource.getId());
+            if (latest == null) {
+                throw new BusinessException("资源正在生成中，请稍后刷新状态");
+            }
+            return Result.success(toJobVO(latest));
+        }
+        ResourceGenerationJob job = resourceGenerationJobService.createGeneratePending(userId, resource);
+        resourceAsyncGenerationService.submit(job);
+        return Result.success(toJobVO(job));
+    }
+
+    @GetMapping("/{id}/generation-job")
+    @Operation(summary = "查询资源最近生成任务", description = "返回指定资源最近一次异步生成任务状态")
+    public Result<ResourceGenerationJobVO> generationJob(@PathVariable Long id) {
+        Long userId = getCurrentUserId();
+        Resource resource = getOwnedResource(userId, id);
+        ResourceGenerationJob job = resourceGenerationJobService.getLatestByResourceId(resource.getId());
+        return Result.success(toJobVO(job));
+    }
+
+    @PostMapping("/{id}/retry-generation")
+    @Operation(summary = "重试失败资源生成", description = "仅支持 failed 状态资源，创建新的异步生成任务并返回任务状态")
+    public Result<ResourceGenerationJobVO> retryGeneration(@PathVariable Long id) {
+        Long userId = getCurrentUserId();
+        Resource resource = getOwnedResource(userId, id);
+        ResourceGenerationJob job = resourceGenerationJobService.createRetryPending(userId, resource);
+        resourceAsyncGenerationService.submit(job);
+        return Result.success(toJobVO(job));
+    }
+
+    private Resource getOwnedResource(Long userId, Long resourceId) {
+        Resource resource = resourceService.getById(resourceId);
         if (resource == null) {
             throw new BusinessException("学习资源不存在");
         }
-
         learningSpaceService.getSpaceById(userId, resource.getSpaceId());
-        if (!"planned".equals(resource.getStatus()) && !"failed".equals(resource.getStatus())) {
-            throw new BusinessException("当前资源状态不允许生成，仅支持 planned/failed");
-        }
-
-        resourceService.updateStatus(resource.getId(), "generating");
-        try {
-            ResourceContent content = resourceContentGenerator.generate(resource);
-            resourceContentService.createContent(
-                    resource.getId(),
-                    content.getContentType(),
-                    content.getContent(),
-                    content.getReviewResult()
-            );
-            resourceService.markGenerated(resource.getId(), resourceContentGenerator.fileFormat(resource.getResourceType()));
-            Resource generated = resourceService.getById(resource.getId());
-            return Result.success(buildDetail(userId, generated));
-        } catch (BusinessException e) {
-            resourceService.updateStatus(resource.getId(), "failed");
-            throw e;
-        } catch (Exception e) {
-            log.error("Failed to generate resource {}", resource.getId(), e);
-            resourceService.updateStatus(resource.getId(), "failed");
-            throw new BusinessException("学习资源生成失败，请稍后重试");
-        }
+        return resource;
     }
 
     private ResourceDetailVO buildDetail(Long userId, Resource resource) {
@@ -151,6 +164,27 @@ public class ResourceController {
         vo.setStatus(resource.getStatus());
         vo.setMetadata(resource.getMetadata());
         enrichFromMetadata(vo, resource.getMetadata());
+        return vo;
+    }
+
+    private ResourceGenerationJobVO toJobVO(ResourceGenerationJob job) {
+        if (job == null) {
+            return null;
+        }
+        ResourceGenerationJobVO vo = new ResourceGenerationJobVO();
+        vo.setId(job.getId());
+        vo.setSpaceId(job.getSpaceId());
+        vo.setResourceId(job.getResourceId());
+        vo.setPackageId(job.getPackageId());
+        vo.setResourceType(job.getResourceType());
+        vo.setTitle(job.getTitle());
+        vo.setReason(job.getReason());
+        vo.setStatus(job.getStatus());
+        vo.setRetryCount(job.getRetryCount());
+        vo.setErrorMessage(job.getErrorMessage());
+        vo.setTraceId(job.getTraceId());
+        vo.setCreateTime(job.getCreateTime());
+        vo.setUpdateTime(job.getUpdateTime());
         return vo;
     }
 
