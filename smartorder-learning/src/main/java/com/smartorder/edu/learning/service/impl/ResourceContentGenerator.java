@@ -27,6 +27,7 @@ public class ResourceContentGenerator {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String DOC_PROMPT_VERSION = "resource-doc-v1";
+    private static final String HTML_PROMPT_VERSION = "resource-html-v1";
     private static final String QUIZ_PROMPT_VERSION = "resource-quiz-v1";
     private static final String MIND_MAP_PROMPT_VERSION = "resource-mind-map-v1";
     private static final int MIN_QUIZ_QUESTION_COUNT = 3;
@@ -83,7 +84,7 @@ public class ResourceContentGenerator {
         int targetMinutes = context == null ? extractTargetMinutes(resource.getMetadata()) : context.targetMinutes();
         return switch (resource.getResourceType()) {
             case "doc" -> docGeneratedContent(resource, context, knowledgePoint, reason, targetMinutes);
-            case "html" -> templateGeneratedContent("html", htmlContent(resource, knowledgePoint, reason));
+            case "html" -> htmlGeneratedContent(resource, context, knowledgePoint, reason, targetMinutes);
             case "mind_map" -> mindMapGeneratedContent(resource, context, knowledgePoint, reason);
             case "quiz" -> quizGeneratedContent(resource, context, knowledgePoint, reason, targetMinutes);
             case "link" -> templateGeneratedContent("external_link", linkContent(resource, knowledgePoint, reason));
@@ -133,6 +134,53 @@ public class ResourceContentGenerator {
                     reviewResult("needs_review", "template_fallback", 55,
                             List.of(check("llm_call_success", false), check("fallback_template", true)),
                             "LLM 调用失败，已使用模板内容降级：" + e.getMessage(), null));
+        }
+    }
+
+    private GeneratedContent htmlGeneratedContent(
+            Resource resource,
+            ResourceGenerationContext context,
+            String knowledgePoint,
+            String reason,
+            int targetMinutes
+    ) {
+        String fallback = htmlContent(resource, knowledgePoint, reason, targetMinutes);
+        ChatModel chatModel = chatModelProvider.getIfAvailable();
+        if (chatModel == null || context == null) {
+            log.warn("[ResourceContentGenerator] html fallback to template because {}. resource={} space={} type={} topic={}",
+                    chatModel == null ? "chatModel_missing" : "context_missing",
+                    resource.getId(), resource.getSpaceId(), resource.getResourceType(), knowledgePoint);
+            return new GeneratedContent("html", fallback,
+                    reviewResult("passed", "template", 72,
+                            List.of(check("format_valid", true), check("fallback_template", true)),
+                            "未发现可用 LLM 或缺少生成上下文，已使用模板 HTML 学习页。", null,
+                            HTML_PROMPT_VERSION));
+        }
+
+        try {
+            String content = sanitizeHtml(chatModel.chat(buildHtmlPrompt(context)));
+            List<Map<String, Object>> checks = validateHtmlContent(content, context.knowledgePoint());
+            boolean passed = checks.stream().allMatch(check -> Boolean.TRUE.equals(check.get("passed")));
+            if (!passed) {
+                log.warn("[ResourceContentGenerator] LLM html validation failed, fallback to template. resource={} space={} topic={} checks={} rawPreview={}",
+                        resource.getId(), resource.getSpaceId(), context.knowledgePoint(), checks, preview(content));
+                return new GeneratedContent("html", fallback,
+                        reviewResult("needs_review", "template_fallback", 62, checks,
+                                "LLM 输出未通过 HTML 结构或安全校验，已使用模板内容降级。", preview(content),
+                                HTML_PROMPT_VERSION));
+            }
+            return new GeneratedContent("html", content,
+                    reviewResult("passed", "llm", 88, checks,
+                            "LLM 生成 HTML 学习页通过基础结构和安全校验，适合进入学习资料库。", null,
+                            HTML_PROMPT_VERSION));
+        } catch (Exception e) {
+            log.warn("[ResourceContentGenerator] LLM html generation failed, fallback to template. resourceId={}",
+                    resource.getId(), e);
+            return new GeneratedContent("html", fallback,
+                    reviewResult("needs_review", "template_fallback", 55,
+                            List.of(check("llm_call_success", false), check("fallback_template", true)),
+                            "LLM 调用失败，已使用模板 HTML 学习页降级：" + e.getMessage(), null,
+                            HTML_PROMPT_VERSION));
         }
     }
 
@@ -263,6 +311,42 @@ public class ResourceContentGenerator {
         );
     }
 
+    private String buildHtmlPrompt(ResourceGenerationContext context) {
+        return """
+                你是严谨的学习资料生成 Agent。请根据上下文生成一份可直接嵌入学习空间详情页的 HTML 学习资源。
+
+                约束：
+                - 只输出 HTML 片段，不要输出 Markdown、代码围栏、完整 html/head/body、JSON 或额外解释。
+                - 推荐根节点使用 <article class="generated-resource-html">，如有更合适的结构也可以自行设计。
+                - 可以根据内容自由设计样式、布局、标签层级、表格、卡片、对比区、步骤区或互动式静态模块。
+                - 可以使用内联 style 或 <style>，但样式选择器应尽量限定在 .generated-resource-html 内，避免影响页面其他区域。
+                - 不要输出 script、iframe、object、embed、form、link、meta 标签，不要写 onClick/onload 等事件属性，不要写 javascript: 链接。
+                - 内容必须围绕知识点，不要泛泛而谈；如果写例题，要有具体情境。
+
+                学习空间：%s
+                当前目标：%s
+                当前任务：%s
+                路径节点：%s
+                知识点：%s
+                使用场景：%s
+                用户意图：%s
+                目标学习时长：%d 分钟
+                生成原因：%s
+
+                请开始生成 HTML 片段。
+                """.formatted(
+                value(context.space() == null ? null : context.space().getName()),
+                value(context.space() == null ? null : context.space().getGoals()),
+                value(context.task() == null ? null : context.task().getTitle()),
+                value(context.pathNode() == null ? null : context.pathNode().getTitle()),
+                value(context.knowledgePoint()),
+                value(context.studyScenario()),
+                value(context.userIntent()),
+                context.targetMinutes(),
+                value(context.reason())
+        );
+    }
+
     private String buildQuizPrompt(ResourceGenerationContext context) {
         return """
                 你是严谨的练习题生成 Agent。请根据学习上下文生成一组可直接用于学习空间的巩固练习。
@@ -374,6 +458,29 @@ public class ResourceContentGenerator {
         return checks;
     }
 
+    private List<Map<String, Object>> validateHtmlContent(String content, String knowledgePoint) {
+        List<Map<String, Object>> checks = new ArrayList<>();
+        String safeContent = content == null ? "" : content.trim();
+        String lower = safeContent.toLowerCase();
+        String expected = knowledgePoint == null ? "" : knowledgePoint.trim();
+        boolean looksLikeHtml = lower.contains("<") && lower.contains(">")
+                && (lower.contains("<article")
+                || lower.contains("<section")
+                || lower.contains("<div")
+                || lower.contains("<table")
+                || lower.contains("<ul")
+                || lower.contains("<ol")
+                || lower.contains("<h1")
+                || lower.contains("<h2")
+                || lower.contains("<h3")
+                || lower.contains("<p"));
+        checks.add(check("non_empty", safeContent.length() >= 80));
+        checks.add(check("html_like", looksLikeHtml));
+        checks.add(check("knowledge_point_aligned", expected.isBlank() || safeContent.contains(expected)));
+        checks.add(check("no_unsafe_html", !containsUnsafeHtml(safeContent)));
+        return checks;
+    }
+
     private List<Map<String, Object>> validateMindMapContent(String content, String knowledgePoint) {
         List<Map<String, Object>> checks = new ArrayList<>();
         String safeContent = content == null ? "" : content.trim();
@@ -478,6 +585,53 @@ public class ResourceContentGenerator {
             }
         }
         return trimmed;
+    }
+
+    private String sanitizeHtml(String content) {
+        if (content == null) {
+            return "";
+        }
+        String trimmed = content.trim();
+        if (trimmed.startsWith("```")) {
+            trimmed = trimmed.replaceFirst("^```[a-zA-Z]*\\s*", "");
+            int lastFence = trimmed.lastIndexOf("```");
+            if (lastFence >= 0) {
+                trimmed = trimmed.substring(0, lastFence).trim();
+            }
+        }
+        String lower = trimmed.toLowerCase();
+        int bodyStart = lower.indexOf("<body");
+        if (bodyStart >= 0) {
+            int bodyOpenEnd = lower.indexOf('>', bodyStart);
+            int bodyEnd = lower.lastIndexOf("</body>");
+            if (bodyOpenEnd >= 0 && bodyEnd > bodyOpenEnd) {
+                trimmed = trimmed.substring(bodyOpenEnd + 1, bodyEnd).trim();
+                lower = trimmed.toLowerCase();
+            }
+        }
+        String sanitized = trimmed
+                .replaceAll("(?is)<\\s*(script|iframe|object|embed|form|link|meta)\\b[^>]*>.*?<\\s*/\\s*\\1\\s*>", "")
+                .replaceAll("(?is)<\\s*(script|iframe|object|embed|form|link|meta)\\b[^>]*/?>", "")
+                .replaceAll("(?i)\\s+on[a-z]+\\s*=\\s*\"[^\"]*\"", "")
+                .replaceAll("(?i)\\s+on[a-z]+\\s*=\\s*'[^']*'", "")
+                .replaceAll("(?i)\\s+on[a-z]+\\s*=\\s*[^\\s>]+", "")
+                .replaceAll("(?i)javascript\\s*:", "")
+                .trim();
+        String sanitizedLower = sanitized.toLowerCase();
+        if (!sanitizedLower.contains("generated-resource-html")) {
+            return "<article class=\"generated-resource-html\">\n" + sanitized + "\n</article>";
+        }
+        return sanitized;
+    }
+
+    private boolean containsUnsafeHtml(String content) {
+        if (content == null || content.isBlank()) {
+            return false;
+        }
+        String lower = content.toLowerCase();
+        return lower.matches("(?s).*<\\s*(script|iframe|object|embed|form|link|meta)\\b.*")
+                || lower.matches("(?s).*\\son[a-z]+\\s*=.*")
+                || lower.contains("javascript:");
     }
 
     private GeneratedContent templateGeneratedContent(String contentType, String content) {
@@ -809,24 +963,89 @@ public class ResourceContentGenerator {
         return "";
     }
 
-    private String htmlContent(Resource resource, String knowledgePoint, String reason) {
+    private String htmlContent(Resource resource, String knowledgePoint, String reason, int targetMinutes) {
         return """
                 <article class="generated-resource-html">
-                  <h1>%s</h1>
-                  <section>
-                    <h2>Agent 生成理由</h2>
-                    <p>%s</p>
+                  <section class="hero-block">
+                    <h1>%s</h1>
+                    <p class="note">%s</p>
                   </section>
                   <section>
-                    <h2>三步学习法</h2>
-                    <ol>
+                    <h2>学习目标</h2>
+                    <ul class="goal-list">
+                      <li>在 %d 分钟内说清楚「%s」的核心概念。</li>
+                      <li>能判断本知识点的适用条件，并识别常见误用。</li>
+                      <li>能用一个例题完成从识别、处理到复盘的闭环。</li>
+                    </ul>
+                  </section>
+                  <section>
+                    <h2>核心概念</h2>
+                    <table class="concept-table">
+                      <thead>
+                        <tr><th>学习对象</th><th>先问什么</th><th>产出动作</th></tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td>%s</td>
+                          <td>它成立需要哪些前提？</td>
+                          <td>写出定义、条件和一个反例。</td>
+                        </tr>
+                        <tr>
+                          <td>典型题目</td>
+                          <td>题目条件是否完整匹配？</td>
+                          <td>标注条件，再选择解法。</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </section>
+                  <section>
+                    <h2>操作步骤</h2>
+                    <ol class="step-list">
                       <li><strong>定义</strong>：先说清楚「%s」是什么。</li>
                       <li><strong>条件</strong>：逐条检查题目是否满足使用前提。</li>
                       <li><strong>应用</strong>：用一个例题完成从识别到复盘的闭环。</li>
                     </ol>
                   </section>
+                  <section>
+                    <h2>对比例题</h2>
+                    <div class="comparison-grid">
+                      <div>
+                        <h3>可以使用</h3>
+                        <p>题目明确给出关键条件，且目标正好要求判断「%s」相关结论。</p>
+                      </div>
+                      <div>
+                        <h3>暂不使用</h3>
+                        <p>题目条件缺失或目标只是表面相似，此时先补定义和前提。</p>
+                      </div>
+                    </div>
+                  </section>
+                  <section>
+                    <h2>易错检查</h2>
+                    <ul class="check-list">
+                      <li>有没有只记结论，跳过适用条件？</li>
+                      <li>有没有把相似概念混成同一个判断？</li>
+                      <li>有没有在边界条件下直接套用模板？</li>
+                    </ul>
+                  </section>
+                  <section>
+                    <h2>复盘清单</h2>
+                    <ul class="review-list">
+                      <li>用一句话解释「%s」。</li>
+                      <li>写下一个正例和一个反例。</li>
+                      <li>完成练习后标注最容易出错的一步。</li>
+                    </ul>
+                  </section>
                 </article>
-                """.formatted(escapeHtml(resource.getTitle()), escapeHtml(reason), escapeHtml(knowledgePoint));
+                """.formatted(
+                escapeHtml(resource.getTitle()),
+                escapeHtml(reason),
+                targetMinutes,
+                escapeHtml(knowledgePoint),
+                escapeHtml(knowledgePoint),
+                escapeHtml(knowledgePoint),
+                escapeHtml(knowledgePoint),
+                escapeHtml(knowledgePoint)
+        );
     }
 
     private String linkContent(Resource resource, String knowledgePoint, String reason) {

@@ -86,6 +86,110 @@ class ResourceContentGeneratorTest {
     }
 
     @Test
+    void generateHtmlUsesLlmFragmentWhenValidationPasses() {
+        Resource resource = htmlResource();
+        when(chatModelProvider.getIfAvailable()).thenReturn(chatModel);
+        when(contextBuilder.build(7L, resource)).thenReturn(context(resource));
+        when(chatModel.chat(org.mockito.ArgumentMatchers.anyString())).thenReturn("""
+                <style>
+                  .generated-resource-html .stack-layout { display: grid; gap: 16px; }
+                  .generated-resource-html .concept-table { width: 100%; border-collapse: collapse; }
+                </style>
+                <div class="stack-layout" style="padding: 16px; border-radius: 12px;">
+                  <div class="hero-block">
+                    <h1>交互知识页：进程调度算法</h1>
+                    <p class="note">围绕进程调度算法建立可操作的判断流程，避免只背算法名称。</p>
+                  </div>
+                  <section>
+                    <h3>学习目标</h3>
+                    <ul class="goal-list">
+                      <li>能说明进程调度算法为什么要在公平性、响应时间和吞吐量之间取舍。</li>
+                      <li>能根据题目条件判断应使用 FCFS、SJF 还是时间片轮转。</li>
+                    </ul>
+                  </section>
+                  <section>
+                    <h3>核心概念</h3>
+                    <table class="concept-table">
+                      <thead><tr><th>算法</th><th>关键条件</th><th>主要风险</th></tr></thead>
+                      <tbody>
+                        <tr><td>FCFS</td><td>按进程到达时间排序</td><td>短进程可能等待过久</td></tr>
+                        <tr><td>SJF</td><td>需要比较运行时间</td><td>长作业可能饥饿</td></tr>
+                      </tbody>
+                    </table>
+                  </section>
+                  <section>
+                    <h3>操作步骤</h3>
+                    <ol class="step-list">
+                      <li>先列出每个进程的到达时间、运行时间和优先级等条件。</li>
+                      <li>再确认题目要求优化的是平均等待时间、响应时间还是公平性。</li>
+                      <li>最后按进程调度算法规则画出执行顺序并回算指标。</li>
+                    </ol>
+                  </section>
+                  <section>
+                    <h3>对比例题</h3>
+                    <div class="comparison-grid">
+                      <div><h3>适合 FCFS</h3><p>三个进程按明确到达顺序进入，就按先来先服务计算等待时间。</p></div>
+                      <div><h3>适合 SJF</h3><p>题目给出运行时间且要求平均等待时间更低时，优先比较短作业。</p></div>
+                    </div>
+                  </section>
+                  <section>
+                    <h3>易错检查</h3>
+                    <ul class="check-list">
+                      <li>不要把到达时间当成运行时间。</li>
+                      <li>不要忽略时间片轮转中的上下文切换顺序。</li>
+                    </ul>
+                  </section>
+                  <section>
+                    <h3>复盘清单</h3>
+                    <ul class="review-list">
+                      <li>能否用一句话解释进程调度算法的取舍目标？</li>
+                      <li>能否独立画出一组进程的调度甘特图？</li>
+                    </ul>
+                  </section>
+                </div>
+                """);
+
+        ResourceContent content = generator.generate(resource, 7L);
+
+        assertThat(content.getContentType()).isEqualTo("html");
+        assertThat(content.getContent()).contains(
+                "generated-resource-html",
+                "<style>",
+                "stack-layout",
+                "学习目标",
+                "核心概念",
+                "操作步骤",
+                "对比例题",
+                "易错检查",
+                "复盘清单"
+        );
+        assertThat(content.getReviewResult()).contains(
+                "\"source\":\"llm\"",
+                "\"status\":\"passed\"",
+                "\"promptVersion\":\"resource-html-v1\""
+        );
+    }
+
+    @Test
+    void generateHtmlFallsBackToTemplateWhenHtmlFailsValidation() {
+        Resource resource = htmlResource();
+        when(chatModelProvider.getIfAvailable()).thenReturn(chatModel);
+        when(contextBuilder.build(7L, resource)).thenReturn(context(resource));
+        when(chatModel.chat(org.mockito.ArgumentMatchers.anyString())).thenReturn("太短了");
+
+        ResourceContent content = generator.generate(resource, 7L);
+
+        assertThat(content.getContentType()).isEqualTo("html");
+        assertThat(content.getContent()).contains("generated-resource-html", "concept-table", "复盘清单");
+        assertThat(content.getContent()).doesNotContain("<script", "onclick");
+        assertThat(content.getReviewResult()).contains(
+                "\"source\":\"template_fallback\"",
+                "\"status\":\"needs_review\"",
+                "\"promptVersion\":\"resource-html-v1\""
+        );
+    }
+
+    @Test
     void generateQuizUsesStructuredLlmJsonWhenValidationPasses() throws Exception {
         Resource resource = quizResource();
         when(chatModelProvider.getIfAvailable()).thenReturn(chatModel);
@@ -264,6 +368,15 @@ class ResourceContentGeneratorTest {
         resource.setTitle("思维导图：进程调度算法");
         resource.setDescription("梳理当前任务的概念层级");
         resource.setResourceType("mind_map");
+        return resource;
+    }
+
+    private Resource htmlResource() {
+        Resource resource = docResource();
+        resource.setId(102L);
+        resource.setTitle("交互知识页：进程调度算法");
+        resource.setDescription("围绕当前任务生成 HTML 学习页");
+        resource.setResourceType("html");
         return resource;
     }
 
