@@ -172,6 +172,71 @@ class ResourceContentGeneratorTest {
         );
     }
 
+    @Test
+    void generateMindMapUsesLlmMermaidWhenValidationPasses() {
+        Resource resource = mindMapResource();
+        when(chatModelProvider.getIfAvailable()).thenReturn(chatModel);
+        when(contextBuilder.build(7L, resource)).thenReturn(context(resource));
+        when(chatModel.chat(org.mockito.ArgumentMatchers.anyString())).thenReturn("""
+                # 进程调度算法思维导图
+
+                这张图用于把进程调度算法的定义、条件、应用和复盘路径压缩成一张可检查结构图。
+
+                ```mermaid
+                mindmap
+                  root((进程调度算法))
+                    核心定义
+                      就绪进程选择
+                      CPU 分配策略
+                    适用条件
+                      到达时间明确
+                      运行时间可比较
+                    典型应用
+                      FCFS 排序
+                      SJF 比较
+                    易错点
+                      混淆等待时间
+                      忽略饥饿风险
+                    复盘路径
+                      说出评价指标
+                      对比算法取舍
+                ```
+                """);
+
+        ResourceContent content = generator.generate(resource, 7L);
+
+        assertThat(content.getContentType()).isEqualTo("markdown");
+        assertThat(content.getContent()).contains("```mermaid", "mindmap", "root((进程调度算法))", "易错点", "复盘路径");
+        assertThat(content.getReviewResult()).contains(
+                "\"source\":\"llm\"",
+                "\"status\":\"passed\"",
+                "\"promptVersion\":\"resource-mind-map-v1\""
+        );
+    }
+
+    @Test
+    void generateMindMapFallsBackToTemplateWhenMermaidFailsValidation() {
+        Resource resource = mindMapResource();
+        when(chatModelProvider.getIfAvailable()).thenReturn(chatModel);
+        when(contextBuilder.build(7L, resource)).thenReturn(context(resource));
+        when(chatModel.chat(org.mockito.ArgumentMatchers.anyString())).thenReturn("""
+                # 进程调度算法
+
+                这里只写一段普通说明，没有 Mermaid 思维导图。
+                """);
+
+        ResourceContent content = generator.generate(resource, 7L);
+
+        assertThat(content.getContentType()).isEqualTo("markdown");
+        assertThat(content.getContent()).contains("```mermaid", "root((进程调度算法))", "核心定义");
+        assertThat(content.getContent()).doesNotContain("这里只写一段普通说明");
+        assertThat(content.getReviewResult()).contains(
+                "\"source\":\"template_fallback\"",
+                "\"status\":\"needs_review\"",
+                "\"promptVersion\":\"resource-mind-map-v1\""
+        );
+    }
+
     private Resource docResource() {
         Resource resource = new Resource();
         resource.setId(99L);
@@ -190,6 +255,15 @@ class ResourceContentGeneratorTest {
         resource.setTitle("专项练习：进程调度算法");
         resource.setDescription("围绕当前任务生成练习题");
         resource.setResourceType("quiz");
+        return resource;
+    }
+
+    private Resource mindMapResource() {
+        Resource resource = docResource();
+        resource.setId(101L);
+        resource.setTitle("思维导图：进程调度算法");
+        resource.setDescription("梳理当前任务的概念层级");
+        resource.setResourceType("mind_map");
         return resource;
     }
 

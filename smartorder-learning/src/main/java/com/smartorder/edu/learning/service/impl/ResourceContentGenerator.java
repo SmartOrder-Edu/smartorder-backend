@@ -28,8 +28,10 @@ public class ResourceContentGenerator {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String DOC_PROMPT_VERSION = "resource-doc-v1";
     private static final String QUIZ_PROMPT_VERSION = "resource-quiz-v1";
+    private static final String MIND_MAP_PROMPT_VERSION = "resource-mind-map-v1";
     private static final int MIN_QUIZ_QUESTION_COUNT = 3;
     private static final int MAX_QUIZ_QUESTION_COUNT = 10;
+    private static final int MIN_MIND_MAP_NODE_COUNT = 8;
     private final BilibiliVideoRecommendationService bilibiliVideoRecommendationService;
     private final ObjectProvider<ChatModel> chatModelProvider;
     private final ResourceGenerationContextBuilder contextBuilder;
@@ -82,7 +84,7 @@ public class ResourceContentGenerator {
         return switch (resource.getResourceType()) {
             case "doc" -> docGeneratedContent(resource, context, knowledgePoint, reason, targetMinutes);
             case "html" -> templateGeneratedContent("html", htmlContent(resource, knowledgePoint, reason));
-            case "mind_map" -> templateGeneratedContent("markdown", mindMapContent(resource, knowledgePoint, reason));
+            case "mind_map" -> mindMapGeneratedContent(resource, context, knowledgePoint, reason);
             case "quiz" -> quizGeneratedContent(resource, context, knowledgePoint, reason, targetMinutes);
             case "link" -> templateGeneratedContent("external_link", linkContent(resource, knowledgePoint, reason));
             case "image" -> templateGeneratedContent("markdown", imageGuideContent(resource, knowledgePoint, reason));
@@ -131,6 +133,52 @@ public class ResourceContentGenerator {
                     reviewResult("needs_review", "template_fallback", 55,
                             List.of(check("llm_call_success", false), check("fallback_template", true)),
                             "LLM 调用失败，已使用模板内容降级：" + e.getMessage(), null));
+        }
+    }
+
+    private GeneratedContent mindMapGeneratedContent(
+            Resource resource,
+            ResourceGenerationContext context,
+            String knowledgePoint,
+            String reason
+    ) {
+        String fallback = mindMapContent(resource, knowledgePoint, reason);
+        ChatModel chatModel = chatModelProvider.getIfAvailable();
+        if (chatModel == null || context == null) {
+            log.warn("[ResourceContentGenerator] mind_map fallback to template because {}. resource={} space={} type={} topic={}",
+                    chatModel == null ? "chatModel_missing" : "context_missing",
+                    resource.getId(), resource.getSpaceId(), resource.getResourceType(), knowledgePoint);
+            return new GeneratedContent("markdown", fallback,
+                    reviewResult("passed", "template", 70,
+                            List.of(check("format_valid", true), check("fallback_template", true)),
+                            "未发现可用 LLM 或缺少生成上下文，已使用模板思维导图。", null,
+                            MIND_MAP_PROMPT_VERSION));
+        }
+
+        try {
+            String content = sanitizeMarkdown(chatModel.chat(buildMindMapPrompt(context)));
+            List<Map<String, Object>> checks = validateMindMapContent(content, context.knowledgePoint());
+            boolean passed = checks.stream().allMatch(check -> Boolean.TRUE.equals(check.get("passed")));
+            if (!passed) {
+                log.warn("[ResourceContentGenerator] LLM mind_map validation failed, fallback to template. resource={} space={} topic={} checks={} rawPreview={}",
+                        resource.getId(), resource.getSpaceId(), context.knowledgePoint(), checks, preview(content));
+                return new GeneratedContent("markdown", fallback,
+                        reviewResult("needs_review", "template_fallback", 62, checks,
+                                "LLM 输出未通过思维导图格式校验，已使用模板内容降级。", preview(content),
+                                MIND_MAP_PROMPT_VERSION));
+            }
+            return new GeneratedContent("markdown", content,
+                    reviewResult("passed", "llm", 87, checks,
+                            "LLM 生成思维导图通过 Mermaid 结构校验，适合进入学习资料库。", null,
+                            MIND_MAP_PROMPT_VERSION));
+        } catch (Exception e) {
+            log.warn("[ResourceContentGenerator] LLM mind_map generation failed, fallback to template. resourceId={}",
+                    resource.getId(), e);
+            return new GeneratedContent("markdown", fallback,
+                    reviewResult("needs_review", "template_fallback", 55,
+                            List.of(check("llm_call_success", false), check("fallback_template", true)),
+                            "LLM 调用失败，已使用模板内容降级：" + e.getMessage(), null,
+                            MIND_MAP_PROMPT_VERSION));
         }
     }
 
@@ -268,6 +316,52 @@ public class ResourceContentGenerator {
         );
     }
 
+    private String buildMindMapPrompt(ResourceGenerationContext context) {
+        return """
+                你是严谨的学习结构梳理 Agent。请根据学习上下文生成一份可直接渲染的 Markdown 思维导图。
+
+                只输出 Markdown，不要输出额外解释。Markdown 必须包含一个 mermaid mindmap 代码块，格式如下：
+                # 思维导图标题
+
+                1-2 句说明这张图的学习用途。
+
+                ```mermaid
+                mindmap
+                  root((知识点))
+                    一级分支
+                      二级节点
+                ```
+
+                约束：
+                - Mermaid 代码块内第一行必须是 mindmap。
+                - root 必须围绕知识点，不要写成“主题”或“中心”。
+                - 至少 5 个一级分支，必须覆盖：核心定义、适用条件、典型应用、易错点、复盘路径。
+                - 总节点数至少 10 个，每个一级分支至少有 2 个子节点。
+                - 节点文本要短，避免长句、标点堆叠、Markdown 列表符号。
+                - 不要输出 JSON，不要输出多个 mermaid 代码块。
+
+                学习空间：%s
+                当前目标：%s
+                当前任务：%s
+                路径节点：%s
+                知识点：%s
+                使用场景：%s
+                用户意图：%s
+                目标学习时长：%d 分钟
+                生成原因：%s
+                """.formatted(
+                value(context.space() == null ? null : context.space().getName()),
+                value(context.space() == null ? null : context.space().getGoals()),
+                value(context.task() == null ? null : context.task().getTitle()),
+                value(context.pathNode() == null ? null : context.pathNode().getTitle()),
+                value(context.knowledgePoint()),
+                value(context.studyScenario()),
+                value(context.userIntent()),
+                context.targetMinutes(),
+                value(context.reason())
+        );
+    }
+
     private List<Map<String, Object>> validateDocContent(String content, String knowledgePoint) {
         List<Map<String, Object>> checks = new ArrayList<>();
         checks.add(check("non_empty", content != null && content.trim().length() >= 300));
@@ -280,8 +374,95 @@ public class ResourceContentGenerator {
         return checks;
     }
 
+    private List<Map<String, Object>> validateMindMapContent(String content, String knowledgePoint) {
+        List<Map<String, Object>> checks = new ArrayList<>();
+        String safeContent = content == null ? "" : content.trim();
+        String expected = knowledgePoint == null ? "" : knowledgePoint.trim();
+        String mermaid = extractMermaidBlock(safeContent);
+        int nodeCount = countMindMapNodes(mermaid);
+        checks.add(check("non_empty", safeContent.length() >= 180));
+        checks.add(check("markdown_heading", safeContent.startsWith("#")));
+        checks.add(check("single_mermaid_block", countOccurrences(safeContent, "```mermaid") == 1));
+        checks.add(check("has_mindmap_keyword", firstNonBlankLine(mermaid).equals("mindmap")));
+        checks.add(check("has_root", mermaid.contains("root((") || mermaid.contains("root[")));
+        checks.add(check("node_count_valid", nodeCount >= MIN_MIND_MAP_NODE_COUNT));
+        checks.add(check("knowledge_point_aligned", expected.isBlank() || safeContent.contains(expected)));
+        checks.add(check("has_learning_structure",
+                containsAny(safeContent, "核心定义", "定义")
+                        && containsAny(safeContent, "适用条件", "前提条件", "条件")
+                        && containsAny(safeContent, "典型应用", "应用", "例题")
+                        && containsAny(safeContent, "易错点", "误区")
+                        && containsAny(safeContent, "复盘路径", "复盘")));
+        return checks;
+    }
+
+    private String firstNonBlankLine(String content) {
+        if (content == null || content.isBlank()) {
+            return "";
+        }
+        return content.lines()
+                .map(String::trim)
+                .filter(line -> !line.isBlank())
+                .findFirst()
+                .orElse("");
+    }
+
     private boolean containsHeading(String content, String heading) {
         return content != null && (content.contains("## " + heading) || content.contains("### " + heading));
+    }
+
+    private String extractMermaidBlock(String content) {
+        if (content == null || content.isBlank()) {
+            return "";
+        }
+        int start = content.indexOf("```mermaid");
+        if (start < 0) {
+            return "";
+        }
+        int blockStart = content.indexOf('\n', start);
+        if (blockStart < 0) {
+            return "";
+        }
+        int end = content.indexOf("```", blockStart + 1);
+        if (end < 0) {
+            return "";
+        }
+        return content.substring(blockStart + 1, end).trim();
+    }
+
+    private int countMindMapNodes(String mermaid) {
+        if (mermaid == null || mermaid.isBlank()) {
+            return 0;
+        }
+        return (int) mermaid.lines()
+                .map(String::trim)
+                .filter(line -> !line.isBlank() && !"mindmap".equals(line))
+                .count();
+    }
+
+    private int countOccurrences(String content, String needle) {
+        if (content == null || needle == null || needle.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        int index = 0;
+        while ((index = content.indexOf(needle, index)) >= 0) {
+            count++;
+            index += needle.length();
+        }
+        return count;
+    }
+
+    private boolean containsAny(String content, String... candidates) {
+        if (content == null) {
+            return false;
+        }
+        for (String candidate : candidates) {
+            if (content.contains(candidate)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String sanitizeMarkdown(String content) {
