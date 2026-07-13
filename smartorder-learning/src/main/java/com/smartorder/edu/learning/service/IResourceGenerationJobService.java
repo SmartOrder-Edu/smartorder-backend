@@ -9,6 +9,8 @@ public interface IResourceGenerationJobService {
 
     ResourceGenerationJob createPending(Long userId, Resource resource, String packageId, String reason);
 
+    ResourceGenerationJob createRetryPending(Long userId, Resource resource);
+
     void markGenerating(Long jobId);
 
     void markCompleted(Long jobId);
@@ -16,4 +18,6 @@ public interface IResourceGenerationJobService {
     void markFailed(Long jobId, String errorMessage);
 
     List<ResourceGenerationJob> getRecentBySpaceId(Long spaceId, int limit);
+
+    ResourceGenerationJob getLatestByResourceId(Long resourceId);
 }

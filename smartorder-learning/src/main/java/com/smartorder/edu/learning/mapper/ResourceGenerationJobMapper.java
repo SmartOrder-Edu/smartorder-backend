@@ -19,4 +19,13 @@ public interface ResourceGenerationJobMapper extends BaseMapper<ResourceGenerati
             LIMIT #{limit}
             """)
     List<ResourceGenerationJob> selectRecentBySpaceId(@Param("spaceId") Long spaceId, @Param("limit") int limit);
+
+    @Select("""
+            SELECT * FROM resource_generation_job
+            WHERE resource_id = #{resourceId}
+              AND is_deleted = 0
+            ORDER BY update_time DESC, id DESC
+            LIMIT 1
+            """)
+    ResourceGenerationJob selectLatestByResourceId(@Param("resourceId") Long resourceId);
 }
