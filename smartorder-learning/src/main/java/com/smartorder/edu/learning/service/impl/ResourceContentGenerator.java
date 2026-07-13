@@ -1,6 +1,7 @@
 package com.smartorder.edu.learning.service.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.learning.domain.entity.Resource;
@@ -26,6 +27,9 @@ public class ResourceContentGenerator {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String DOC_PROMPT_VERSION = "resource-doc-v1";
+    private static final String QUIZ_PROMPT_VERSION = "resource-quiz-v1";
+    private static final int MIN_QUIZ_QUESTION_COUNT = 3;
+    private static final int MAX_QUIZ_QUESTION_COUNT = 10;
     private final BilibiliVideoRecommendationService bilibiliVideoRecommendationService;
     private final ObjectProvider<ChatModel> chatModelProvider;
     private final ResourceGenerationContextBuilder contextBuilder;
@@ -79,7 +83,7 @@ public class ResourceContentGenerator {
             case "doc" -> docGeneratedContent(resource, context, knowledgePoint, reason, targetMinutes);
             case "html" -> templateGeneratedContent("html", htmlContent(resource, knowledgePoint, reason));
             case "mind_map" -> templateGeneratedContent("markdown", mindMapContent(resource, knowledgePoint, reason));
-            case "quiz" -> templateGeneratedContent("json", quizContent(resource, knowledgePoint));
+            case "quiz" -> quizGeneratedContent(resource, context, knowledgePoint, reason, targetMinutes);
             case "link" -> templateGeneratedContent("external_link", linkContent(resource, knowledgePoint, reason));
             case "image" -> templateGeneratedContent("markdown", imageGuideContent(resource, knowledgePoint, reason));
             case "video" -> templateGeneratedContent("markdown", videoScriptContent(resource, knowledgePoint, reason));
@@ -125,6 +129,47 @@ public class ResourceContentGenerator {
         }
     }
 
+    private GeneratedContent quizGeneratedContent(
+            Resource resource,
+            ResourceGenerationContext context,
+            String knowledgePoint,
+            String reason,
+            int targetMinutes
+    ) {
+        String fallback = quizContent(resource, knowledgePoint);
+        ChatModel chatModel = chatModelProvider.getIfAvailable();
+        if (chatModel == null || context == null) {
+            return new GeneratedContent("json", fallback,
+                    reviewResult("passed", "template", 70,
+                            List.of(check("format_valid", true), check("fallback_template", true)),
+                            "未发现可用 LLM 或缺少生成上下文，已使用模板练习题。", null,
+                            QUIZ_PROMPT_VERSION));
+        }
+
+        try {
+            String raw = chatModel.chat(buildQuizPrompt(context));
+            QuizNormalization normalized = normalizeQuizContent(raw, resource, knowledgePoint);
+            if (!normalized.passed()) {
+                return new GeneratedContent("json", fallback,
+                        reviewResult("needs_review", "template_fallback", 62, normalized.checks(),
+                                "LLM 输出未通过练习题结构校验，已使用模板内容降级。", preview(raw),
+                                QUIZ_PROMPT_VERSION));
+            }
+            return new GeneratedContent("json", normalized.content(),
+                    reviewResult("passed", "llm", 88, normalized.checks(),
+                            "LLM 生成练习题通过结构校验，已规范化为前端可渲染 JSON。", null,
+                            QUIZ_PROMPT_VERSION));
+        } catch (Exception e) {
+            log.warn("[ResourceContentGenerator] LLM quiz generation failed, fallback to template. resourceId={}",
+                    resource.getId(), e);
+            return new GeneratedContent("json", fallback,
+                    reviewResult("needs_review", "template_fallback", 55,
+                            List.of(check("llm_call_success", false), check("fallback_template", true)),
+                            "LLM 调用或解析失败，已使用模板内容降级：" + e.getMessage(), null,
+                            QUIZ_PROMPT_VERSION));
+        }
+    }
+
     private String buildDocPrompt(ResourceGenerationContext context) {
         return """
                 你是严谨的学习资料生成 Agent。请根据上下文生成一份可直接学习的 Markdown 讲义。
@@ -147,6 +192,59 @@ public class ResourceContentGenerator {
                 生成原因：%s
 
                 请开始生成 Markdown 讲义。
+                """.formatted(
+                value(context.space() == null ? null : context.space().getName()),
+                value(context.space() == null ? null : context.space().getGoals()),
+                value(context.task() == null ? null : context.task().getTitle()),
+                value(context.pathNode() == null ? null : context.pathNode().getTitle()),
+                value(context.knowledgePoint()),
+                value(context.studyScenario()),
+                value(context.userIntent()),
+                context.targetMinutes(),
+                value(context.reason())
+        );
+    }
+
+    private String buildQuizPrompt(ResourceGenerationContext context) {
+        return """
+                你是严谨的练习题生成 Agent。请根据学习上下文生成一组可直接用于学习空间的巩固练习。
+
+                只输出一个 JSON 对象，不要输出 Markdown、代码围栏或额外解释。JSON 必须符合以下结构：
+                {
+                  "title": "练习标题",
+                  "knowledgePoint": "知识点",
+                  "questions": [
+                    {
+                      "type": "single_choice|multiple_choice|true_false|short_answer",
+                      "stem": "题干",
+                      "options": ["选项A", "选项B"],
+                      "answer": "标准答案；多选用数组或用顿号分隔均可",
+                      "referenceAnswer": "简答题参考答案",
+                      "explanation": "解析",
+                      "difficulty": 1,
+                      "tags": ["知识点标签"]
+                    }
+                  ]
+                }
+
+                约束：
+                - questions 数量为 5 到 8 题，至少包含 2 道选择题和 1 道简答题。
+                - 所有题目必须围绕知识点和当前任务，不要泛泛考常识。
+                - 选择题必须有 4 个选项，且答案必须能从选项中找到。
+                - 判断题 options 固定为 ["正确","错误"]。
+                - 简答题必须填写 referenceAnswer。
+                - 每题必须有 explanation 和 difficulty，difficulty 为 1 到 5。
+                - 不要生成含糊题干，例如“以下说法正确的是”后没有具体场景。
+
+                学习空间：%s
+                当前目标：%s
+                当前任务：%s
+                路径节点：%s
+                知识点：%s
+                使用场景：%s
+                用户意图：%s
+                目标练习时长：%d 分钟
+                生成原因：%s
                 """.formatted(
                 value(context.space() == null ? null : context.space().getName()),
                 value(context.space() == null ? null : context.space().getGoals()),
@@ -290,6 +388,236 @@ public class ResourceContentGenerator {
         ));
     }
 
+    private QuizNormalization normalizeQuizContent(String raw, Resource resource, String knowledgePoint) {
+        List<Map<String, Object>> checks = new ArrayList<>();
+        JsonNode root;
+        try {
+            root = OBJECT_MAPPER.readTree(extractJsonObject(raw));
+            checks.add(check("json_parse_success", true));
+        } catch (Exception e) {
+            checks.add(check("json_parse_success", false));
+            checks.add(check("question_count_valid", false));
+            return new QuizNormalization(null, checks, false);
+        }
+
+        if (root == null || !root.isObject()) {
+            checks.add(check("json_object", false));
+            checks.add(check("question_count_valid", false));
+            return new QuizNormalization(null, checks, false);
+        }
+        checks.add(check("json_object", true));
+
+        JsonNode questionsNode = root.get("questions");
+        boolean questionsArray = questionsNode != null && questionsNode.isArray();
+        checks.add(check("questions_array", questionsArray));
+        if (!questionsArray) {
+            checks.add(check("question_count_valid", false));
+            return new QuizNormalization(null, checks, false);
+        }
+
+        List<Map<String, Object>> questions = new ArrayList<>();
+        int invalidCount = 0;
+        int choiceCount = 0;
+        int shortAnswerCount = 0;
+        for (JsonNode questionNode : questionsNode) {
+            if (questions.size() >= MAX_QUIZ_QUESTION_COUNT) {
+                break;
+            }
+            Map<String, Object> normalized = normalizeQuestion(questionNode);
+            if (normalized == null) {
+                invalidCount++;
+                continue;
+            }
+            String type = String.valueOf(normalized.get("type"));
+            if ("single_choice".equals(type) || "multiple_choice".equals(type)) {
+                choiceCount++;
+            }
+            if ("short_answer".equals(type)) {
+                shortAnswerCount++;
+            }
+            questions.add(normalized);
+        }
+
+        checks.add(check("question_count_valid", questions.size() >= MIN_QUIZ_QUESTION_COUNT));
+        checks.add(check("invalid_questions_filtered", invalidCount == 0));
+        checks.add(check("has_choice_questions", choiceCount >= 1));
+        checks.add(check("has_short_answer", shortAnswerCount >= 1));
+        checks.add(check("knowledge_point_present", containsKnowledgePoint(root, questions, knowledgePoint)));
+
+        boolean passed = checks.stream().allMatch(check -> Boolean.TRUE.equals(check.get("passed")));
+        if (!passed) {
+            return new QuizNormalization(null, checks, false);
+        }
+
+        Map<String, Object> normalizedRoot = new LinkedHashMap<>();
+        normalizedRoot.put("title", firstNonBlank(text(root, "title"), resource.getTitle(), "专项练习：" + knowledgePoint));
+        normalizedRoot.put("knowledgePoint", firstNonBlank(text(root, "knowledgePoint"), knowledgePoint));
+        normalizedRoot.put("questions", questions);
+        return new QuizNormalization(toJson(normalizedRoot), checks, true);
+    }
+
+    private Map<String, Object> normalizeQuestion(JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return null;
+        }
+        String type = normalizeQuestionType(text(node, "type"));
+        String stem = text(node, "stem");
+        String explanation = text(node, "explanation");
+        if (type == null || stem.length() < 8 || explanation.isBlank()) {
+            return null;
+        }
+
+        Map<String, Object> question = new LinkedHashMap<>();
+        question.put("type", type);
+        question.put("stem", stem);
+
+        if ("single_choice".equals(type) || "multiple_choice".equals(type)) {
+            List<String> options = stringList(node.get("options"), 2, 6);
+            String answer = answerText(node.get("answer"));
+            if (options.size() < 2 || answer.isBlank() || !answerMatchesOption(answer, options)) {
+                return null;
+            }
+            question.put("options", options);
+            question.put("answer", answer);
+        } else if ("true_false".equals(type)) {
+            String answer = answerText(node.get("answer"));
+            if (!"正确".equals(answer) && !"错误".equals(answer)) {
+                return null;
+            }
+            question.put("options", List.of("正确", "错误"));
+            question.put("answer", answer);
+        } else if ("short_answer".equals(type)) {
+            String referenceAnswer = firstNonBlank(text(node, "referenceAnswer"), answerText(node.get("answer")));
+            if (referenceAnswer.length() < 8) {
+                return null;
+            }
+            question.put("referenceAnswer", referenceAnswer);
+        }
+
+        question.put("explanation", explanation);
+        question.put("difficulty", normalizeDifficulty(node.get("difficulty")));
+        List<String> tags = stringList(node.get("tags"), 0, 5);
+        if (!tags.isEmpty()) {
+            question.put("tags", tags);
+        }
+        return question;
+    }
+
+    private String extractJsonObject(String raw) {
+        String content = raw == null ? "" : raw.trim();
+        if (content.startsWith("```")) {
+            content = content.replaceFirst("^```[a-zA-Z]*\\s*", "");
+            int lastFence = content.lastIndexOf("```");
+            if (lastFence >= 0) {
+                content = content.substring(0, lastFence).trim();
+            }
+        }
+        int start = content.indexOf('{');
+        int end = content.lastIndexOf('}');
+        if (start < 0 || end < start) {
+            throw new IllegalArgumentException("LLM 输出中未找到 JSON 对象");
+        }
+        return content.substring(start, end + 1);
+    }
+
+    private String normalizeQuestionType(String raw) {
+        String type = raw == null ? "" : raw.trim().toLowerCase()
+                .replace("-", "_")
+                .replace(" ", "_");
+        return switch (type) {
+            case "single", "single_choice", "choice" -> "single_choice";
+            case "multiple", "multiple_choice", "multi_choice" -> "multiple_choice";
+            case "true_false", "judge", "judgement", "判断题" -> "true_false";
+            case "short", "short_answer", "essay", "简答题" -> "short_answer";
+            default -> null;
+        };
+    }
+
+    private List<String> stringList(JsonNode node, int min, int max) {
+        if (node == null || !node.isArray()) {
+            return List.of();
+        }
+        List<String> values = new ArrayList<>();
+        for (JsonNode item : node) {
+            String value = item.isTextual() ? item.asText().trim() : item.toString().trim();
+            if (!value.isBlank() && !values.contains(value)) {
+                values.add(value);
+            }
+            if (values.size() >= max) {
+                break;
+            }
+        }
+        return values.size() < min ? List.of() : values;
+    }
+
+    private String answerText(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return "";
+        }
+        if (node.isArray()) {
+            List<String> values = new ArrayList<>();
+            for (JsonNode item : node) {
+                String value = item.isTextual() ? item.asText().trim() : item.toString().trim();
+                if (!value.isBlank()) {
+                    values.add(value);
+                }
+            }
+            return String.join("、", values);
+        }
+        return node.isTextual() ? node.asText().trim() : node.toString().trim();
+    }
+
+    private boolean answerMatchesOption(String answer, List<String> options) {
+        String normalizedAnswer = answer.trim();
+        return options.stream().anyMatch(option -> {
+            String normalizedOption = option.trim();
+            return normalizedOption.equals(normalizedAnswer)
+                    || normalizedAnswer.contains(normalizedOption)
+                    || normalizedOption.startsWith(normalizedAnswer + ".")
+                    || normalizedOption.startsWith(normalizedAnswer + "、")
+                    || normalizedOption.startsWith(normalizedAnswer + "．");
+        });
+    }
+
+    private int normalizeDifficulty(JsonNode node) {
+        int difficulty = node != null && node.isNumber() ? node.asInt() : 3;
+        return Math.max(1, Math.min(5, difficulty));
+    }
+
+    private boolean containsKnowledgePoint(JsonNode root, List<Map<String, Object>> questions, String knowledgePoint) {
+        String expected = knowledgePoint == null ? "" : knowledgePoint.trim();
+        if (expected.isBlank()) {
+            return true;
+        }
+        if (text(root, "knowledgePoint").contains(expected)) {
+            return true;
+        }
+        return questions.stream().anyMatch(question ->
+                String.valueOf(question.get("stem")).contains(expected)
+                        || String.valueOf(question.get("explanation")).contains(expected)
+        );
+    }
+
+    private String text(JsonNode node, String field) {
+        if (node == null || field == null) {
+            return "";
+        }
+        JsonNode value = node.get(field);
+        if (value == null || value.isNull()) {
+            return "";
+        }
+        return value.isTextual() ? value.asText().trim() : value.asText("").trim();
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
+
     private String htmlContent(Resource resource, String knowledgePoint, String reason) {
         return """
                 <article class="generated-resource-html">
@@ -431,13 +759,25 @@ public class ResourceContentGenerator {
             String summary,
             String rejectedPreview
     ) {
+        return reviewResult(status, source, score, checks, summary, rejectedPreview, DOC_PROMPT_VERSION);
+    }
+
+    private String reviewResult(
+            String status,
+            String source,
+            int score,
+            List<Map<String, Object>> checks,
+            String summary,
+            String rejectedPreview,
+            String promptVersion
+    ) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("status", status);
         result.put("source", source);
         result.put("score", score);
         result.put("checks", checks);
         result.put("summary", summary);
-        result.put("promptVersion", DOC_PROMPT_VERSION);
+        result.put("promptVersion", promptVersion);
         if (rejectedPreview != null && !rejectedPreview.isBlank()) {
             result.put("rejectedPreview", rejectedPreview);
         }
@@ -463,5 +803,8 @@ public class ResourceContentGenerator {
     }
 
     private record GeneratedContent(String contentType, String content, String reviewResult) {
+    }
+
+    private record QuizNormalization(String content, List<Map<String, Object>> checks, boolean passed) {
     }
 }

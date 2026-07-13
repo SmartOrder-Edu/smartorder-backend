@@ -1,5 +1,7 @@
 package com.smartorder.edu.learning.service.impl;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartorder.edu.learning.domain.entity.Resource;
 import com.smartorder.edu.learning.domain.entity.ResourceContent;
 import com.smartorder.edu.learning.domain.entity.Task;
@@ -19,6 +21,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class ResourceContentGeneratorTest {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private BilibiliVideoRecommendationService bilibiliVideoRecommendationService;
     private ObjectProvider<ChatModel> chatModelProvider;
@@ -81,6 +85,93 @@ class ResourceContentGeneratorTest {
         assertThat(content.getReviewResult()).contains("\"source\":\"template_fallback\"", "\"status\":\"needs_review\"");
     }
 
+    @Test
+    void generateQuizUsesStructuredLlmJsonWhenValidationPasses() throws Exception {
+        Resource resource = quizResource();
+        when(chatModelProvider.getIfAvailable()).thenReturn(chatModel);
+        when(contextBuilder.build(7L, resource)).thenReturn(context(resource));
+        when(chatModel.chat(org.mockito.ArgumentMatchers.anyString())).thenReturn("""
+                ```json
+                {
+                  "title": "进程调度算法专项练习",
+                  "knowledgePoint": "进程调度算法",
+                  "questions": [
+                    {
+                      "type": "single_choice",
+                      "stem": "学习进程调度算法时，选择 FCFS 算法最需要先确认哪类信息？",
+                      "options": ["进程到达时间顺序", "磁盘块大小", "页面置换次数", "文件目录深度"],
+                      "answer": "进程到达时间顺序",
+                      "explanation": "FCFS 按到达先后服务，因此到达时间顺序是判断执行顺序的关键。",
+                      "difficulty": 2,
+                      "tags": ["进程调度算法", "FCFS"]
+                    },
+                    {
+                      "type": "single_choice",
+                      "stem": "在进程调度算法中，短作业优先最容易带来什么风险？",
+                      "options": ["长作业饥饿", "无法计算周转时间", "所有进程同时阻塞", "CPU 无法切换"],
+                      "answer": "长作业饥饿",
+                      "explanation": "短作业不断到来时，长作业可能长期得不到 CPU。",
+                      "difficulty": 3,
+                      "tags": ["进程调度算法", "SJF"]
+                    },
+                    {
+                      "type": "true_false",
+                      "stem": "时间片轮转属于关注响应时间的进程调度算法。",
+                      "options": ["正确", "错误"],
+                      "answer": "正确",
+                      "explanation": "时间片轮转让多个就绪进程轮流获得 CPU，有利于交互式响应。",
+                      "difficulty": 2,
+                      "tags": ["进程调度算法"]
+                    },
+                    {
+                      "type": "short_answer",
+                      "stem": "请说明比较两个进程调度算法时，为什么不能只看平均等待时间。",
+                      "referenceAnswer": "因为调度算法还要综合响应时间、公平性、吞吐量和是否可能导致饥饿等指标，平均等待时间只能反映其中一个侧面。",
+                      "explanation": "进程调度算法是多目标权衡，单一指标会掩盖公平性和响应速度问题。",
+                      "difficulty": 4,
+                      "tags": ["进程调度算法", "评价指标"]
+                    }
+                  ]
+                }
+                ```
+                """);
+
+        ResourceContent content = generator.generate(resource, 7L);
+
+        assertThat(content.getContentType()).isEqualTo("json");
+        JsonNode root = OBJECT_MAPPER.readTree(content.getContent());
+        assertThat(root.get("knowledgePoint").asText()).isEqualTo("进程调度算法");
+        assertThat(root.get("questions")).hasSize(4);
+        assertThat(root.get("questions").get(0).get("options")).hasSize(4);
+        assertThat(root.get("questions").get(3).get("referenceAnswer").asText()).contains("响应时间");
+        assertThat(content.getReviewResult()).contains(
+                "\"source\":\"llm\"",
+                "\"status\":\"passed\"",
+                "\"promptVersion\":\"resource-quiz-v1\""
+        );
+    }
+
+    @Test
+    void generateQuizFallsBackToTemplateWhenLlmJsonFailsValidation() {
+        Resource resource = quizResource();
+        when(chatModelProvider.getIfAvailable()).thenReturn(chatModel);
+        when(contextBuilder.build(7L, resource)).thenReturn(context(resource));
+        when(chatModel.chat(org.mockito.ArgumentMatchers.anyString())).thenReturn("""
+                {"title":"进程调度算法练习","questions":[{"type":"single_choice","stem":"选哪个？"}]}
+                """);
+
+        ResourceContent content = generator.generate(resource, 7L);
+
+        assertThat(content.getContentType()).isEqualTo("json");
+        assertThat(content.getContent()).contains("学习「进程调度算法」时，第一步最应该确认什么？");
+        assertThat(content.getContent()).doesNotContain("选哪个？");
+        assertThat(content.getReviewResult()).contains(
+                "\"source\":\"template_fallback\"",
+                "\"status\":\"needs_review\"",
+                "\"promptVersion\":\"resource-quiz-v1\""
+        );
+    }
+
     private Resource docResource() {
         Resource resource = new Resource();
         resource.setId(99L);
@@ -90,6 +181,15 @@ class ResourceContentGeneratorTest {
         resource.setDescription("围绕当前任务生成讲义");
         resource.setResourceType("doc");
         resource.setMetadata("{\"knowledgePoint\":\"进程调度算法\",\"targetMinutes\":30}");
+        return resource;
+    }
+
+    private Resource quizResource() {
+        Resource resource = docResource();
+        resource.setId(100L);
+        resource.setTitle("专项练习：进程调度算法");
+        resource.setDescription("围绕当前任务生成练习题");
+        resource.setResourceType("quiz");
         return resource;
     }
 
