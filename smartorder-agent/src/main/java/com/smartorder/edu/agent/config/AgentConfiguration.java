@@ -28,7 +28,7 @@ import static dev.langchain4j.model.chat.Capability.RESPONSE_FORMAT_JSON_SCHEMA;
  */
 @Configuration
 public class AgentConfiguration {
-
+    // 测试
     @Value("${langchain4j.open-ai.chat-model.api-key}")
     private String apiKey;
 
