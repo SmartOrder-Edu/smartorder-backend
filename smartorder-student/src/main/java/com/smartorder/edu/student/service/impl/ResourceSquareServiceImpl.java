@@ -1,6 +1,7 @@
 package com.smartorder.edu.student.service.impl;
 
 import cn.hutool.core.util.IdUtil;
+import com.aliyun.oss.OSSException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -8,6 +9,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartorder.edu.common.constant.ResultCode;
 import com.smartorder.edu.common.mapper.UserMapper;
+import com.smartorder.edu.common.util.AliOSSUtils;
 import com.smartorder.edu.common.model.entity.User;
 import com.smartorder.edu.student.domain.dto.ResourceSquareListQueryDTO;
 import com.smartorder.edu.student.domain.dto.ResourceSquarePublishDTO;
@@ -20,6 +22,7 @@ import com.smartorder.edu.student.domain.vo.ResourceSquareVO;
 import com.smartorder.edu.student.mapper.FileResourceMapper;
 import com.smartorder.edu.student.mapper.ResourceSquareMapper;
 import com.smartorder.edu.student.mapper.ResourceSquareRatingMapper;
+import com.smartorder.edu.student.service.IFileResourceService;
 import com.smartorder.edu.student.service.IResourceSquareService;
 import com.smartorder.edu.student.service.IUserFileQuotaService;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +32,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -48,6 +52,7 @@ public class ResourceSquareServiceImpl implements IResourceSquareService {
     private final FileResourceMapper fileResourceMapper;
     private final UserMapper userMapper;
     private final IUserFileQuotaService userFileQuotaService;
+    private final AliOSSUtils aliOSSUtils;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -366,6 +371,30 @@ public class ResourceSquareServiceImpl implements IResourceSquareService {
         resourceSquareMapper.updateById(square);
 
         log.info("用户 {} 对资源 {} 评分: {}", userId, id, dto.getRating());
+    }
+
+    @Override
+    public IFileResourceService.FileDownloadResult preview(Long id) {
+        ResourceSquare square = resourceSquareMapper.selectById(id);
+        if (square == null || square.getIsDeleted() == 1 || square.getStatus() == 0) {
+            throw new com.smartorder.edu.common.exception.BusinessException(ResultCode.RESOURCE_SQUARE_NOT_FOUND.getMsg());
+        }
+
+        FileResource file = fileResourceMapper.selectById(square.getFileId());
+        if (file == null || file.getFileUrl() == null || file.getFileUrl().isEmpty()) {
+            throw new com.smartorder.edu.common.exception.BusinessException("文件不存在或路径无效");
+        }
+
+        InputStream inputStream;
+        try {
+            inputStream = aliOSSUtils.downloadFile(file.getFileUrl());
+        } catch (OSSException e) {
+            log.error("OSS文件下载失败, squareId={}, fileUrl={}, errorCode={}", id, file.getFileUrl(), e.getErrorCode(), e);
+            throw new com.smartorder.edu.common.exception.BusinessException("文件在云存储中不存在，可能已被删除");
+        }
+
+        log.info("用户预览广场资源, squareId={}, fileId={}", id, square.getFileId());
+        return new IFileResourceService.FileDownloadResult(file.getFileName(), file.getFileType(), file.getFileSize(), inputStream);
     }
 
     private ResourceSquareVO toVO(ResourceSquare square, FileResource file, Long userId) {

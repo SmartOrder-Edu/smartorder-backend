@@ -9,14 +9,21 @@ import com.smartorder.edu.student.domain.dto.ResourceSquarePublishDTO;
 import com.smartorder.edu.student.domain.dto.ResourceSquareRateDTO;
 import com.smartorder.edu.student.domain.vo.FileResourceVO;
 import com.smartorder.edu.student.domain.vo.ResourceSquareVO;
+import com.smartorder.edu.student.service.IFileResourceService.FileDownloadResult;
 import com.smartorder.edu.student.service.IResourceSquareService;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.URLEncoder;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -79,5 +86,85 @@ public class ResourceSquareController {
         Long userId = claims.get("userId", Long.class);
         resourceSquareService.rate(id, dto, userId);
         return Result.success("评分成功");
+    }
+
+    @GetMapping("/{id}/preview")
+    @Operation(summary = "预览资源文件")
+    public void preview(@PathVariable Long id, HttpServletResponse response) throws IOException {
+        FileDownloadResult result = resourceSquareService.preview(id);
+        InputStream inputStream = null;
+        try {
+            inputStream = result.inputStream();
+            response.reset();
+
+            String fileType = result.fileType() != null ? result.fileType().toLowerCase() : "";
+            String contentType = getContentType(fileType);
+            response.setContentType(contentType);
+            response.setCharacterEncoding("UTF-8");
+
+            String fileName = result.fileName() != null ? result.fileName() : "未命名文件";
+            if (!fileType.isEmpty()) {
+                String extension = "." + fileType;
+                if (!fileName.endsWith(extension)) {
+                    fileName += extension;
+                }
+            }
+            String encodedName = URLEncoder.encode(fileName, "UTF-8").replace("+", "%20");
+            response.setHeader("Content-Disposition", "inline; filename*=UTF-8''" + encodedName);
+            response.setHeader("Content-Length", String.valueOf(result.fileSize()));
+            response.setHeader("Cache-Control", "no-cache");
+            response.setHeader("Access-Control-Expose-Headers", "Content-Disposition, Content-Length");
+
+            byte[] buffer = new byte[8192];
+            int len;
+            OutputStream outputStream = response.getOutputStream();
+            while ((len = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, len);
+            }
+            outputStream.flush();
+        } catch (Exception e) {
+            log.error("资源广场文件预览失败, id={}", id, e);
+            if (!response.isCommitted()) {
+                response.reset();
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                response.setContentType("application/json");
+                response.setCharacterEncoding("UTF-8");
+                response.getWriter().write("{\"code\":500,\"msg\":\"文件预览失败\"}");
+            }
+        } finally {
+            if (inputStream != null) {
+                try {
+                    inputStream.close();
+                } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    private String getContentType(String fileType) {
+        if (fileType == null) return "application/octet-stream";
+        return switch (fileType.toLowerCase()) {
+            case "png" -> "image/png";
+            case "jpg", "jpeg" -> "image/jpeg";
+            case "gif" -> "image/gif";
+            case "webp" -> "image/webp";
+            case "svg" -> "image/svg+xml";
+            case "pdf" -> "application/pdf";
+            case "mp4" -> "video/mp4";
+            case "webm" -> "video/webm";
+            case "mp3" -> "audio/mpeg";
+            case "wav" -> "audio/wav";
+            case "txt", "md", "log" -> "text/plain;charset=UTF-8";
+            case "html" -> "text/html;charset=UTF-8";
+            case "css" -> "text/css;charset=UTF-8";
+            case "js" -> "application/javascript;charset=UTF-8";
+            case "json" -> "application/json;charset=UTF-8";
+            case "xml" -> "application/xml;charset=UTF-8";
+            case "java", "py", "ts", "yaml", "yml" -> "text/plain;charset=UTF-8";
+            case "doc", "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            case "xls" -> "application/vnd.ms-excel";
+            case "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            case "ppt", "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+            default -> "application/octet-stream";
+        };
     }
 }

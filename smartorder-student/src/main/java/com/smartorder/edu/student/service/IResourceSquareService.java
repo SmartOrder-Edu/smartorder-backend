@@ -6,6 +6,7 @@ import com.smartorder.edu.student.domain.dto.ResourceSquarePublishDTO;
 import com.smartorder.edu.student.domain.dto.ResourceSquareRateDTO;
 import com.smartorder.edu.student.domain.vo.FileResourceVO;
 import com.smartorder.edu.student.domain.vo.ResourceSquareVO;
+import com.smartorder.edu.student.service.IFileResourceService.FileDownloadResult;
 
 /**
  * 资源广场服务接口
@@ -41,4 +42,9 @@ public interface IResourceSquareService {
      * 评分（一人一票，重复评分覆盖旧值）
      */
     void rate(Long id, ResourceSquareRateDTO dto, Long userId);
+
+    /**
+     * 预览资源文件（无需登录校验所有权）
+     */
+    FileDownloadResult preview(Long id);
 }
