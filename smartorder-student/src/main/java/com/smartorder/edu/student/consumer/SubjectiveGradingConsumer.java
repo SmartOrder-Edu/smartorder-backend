@@ -1,6 +1,7 @@
 package com.smartorder.edu.student.consumer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.smartorder.edu.student.algorithm.EvaluationLearningAlgorithmService;
 import com.smartorder.edu.student.aiservice.QuestionAiService;
 import com.smartorder.edu.student.config.EvaluationRabbitConfig;
 import com.smartorder.edu.student.config.EvaluationRedisConstants;
@@ -47,6 +48,7 @@ public class SubjectiveGradingConsumer {
     private final ObjectMapper objectMapper;
     private final EvaluationCacheService cacheService;
     private final RabbitTemplate rabbitTemplate;
+    private final EvaluationLearningAlgorithmService learningAlgorithmService;
 
     private static final String GRADING_PROMPT_PATH = "prompts/subjective-grading-prompt.txt";
 
@@ -77,6 +79,7 @@ public class SubjectiveGradingConsumer {
         // 3. AI 判分
         try {
             gradeByAI(record, question);
+            learningAlgorithmService.processGradedRecord(record, question);
         } catch (Exception e) {
             log.error("主观题 AI 判分失败: recordId={}", msg.recordId(), e);
             markAsError(record, "AI判分异常: " + e.getMessage());

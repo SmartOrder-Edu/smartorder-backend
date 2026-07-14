@@ -1,6 +1,7 @@
 package com.smartorder.edu.student.consumer;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.smartorder.edu.student.algorithm.EvaluationLearningAlgorithmService;
 import com.smartorder.edu.student.codejudge.CodeJudgeRequest;
 import com.smartorder.edu.student.codejudge.CodeJudgeResult;
 import com.smartorder.edu.student.codejudge.ICodeJudgeService;
@@ -48,6 +49,7 @@ public class CodeGradingConsumer {
     private final ICodeJudgeService codeJudgeService;
     private final EvaluationCacheService cacheService;
     private final RabbitTemplate rabbitTemplate;
+    private final EvaluationLearningAlgorithmService learningAlgorithmService;
 
     @RabbitHandler
     public void gradeCode(CodeGradingMessage msg) {
@@ -76,6 +78,7 @@ public class CodeGradingConsumer {
         // 3. 执行判题
         try {
             executeCodeJudge(record, question, msg);
+            learningAlgorithmService.processGradedRecord(record, question);
         } catch (Exception e) {
             log.error("代码题判分失败: recordId={}", msg.recordId(), e);
             markAsError(record, "判题异常: " + e.getMessage(),

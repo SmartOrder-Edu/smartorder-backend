@@ -3,6 +3,7 @@ package com.smartorder.edu.student.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartorder.edu.common.exception.BusinessException;
+import com.smartorder.edu.student.algorithm.EvaluationLearningAlgorithmService;
 import com.smartorder.edu.student.aiservice.QuestionAiService;
 import com.smartorder.edu.student.codejudge.CodeJudgeRequest;
 import com.smartorder.edu.student.codejudge.CodeJudgeResult;
@@ -67,6 +68,7 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
     private final EvaluationCodeTestCaseMapper codeTestCaseMapper;
     private final RabbitTemplate rabbitTemplate;
     private final EvaluationCacheService cacheService;
+    private final EvaluationLearningAlgorithmService learningAlgorithmService;
 
     // ======================== 主观题类型 ========================
     private static final Set<String> SUBJECTIVE_TYPES = Set.of(
@@ -190,6 +192,9 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
                 answerRecordMapper.insert(record);
             }
         });
+
+        // Graded objective/synchronous answers become deterministic learning evidence.
+        learningAlgorithmService.processGradedRecords(records, questionMap);
 
         // 4. 异步判分：通过 MQ 发送主观题判分消息（含 MQ 降级的代码题）
         List<EvaluationAnswerRecord> asyncRecords = records.stream()
@@ -578,6 +583,7 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
         record.setStatus(3);
         record.setUpdatedAt(LocalDateTime.now());
         answerRecordMapper.updateById(record);
+        learningAlgorithmService.processGradedRecord(record, question);
     }
 
     private void gradeSubjectiveByAI(EvaluationAnswerRecord record, EvaluationQuestion question) {
@@ -620,6 +626,7 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
             ));
             record.setUpdatedAt(LocalDateTime.now());
             answerRecordMapper.updateById(record);
+            learningAlgorithmService.processGradedRecord(record, question);
 
             log.info("主观题 AI 判分完成: recordId={}, isCorrect={}, score={}", record.getId(), isCorrect, score);
         } catch (Exception e) {
