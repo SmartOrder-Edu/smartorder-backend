@@ -70,13 +70,27 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
                 .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
     }
 
-    /** 根据用户ID查询画像，不存在则返回 null */
+    /** 根据用户ID查询画像，不存在则自动初始化并保存，再返回 */
     @Override
     public StudentProfile getByUserId(Long userId) {
         validateUserId(userId);
         LambdaQueryWrapper<StudentProfile> query = new LambdaQueryWrapper<>();
         query.eq(StudentProfile::getUserId, userId);
-        return studentProfileMapper.selectOne(query);
+        StudentProfile profile = studentProfileMapper.selectOne(query);
+        if (profile == null) {
+            profile = new StudentProfile();
+            profile.setUserId(userId);
+            profile.setProfileVersion(0);
+            profile.setProfileConfidenceScore(new BigDecimal("0.00"));
+            profile.setLastUpdateReason("查询画像时自动初始化");
+            profile.setCreatedAt(LocalDateTime.now());
+            profile.setUpdatedAt(LocalDateTime.now());
+            prepareForPersistence(profile);
+            persist(profile);
+            log.info("未查询到画像，已自动为用户 {} 创建并保存初始空学生画像", userId);
+        }
+        profile.setProfileCompleteness(calculateCompleteness(profile));
+        return profile;
     }
 
     /** 保存或更新画像，已存在则跳过重复创建 */
@@ -357,6 +371,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
 
         prepareForPersistence(profile);
         persist(profile);
+        profile.setProfileCompleteness(calculateCompleteness(profile));
         return profile;
     }
 
@@ -651,5 +666,35 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
             case "gt3" -> 1470;
             default -> null;
         };
+    }
+
+    /** 计算画像完整度 */
+    private Integer calculateCompleteness(StudentProfile profile) {
+        if (profile == null) {
+            return 0;
+        }
+        int total = 0;
+        if (profile.getLearningBackground() != null) {
+            total += 15;
+        }
+        if (profile.getLearningGoals() != null) {
+            total += 15;
+        }
+        if (profile.getAbilityProfile() != null) {
+            total += 15;
+        }
+        if (profile.getCommonMisconceptions() != null) {
+            total += 15;
+        }
+        if (profile.getLearningPreference() != null) {
+            total += 15;
+        }
+        if (profile.getMetacognitiveProfile() != null) {
+            total += 15;
+        }
+        if (profile.getSubjectProfiles() != null) {
+            total += 10;
+        }
+        return total;
     }
 }
