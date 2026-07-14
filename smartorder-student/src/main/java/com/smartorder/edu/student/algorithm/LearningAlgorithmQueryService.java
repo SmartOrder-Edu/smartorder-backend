@@ -56,8 +56,22 @@ public class LearningAlgorithmQueryService {
         result.put("knowledgeCount", nodes.size());
         result.put("assessedCount", masteryList.size());
         result.put("weakPoints", weakPoints);
+        result.put("nextAction", buildNextAction(weakPoints, knowledgeStates));
         result.put("knowledgeStates", knowledgeStates);
         result.put("algorithmVersion", "bkt_beta_semantic_v1");
+        return result;
+    }
+
+    public Map<String, Object> getCompactDiagnosis(Long userId, Long spaceId) {
+        Map<String, Object> state = getLearningState(userId, spaceId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("spaceId", spaceId);
+        result.put("algorithmVersion", state.get("algorithmVersion"));
+        result.put("knowledgeCount", state.get("knowledgeCount"));
+        result.put("assessedCount", state.get("assessedCount"));
+        result.put("weakPoints", state.get("weakPoints"));
+        result.put("nextAction", state.get("nextAction"));
+        result.put("diagnosisPolicy", "mastery/confidence 由 BKT+Beta 计算；LLM 只用于题目语义映射和错因归一，不直接修改掌握度。");
         return result;
     }
 
@@ -97,5 +111,45 @@ public class LearningAlgorithmQueryService {
             return "proficient";
         }
         return "mastered";
+    }
+
+    private Map<String, Object> buildNextAction(List<Map<String, Object>> weakPoints,
+                                                List<Map<String, Object>> knowledgeStates) {
+        Map<String, Object> action = new LinkedHashMap<>();
+        if (!weakPoints.isEmpty()) {
+            Map<String, Object> target = weakPoints.get(0);
+            double mastery = ((Number) target.get("mastery")).doubleValue();
+            double confidence = ((Number) target.get("confidence")).doubleValue();
+            action.put("knowledgeNodeId", target.get("knowledgeNodeId"));
+            action.put("knowledgeName", target.get("name"));
+            action.put("mastery", mastery);
+            action.put("confidence", confidence);
+            if (confidence < 0.35) {
+                action.put("type", "diagnostic_quiz");
+                action.put("reason", "该知识点掌握度偏低且证据置信度不足，优先安排诊断题以减少系统不确定性。");
+            } else {
+                action.put("type", "weakness_practice");
+                action.put("reason", "该知识点掌握度偏低且已有一定证据，优先安排补弱练习和针对性讲解。");
+            }
+            return action;
+        }
+
+        Map<String, Object> lowConfidence = knowledgeStates.stream()
+                .filter(item -> ((Number) item.get("confidence")).doubleValue() < 0.35)
+                .findFirst()
+                .orElse(null);
+        if (lowConfidence != null) {
+            action.put("knowledgeNodeId", lowConfidence.get("knowledgeNodeId"));
+            action.put("knowledgeName", lowConfidence.get("name"));
+            action.put("mastery", lowConfidence.get("mastery"));
+            action.put("confidence", lowConfidence.get("confidence"));
+            action.put("type", "verification_quiz");
+            action.put("reason", "该知识点缺少足够证据，建议先用验证题确认真实掌握状态。");
+            return action;
+        }
+
+        action.put("type", "advance_or_review");
+        action.put("reason", "当前没有明显薄弱点，可进入后续知识点，或按学习路径安排轻量复习。");
+        return action;
     }
 }

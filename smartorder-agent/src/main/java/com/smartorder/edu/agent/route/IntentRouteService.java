@@ -144,7 +144,8 @@ public class IntentRouteService {
     // 进度查询关键词
     private static final List<String> PROGRESS_KEYWORDS = List.of(
             "学习进度", "学习情况", "最近学了什么", "复习进度", "学习分析",
-            "学得怎么样", "进度如何", "学习报告"
+            "学得怎么样", "进度如何", "学习报告", "薄弱点", "薄弱知识点",
+            "掌握度", "掌握情况", "学习诊断", "下一步学什么", "下一步怎么学"
     );
 
     // 学习空间查询关键词
@@ -198,7 +199,8 @@ public class IntentRouteService {
         // 4. 习题答疑类
         if (containsAny(message, HELP_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.PROBLEM_HELP, AgentRunMode.REACT,
-                    0.85, List.of("getStudentProfile", "queryKnowledge", "queryTasks", "webSearch", "askUser"),
+                    0.85, List.of("getStudentProfile", "queryKnowledge", "getLearningDiagnosis",
+                            "queryTasks", "webSearch", "askUser"),
                     "用户需要学习辅导");
         }
 
@@ -206,7 +208,8 @@ public class IntentRouteService {
         if (containsAny(message, PROGRESS_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.PROGRESS_REVIEW, AgentRunMode.REACT,
                     0.85, List.of("queryLearningProgress", "listLearningSpaces",
-                            "resolveLearningSpace", "getLearningSpaceDashboard", "getStudentProfile", "askUser"),
+                            "resolveLearningSpace", "getLearningSpaceDashboard",
+                            "getLearningDiagnosis", "getStudentProfile", "askUser"),
                     "用户查询学习进度");
         }
 
@@ -214,7 +217,7 @@ public class IntentRouteService {
         if (containsAny(message, SPACE_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.PROGRESS_REVIEW, AgentRunMode.REACT,
                     0.86, List.of("listLearningSpaces", "resolveLearningSpace",
-                            "getLearningSpaceDashboard", "queryTasks", "askUser"),
+                            "getLearningSpaceDashboard", "getLearningDiagnosis", "queryTasks", "askUser"),
                     "用户查询学习空间状态");
         }
 
@@ -324,9 +327,11 @@ public class IntentRouteService {
         }
 
         return switch (intent) {
-            case PROBLEM_HELP -> List.of("getStudentProfile", "queryKnowledge", "queryTasks", "webSearch", "askUser");
+            case PROBLEM_HELP -> List.of("getStudentProfile", "queryKnowledge", "getLearningDiagnosis",
+                    "queryTasks", "webSearch", "askUser");
             case PROGRESS_REVIEW -> List.of("queryLearningProgress", "listLearningSpaces",
-                    "resolveLearningSpace", "getLearningSpaceDashboard", "getStudentProfile", "askUser");
+                    "resolveLearningSpace", "getLearningSpaceDashboard",
+                    "getLearningDiagnosis", "getStudentProfile", "askUser");
             case KNOWLEDGE_QA, DIAGRAM_GENERATION, UNKNOWN -> List.of("webSearch", "ragRetrieve", "askUser");
             case TASK_MANAGEMENT -> List.of("queryTasks", "listLearningSpaces",
                     "resolveLearningSpace", "getLearningSpaceDashboard", "askUser");
