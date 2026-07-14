@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 用户视图对象
@@ -64,4 +65,8 @@ public class UserVO {
      * 账号状态：0=禁用，1=正常
      */
     private Integer status;
+    /**
+     * 第三方账号绑定列表
+     */
+    private List<AuthIdentityVO> authIdentities;
 }

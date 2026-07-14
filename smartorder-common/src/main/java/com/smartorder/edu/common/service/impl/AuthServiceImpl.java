@@ -10,9 +10,11 @@ import com.smartorder.edu.common.model.dto.GiteeLoginDTO;
 import com.smartorder.edu.common.model.vo.GithubUserVO;
 import com.smartorder.edu.common.model.vo.GiteeUserVO;
 import com.smartorder.edu.common.model.entity.User;
+import com.smartorder.edu.common.model.entity.UserAuthIdentity;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.common.exception.ValidationException;
 import com.smartorder.edu.common.service.IAuthService;
+import com.smartorder.edu.common.service.IUserAuthIdentityService;
 import com.smartorder.edu.common.service.IUserService;
 import com.smartorder.edu.common.service.IGithubService;
 import com.smartorder.edu.common.service.IGiteeService;
@@ -76,6 +78,10 @@ public class AuthServiceImpl implements IAuthService {
      * 用户数据库 Mapper
      */
     private final UserMapper userMapper;
+    /**
+     * 用户第三方登录身份服务
+     */
+    private final IUserAuthIdentityService userAuthIdentityService;
 
     private static final String REDIS_KEY_PREFIX = "refreshToken:";
     private static final String GITHUB_OAUTH_STATE_PREFIX = "github:oauth:state:";
@@ -340,23 +346,40 @@ public class AuthServiceImpl implements IAuthService {
                     .eq(User::getIsDeleted, 0));
             if (user != null) {
                 log.info("根据 primary 邮箱 {} 找到已有用户 {}, 绑定/更新 GitHub 账号信息", githubUserVO.getEmail(), user.getUsername());
-                // 绑定或更新 GitHub 信息
-                user.setGithubId(githubUserVO.getId());
-                user.setGithubUsername(githubUserVO.getLogin());
-                userMapper.updateById(user);
+                // 写入 user_auth_identity 表
+                userAuthIdentityService.bindIdentity(user.getId(),
+                        "github", githubUserVO.getId(), githubUserVO.getLogin(),
+                        githubUserVO.getEmail(), true,
+                        githubUserVO.getAccessToken(), null, null, null);
             }
         }
 
-        // 3. 若邮箱未匹配到，再按 github_id 查（可能是之前绑定过但邮箱换了）
+        // 3. 若邮箱未匹配到，再按 github provider_subject 查
         if (user == null) {
-            user = userService.getUserByGithubId(githubUserVO.getId());
-            if (user != null) {
-                log.info("根据 github_id {} 找到已有用户 {}", githubUserVO.getId(), user.getUsername());
-                // 更新 githubUsername（可能变更）
-                if (!githubUserVO.getLogin().equals(user.getGithubUsername())) {
-                    user.setGithubUsername(githubUserVO.getLogin());
-                    userMapper.updateById(user);
+            UserAuthIdentity existingIdentity = userAuthIdentityService.getByProviderSubject("github", githubUserVO.getId());
+            if (existingIdentity != null) {
+                user = userMapper.selectById(existingIdentity.getUserId());
+                if (user != null) {
+                    log.info("根据 github provider_subject {} 找到已有用户 {}", githubUserVO.getId(), user.getUsername());
+                    // 更新 username（可能变更）
+                    if (!githubUserVO.getLogin().equals(existingIdentity.getProviderUsername())) {
+                        existingIdentity.setProviderUsername(githubUserVO.getLogin());
+                        userAuthIdentityService.updateIdentity(existingIdentity);
+                    }
                 }
+            }
+        }
+
+        // 3.5 兼容旧数据：从 user 表 github_id 字段查（step 3 已查过新表，此处仅做旧字段兜底）
+        if (user == null) {
+            user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getGithubId, githubUserVO.getId()));
+            if (user != null) {
+                log.info("根据 user 表 github_id {} 找到已有用户 {}（旧数据兼容）", githubUserVO.getId(), user.getUsername());
+                // 将此旧绑定迁移到 user_auth_identity 表
+                userAuthIdentityService.bindIdentity(user.getId(),
+                        "github", githubUserVO.getId(), githubUserVO.getLogin(),
+                        githubUserVO.getEmail(), true,
+                        githubUserVO.getAccessToken(), null, null, null);
             }
         }
 
@@ -398,13 +421,17 @@ public class AuthServiceImpl implements IAuthService {
                 user.setAvatarUrl(githubUserVO.getAvatarUrl());
             }
 
-            user.setGithubId(githubUserVO.getId());
-            user.setGithubUsername(githubUserVO.getLogin());
             user.setRole(0); // 默认学生角色
             user.setStatus(1); // 正常启用
 
             // 插入用户数据
             userService.insertUser(user);
+
+            // 写入 user_auth_identity 表
+            userAuthIdentityService.bindIdentity(user.getId(),
+                    "github", githubUserVO.getId(), githubUserVO.getLogin(),
+                    githubUserVO.getEmail(), true,
+                    githubUserVO.getAccessToken(), null, null, null);
 
             // 发布用户注册事件，以便下游模块（如测评、引导等）能正常为这个新用户初始化数据
             eventPublisher.publishEvent(new UserRegisteredEvent(this, user.getId()));
@@ -477,21 +504,40 @@ public class AuthServiceImpl implements IAuthService {
                     .eq(User::getIsDeleted, 0));
             if (user != null) {
                 log.info("根据 primary 邮箱 {} 找到已有用户 {}, 绑定/更新 Gitee 账号信息", giteeUserVO.getEmail(), user.getUsername());
-                user.setGiteeId(giteeUserVO.getId());
-                user.setGiteeUsername(giteeUserVO.getLogin());
-                userMapper.updateById(user);
+                // 写入 user_auth_identity 表
+                userAuthIdentityService.bindIdentity(user.getId(),
+                        "gitee", giteeUserVO.getId(), giteeUserVO.getLogin(),
+                        giteeUserVO.getEmail(), true,
+                        giteeUserVO.getAccessToken(), null, null, null);
             }
         }
 
-        // 3. 若邮箱未匹配到，再按 gitee_id 查
+        // 3. 若邮箱未匹配到，再按 gitee provider_subject 查
         if (user == null) {
-            user = userService.getUserByGiteeId(giteeUserVO.getId());
-            if (user != null) {
-                log.info("根据 gitee_id {} 找到已有用户 {}", giteeUserVO.getId(), user.getUsername());
-                if (!giteeUserVO.getLogin().equals(user.getGiteeUsername())) {
-                    user.setGiteeUsername(giteeUserVO.getLogin());
-                    userMapper.updateById(user);
+            UserAuthIdentity existingIdentity = userAuthIdentityService.getByProviderSubject("gitee", giteeUserVO.getId());
+            if (existingIdentity != null) {
+                user = userMapper.selectById(existingIdentity.getUserId());
+                if (user != null) {
+                    log.info("根据 gitee provider_subject {} 找到已有用户 {}", giteeUserVO.getId(), user.getUsername());
+                    // 更新 username（可能变更）
+                    if (!giteeUserVO.getLogin().equals(existingIdentity.getProviderUsername())) {
+                        existingIdentity.setProviderUsername(giteeUserVO.getLogin());
+                        userAuthIdentityService.updateIdentity(existingIdentity);
+                    }
                 }
+            }
+        }
+
+        // 3.5 兼容旧数据：从 user 表 gitee_id 字段查（step 3 已查过新表，此处仅做旧字段兜底）
+        if (user == null) {
+            user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getGiteeId, giteeUserVO.getId()));
+            if (user != null) {
+                log.info("根据 user 表 gitee_id {} 找到已有用户 {}（旧数据兼容）", giteeUserVO.getId(), user.getUsername());
+                // 将此旧绑定迁移到 user_auth_identity 表
+                userAuthIdentityService.bindIdentity(user.getId(),
+                        "gitee", giteeUserVO.getId(), giteeUserVO.getLogin(),
+                        giteeUserVO.getEmail(), true,
+                        giteeUserVO.getAccessToken(), null, null, null);
             }
         }
 
@@ -533,13 +579,17 @@ public class AuthServiceImpl implements IAuthService {
                 user.setAvatarUrl(giteeUserVO.getAvatarUrl());
             }
 
-            user.setGiteeId(giteeUserVO.getId());
-            user.setGiteeUsername(giteeUserVO.getLogin());
             user.setRole(0);
             user.setStatus(1);
 
             // 插入用户数据
             userService.insertUser(user);
+
+            // 写入 user_auth_identity 表
+            userAuthIdentityService.bindIdentity(user.getId(),
+                    "gitee", giteeUserVO.getId(), giteeUserVO.getLogin(),
+                    giteeUserVO.getEmail(), true,
+                    giteeUserVO.getAccessToken(), null, null, null);
 
             // 发布用户注册事件
             eventPublisher.publishEvent(new UserRegisteredEvent(this, user.getId()));

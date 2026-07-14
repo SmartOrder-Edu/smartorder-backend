@@ -113,4 +113,11 @@ public interface IUserService {
      * @return 用户实体，不存在返回 null
      */
     User getUserByGiteeId(String giteeId);
+
+    /**
+     * 根据用户ID查询用户实体（含密码字段）
+     * @param userId 用户ID
+     * @return 用户实体，不存在返回 null
+     */
+    User getUserById(Long userId);
 }
