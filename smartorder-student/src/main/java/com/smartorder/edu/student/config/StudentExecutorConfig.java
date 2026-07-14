@@ -17,10 +17,16 @@ public class StudentExecutorConfig {
     @Bean("profileUpdateExecutor")
     public Executor profileUpdateExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(2);
-        executor.setMaxPoolSize(4);
+        executor.setCorePoolSize(8);
+        executor.setMaxPoolSize(16);
         executor.setQueueCapacity(50);
+        executor.setKeepAliveSeconds(60);
         executor.setThreadNamePrefix("student-update-async-");
+        
+        // 优雅停机配置
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(60);
+        
         executor.initialize();
         return executor;
     }

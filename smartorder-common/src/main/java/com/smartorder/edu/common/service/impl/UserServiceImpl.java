@@ -7,9 +7,12 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 
 import com.smartorder.edu.common.model.dto.UserDTO;
 import com.smartorder.edu.common.model.entity.User;
+import com.smartorder.edu.common.model.entity.UserAuthIdentity;
+import com.smartorder.edu.common.model.vo.AuthIdentityVO;
 import com.smartorder.edu.common.model.vo.UserVO;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.common.mapper.UserMapper;
+import com.smartorder.edu.common.service.IUserAuthIdentityService;
 import com.smartorder.edu.common.service.IUserService;
 import com.smartorder.edu.common.util.AliOSSUtils;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +47,7 @@ public class UserServiceImpl implements IUserService {
 
     private final UserMapper userMapper;
     private final AliOSSUtils aliOSSUtils;
+    private final IUserAuthIdentityService userAuthIdentityService;
     private final String DEFAULT_AVATAR_URL = "https://xueling-platform.oss-cn-hangzhou.aliyuncs.com/d915734b-a240-4350-acb6-30b6e2d3d981.jpg";
     private final RabbitTemplate rabbitTemplate;
 
@@ -77,16 +81,19 @@ public class UserServiceImpl implements IUserService {
             }
         });
 
-        rabbitTemplate.convertAndSend(MQ_YUN_PAN_EXCHANGE, MQ_ROUTING_KEY_FILE_QUOTE, userId, new MessagePostProcessor() {
-            @Override
-            public Message postProcessMessage(Message message) throws AmqpException {
-                message.getMessageProperties()
-                        .setExpiration("10000");
-                return message;
-            }
-        },cd);//开启生产者确认模式，发送消息时会等待 RabbitMQ 的确认回调
-
-        log.info("消息发送成功！");
+        try {
+            rabbitTemplate.convertAndSend(MQ_YUN_PAN_EXCHANGE, MQ_ROUTING_KEY_FILE_QUOTE, userId, new MessagePostProcessor() {
+                @Override
+                public Message postProcessMessage(Message message) throws AmqpException {
+                    message.getMessageProperties()
+                            .setExpiration("10000");
+                    return message;
+                }
+            },cd);//开启生产者确认模式，发送消息时会等待 RabbitMQ 的确认回调
+            log.info("用户注册云盘初始化消息发送成功！");
+        } catch (Exception e) {
+            log.warn("用户注册成功，但发送云盘初始化消息失败（可能本地未运行 RabbitMQ）：{}", e.getMessage());
+        }
     }
 
     @Override
@@ -181,6 +188,9 @@ public class UserServiceImpl implements IUserService {
             //将用户实体类转换为用户数据传输对象
             UserVO userVO = new UserVO();
             BeanUtils.copyProperties(user, userVO);
+            // 加载第三方绑定列表
+            List<AuthIdentityVO> authIdentities = userAuthIdentityService.listIdentities(id);
+            userVO.setAuthIdentities(authIdentities);
             return userVO;
         }
         //用户不存在异常
@@ -325,9 +335,41 @@ public class UserServiceImpl implements IUserService {
             BeanUtils.copyProperties(user, userVO);
             return userVO;
         }).collect(Collectors.toList());
-
-
     }
 
+    @Override
+    public User getUserByGithubId(String githubId) {
+        if (githubId == null || githubId.isBlank()) {
+            return null;
+        }
+        // 优先从 user_auth_identity 表查询
+        UserAuthIdentity identity = userAuthIdentityService.getByProviderSubject("github", githubId);
+        if (identity != null) {
+            return userMapper.selectById(identity.getUserId());
+        }
+        // 兼容旧数据：从 user 表字段查询
+        return userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getGithubId, githubId));
+    }
 
+    @Override
+    public User getUserByGiteeId(String giteeId) {
+        if (giteeId == null || giteeId.isBlank()) {
+            return null;
+        }
+        // 优先从 user_auth_identity 表查询
+        UserAuthIdentity identity = userAuthIdentityService.getByProviderSubject("gitee", giteeId);
+        if (identity != null) {
+            return userMapper.selectById(identity.getUserId());
+        }
+        // 兼容旧数据：从 user 表字段查询
+        return userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getGiteeId, giteeId));
+    }
+
+    @Override
+    public User getUserById(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        return userMapper.selectById(userId);
+    }
 }

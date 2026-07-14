@@ -30,6 +30,9 @@ public class EvaluationAnswerRecord {
     /** 测评任务ID */
     private Long sessionId;
 
+    /** 任务ID */
+    private Long taskId;
+
     /** 用户ID */
     private Long userId;
 
@@ -39,16 +42,13 @@ public class EvaluationAnswerRecord {
     /** 题目ID */
     private Long questionId;
 
-    /** 知识点ID */
-    private Long knowledgePointId;
-
     /** 用户答案JSON */
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<String, Object> userAnswer;
 
     /** 标准答案快照JSON */
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> standardAnswer;
+    @TableField(value = "correct_answer", typeHandler = JacksonTypeHandler.class)
+    private Map<String, Object> correctAnswer;
 
     /** 是否正确：1正确，0错误 */
     private Integer isCorrect;
@@ -57,10 +57,13 @@ public class EvaluationAnswerRecord {
     private BigDecimal score;
 
     /** 作答耗时（秒） */
-    private Integer answerDurationSeconds;
+    private Integer duration;
 
     /** 是否使用提示：0否，1是 */
     private Integer usedHint;
+
+    /** 状态：0-没答题，1-存档，2-已经提交，3-分析好了 */
+    private Integer status;
 
     /** 判题结果JSON */
     @TableField(typeHandler = JacksonTypeHandler.class)

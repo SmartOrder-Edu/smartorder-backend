@@ -13,7 +13,6 @@ CREATE TABLE `student_profile`
     `dimension_metadata`       json                   DEFAULT NULL COMMENT '各全局画像维度的数据来源、证据数量、置信度、更新时间及有效期限',
     `current_learning_state`   json                   DEFAULT NULL COMMENT '当前学习状态',
     `profile_summary`          text COMMENT '根据结构化画像生成的自然语言摘要，仅作为大模型上下文缓存',
-    `profile_completeness`     decimal(5, 2) NOT NULL DEFAULT '0.00' COMMENT '整份学生画像完整度，范围0到100',
     `profile_confidence_score` decimal(5, 2) NOT NULL DEFAULT '0.00' COMMENT '整份学生画像可信度，范围0到100',
     `last_update_reason`       varchar(500)           DEFAULT NULL COMMENT '最近一次画像更新原因',
     `last_assessed_at`         datetime               DEFAULT NULL COMMENT '最近一次系统性重新评估画像的时间',

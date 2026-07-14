@@ -99,4 +99,25 @@ public interface IUserService {
      * @return List<UserVO> 用户视图对象列表
      */
     List<UserVO> searchUsers(String keyword);
+
+    /**
+     * 根据 GitHub 用户唯一标识查询用户
+     * @param githubId GitHub ID
+     * @return 用户实体，不存在返回 null
+     */
+    User getUserByGithubId(String githubId);
+
+    /**
+     * 根据 Gitee 用户唯一标识查询用户
+     * @param giteeId Gitee ID
+     * @return 用户实体，不存在返回 null
+     */
+    User getUserByGiteeId(String giteeId);
+
+    /**
+     * 根据用户ID查询用户实体（含密码字段）
+     * @param userId 用户ID
+     * @return 用户实体，不存在返回 null
+     */
+    User getUserById(Long userId);
 }

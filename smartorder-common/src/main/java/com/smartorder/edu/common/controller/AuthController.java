@@ -2,9 +2,14 @@ package com.smartorder.edu.common.controller;
 
 
 import com.smartorder.edu.common.constant.ResultCode;
+import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.common.model.dto.ChangePasswordDTO;
 import com.smartorder.edu.common.model.dto.LoginDTO;
 import com.smartorder.edu.common.model.dto.RegisterDTO;
+import com.smartorder.edu.common.model.dto.GithubLoginDTO;
+import com.smartorder.edu.common.model.dto.GiteeLoginDTO;
+import com.smartorder.edu.common.model.vo.GithubLoginVO;
+import com.smartorder.edu.common.model.vo.GiteeLoginVO;
 import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.model.vo.UserVO;
 import com.smartorder.edu.common.service.IAuthService;
@@ -27,6 +32,7 @@ import org.springframework.web.util.WebUtils;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 认证控制器，处理登录、登出、注册和忘记密码等请求
@@ -43,6 +49,11 @@ public class AuthController {
     private final IAuthService authService;
     private final IUserService userService;
     private final StringRedisTemplate stringRedisTemplate;
+
+    // OAuth state 接口限流配置
+    private static final String OAUTH_STATE_RATE_LIMIT_PREFIX = "ratelimit:oauth:state:";
+    private static final int OAUTH_STATE_RATE_LIMIT_MAX = 30;   // 每分钟最多 30 次
+    private static final long OAUTH_STATE_RATE_LIMIT_WINDOW_MINUTES = 1;
 
     /**
      * 用户注册
@@ -74,6 +85,8 @@ public class AuthController {
                 .httpOnly(true)     //防止XSS攻击
                 .path("/")
                 .maxAge(JwtTokenUtils.REFRESH_TOKEN_EXPIRE / 1000)
+                .sameSite("Lax")    //防止CSRF攻击
+                // .secure(true)   //生产环境HTTPS下取消注释
                 .build();
         response.addHeader("Set-Cookie", refreshCookie.toString());
 
@@ -171,12 +184,113 @@ public class AuthController {
                     .httpOnly(true)
                     .path("/")
                     .maxAge(JwtTokenUtils.REFRESH_TOKEN_EXPIRE / 1000)
+                    .sameSite("Lax")
+                    // .secure(true)  //生产环境HTTPS下取消注释
                     .build();
             response.addHeader("Set-Cookie", newRefreshCookie.toString());
             return ResponseEntity.ok(Result.success(newAccessToken, "令牌刷新成功"));
         } catch (Exception e) {
             log.error("刷新令牌失败: {}", e.getMessage());
             return ResponseEntity.status(401).body(Result.fail(ResultCode.UNAUTHORIZED,"登录已过期，请重新登录"));
+        }
+    }
+
+    /**
+     * 生成 GitHub OAuth state 参数（防 CSRF）
+     * @return state 字符串
+     */
+    @GetMapping("/github/state")
+    @Operation(summary="生成 GitHub OAuth state", description="生成随机的 state 参数用于 GitHub OAuth 授权流程，防止 CSRF 攻击")
+    public Result<String> generateGithubOAuthState(HttpServletRequest request) {
+        checkOAuthStateRateLimit(request);
+        String state = authService.generateGithubOAuthState();
+        // 使用 success(T data, String msg) 二参方法，避免 Java 泛型二义性将 state 误入 msg 字段
+        return Result.success(state, null);
+    }
+
+    /**
+     * GitHub OAuth 登录
+     * @param githubLoginDTO 包含 code 和 state 的数据传输对象
+     * @param response HttpServletResponse对象
+     * @return 登录成功后返回 GithubLoginVO（含 accessToken 和 isNewUser）和刷新令牌（Set-Cookie中）
+     */
+    @PostMapping("/github/login")
+    @Operation(summary="GitHub OAuth 登录", description = "GitHub 登录授权回调，登录成功后返回访问令牌（data中）和刷新令牌（Set-Cookie中）")
+    public ResponseEntity<Result<GithubLoginVO>> githubLogin(@RequestBody GithubLoginDTO githubLoginDTO, HttpServletResponse response) {
+        log.info("收到 GitHub 登录请求，code: {}, state: {}", githubLoginDTO.getCode(), githubLoginDTO.getState());
+        Map<String, Object> result = authService.githubLogin(githubLoginDTO);
+
+        String accessToken = (String) result.get("accessToken");
+        String refreshToken = (String) result.get("refreshToken");
+        Boolean isNewUser = (Boolean) result.get("isNewUser");
+
+        ResponseCookie refreshCookie = ResponseCookie.from("refreshToken", refreshToken)
+                .httpOnly(true)     //防止XSS攻击
+                .path("/")
+                .maxAge(JwtTokenUtils.REFRESH_TOKEN_EXPIRE / 1000)
+                .sameSite("Lax")    //防止CSRF攻击
+                // .secure(true)   //生产环境HTTPS下取消注释
+                .build();
+        response.addHeader("Set-Cookie", refreshCookie.toString());
+
+        GithubLoginVO vo = new GithubLoginVO(accessToken, isNewUser);
+        return ResponseEntity.ok(Result.success(vo, "登录成功"));
+    }
+
+    /**
+     * 生成 Gitee OAuth state 参数（防 CSRF）
+     * @return state 字符串
+     */
+    @GetMapping("/gitee/state")
+    @Operation(summary="生成 Gitee OAuth state", description="生成随机的 state 参数用于 Gitee OAuth 授权流程，防止 CSRF 攻击")
+    public Result<String> generateGiteeOAuthState(HttpServletRequest request) {
+        checkOAuthStateRateLimit(request);
+        String state = authService.generateGiteeOAuthState();
+        // 使用 success(T data, String msg) 二参方法，避免 Java 泛型二义性将 state 误入 msg 字段
+        return Result.success(state, null);
+    }
+
+    /**
+     * Gitee OAuth 登录
+     * @param giteeLoginDTO 包含 code 和 state 的数据传输对象
+     * @param response HttpServletResponse对象
+     * @return 登录成功后返回 GiteeLoginVO（含 accessToken 和 isNewUser）和刷新令牌（Set-Cookie中）
+     */
+    @PostMapping("/gitee/login")
+    @Operation(summary="Gitee OAuth 登录", description = "Gitee 登录授权回调，登录成功后返回访问令牌（data中）和刷新令牌（Set-Cookie中）")
+    public ResponseEntity<Result<GiteeLoginVO>> giteeLogin(@RequestBody GiteeLoginDTO giteeLoginDTO, HttpServletResponse response) {
+        log.info("收到 Gitee 登录请求，code: {}, state: {}", giteeLoginDTO.getCode(), giteeLoginDTO.getState());
+        Map<String, Object> result = authService.giteeLogin(giteeLoginDTO);
+
+        String accessToken = (String) result.get("accessToken");
+        String refreshToken = (String) result.get("refreshToken");
+        Boolean isNewUser = (Boolean) result.get("isNewUser");
+
+        ResponseCookie refreshCookie = ResponseCookie.from("refreshToken", refreshToken)
+                .httpOnly(true)
+                .path("/")
+                .maxAge(JwtTokenUtils.REFRESH_TOKEN_EXPIRE / 1000)
+                .sameSite("Lax")
+                .build();
+        response.addHeader("Set-Cookie", refreshCookie.toString());
+
+        GiteeLoginVO vo = new GiteeLoginVO(accessToken, isNewUser);
+        return ResponseEntity.ok(Result.success(vo, "登录成功"));
+    }
+
+    /**
+     * OAuth state 接口 IP 限流，防止恶意刷新导致 Redis 堆积大量 state key
+     * 同一 IP 每分钟最多请求 {@link #OAUTH_STATE_RATE_LIMIT_MAX} 次，超出则拒绝
+     */
+    private void checkOAuthStateRateLimit(HttpServletRequest request) {
+        String ip = request.getRemoteAddr();
+        String rateLimitKey = OAUTH_STATE_RATE_LIMIT_PREFIX + ip;
+        // setIfAbsent 保证 TTL 与 key 创建原子执行，避免 INCR 后崩溃导致 key 永不过期
+        stringRedisTemplate.opsForValue().setIfAbsent(rateLimitKey, "0", OAUTH_STATE_RATE_LIMIT_WINDOW_MINUTES, TimeUnit.MINUTES);
+        Long count = stringRedisTemplate.opsForValue().increment(rateLimitKey);
+        if (count != null && count > OAUTH_STATE_RATE_LIMIT_MAX) {
+            log.warn("OAuth state 请求过于频繁，IP: {}, count: {}", ip, count);
+            throw new BusinessException(ResultCode.REQUEST_TOO_FREQUENTLY.getMsg());
         }
     }
 }

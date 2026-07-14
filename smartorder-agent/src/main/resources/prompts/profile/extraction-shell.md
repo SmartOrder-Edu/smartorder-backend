@@ -18,7 +18,7 @@
   - 错误示例：evidence 填"用户希望获得软件杯国奖"或"目标：软件杯国奖"——这些会被后端校验拒绝。
 - 每个 confidence 必须在 0.8 到 1.0。明确自述给 0.9 以上。
 - 每个 delta 必须是该维度的局部 patch，且字段必须严格匹配维度规则中的字段名。
-- 不要写入 mastery_score、accuracy_rate、study_minutes、completion_rate、attempt_count、profile_completeness、profile_confidence_score 这类应由后端计算的字段。
+- 不要写入 mastery_score、accuracy_rate、study_minutes、completion_rate、attempt_count、profile_confidence_score 这类应由后端计算的字段。
 - delta.metadata.confidence 与外层 confidence 保持一致。
 - delta.metadata.source_types 一般填 ["USER_EXPLICIT"]。
 - delta.metadata.update_reason 用一句话说明本次更新的依据。

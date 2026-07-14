@@ -30,7 +30,6 @@ public class UserRegisteredEventListener {
         StudentProfile profile = new StudentProfile();
         profile.setUserId(event.getUserId());
         profile.setProfileVersion(0);
-        profile.setProfileCompleteness(new BigDecimal("0.00"));
         profile.setProfileConfidenceScore(new BigDecimal("0.00"));
         profile.setLastUpdateReason("注册创建，待引导页初始化");
 

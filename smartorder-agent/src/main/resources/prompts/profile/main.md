@@ -7,7 +7,7 @@
 3. 保持原 JSON 结构不变
 4. 只返回更新后的完整 JSON，不要输出其他内容
 5. 用户自述更新 `self_reported_level`，测验/评测结果更新 `verified_level`、`score`、`status`
-6. 不要写入应由后端计算的字段：`mastery_score`、`accuracy_rate`、`study_minutes`、`completion_rate`、`attempt_count`、`profile_completeness`、`profile_confidence_score`
+6. 不要写入应由后端计算的字段：`mastery_score`、`accuracy_rate`、`study_minutes`、`completion_rate`、`attempt_count`、`profile_confidence_score`
 
 ## 可更新维度
 

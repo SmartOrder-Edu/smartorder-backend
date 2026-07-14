@@ -6,13 +6,14 @@
     <insert id="insertBatch" parameterType="java.util.List">
         INSERT INTO evaluation_question_generation_item (
             id, task_id, question_id, question_type, difficulty, option_count,
-            sequence_no, status, retry_count, max_retry_count, raw_response,
+            sequence_no, generated_question, status, retry_count, max_retry_count, raw_response,
             error_message, started_at, finished_at, created_at, updated_at
         ) VALUES
         <foreach collection="list" item="item" separator=",">
             (
                 #{item.id}, #{item.taskId}, #{item.questionId}, #{item.questionType},
-                #{item.difficulty}, #{item.optionCount}, #{item.sequenceNo}, #{item.status},
+                #{item.difficulty}, #{item.optionCount}, #{item.sequenceNo},
+                #{item.generatedQuestion}, #{item.status},
                 #{item.retryCount}, #{item.maxRetryCount}, #{item.rawResponse},
                 #{item.errorMessage}, #{item.startedAt}, #{item.finishedAt},
                 #{item.createdAt}, #{item.updatedAt}
