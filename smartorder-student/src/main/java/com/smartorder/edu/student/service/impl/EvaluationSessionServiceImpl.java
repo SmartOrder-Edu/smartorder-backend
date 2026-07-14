@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.student.domain.dto.SubmitAnswersDTO;
 import com.smartorder.edu.student.domain.entity.EvaluationAnswerRecord;
+import com.smartorder.edu.student.domain.entity.EvaluationLearningReport;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestion;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationItem;
 import com.smartorder.edu.student.domain.entity.EvaluationSession;
@@ -15,6 +16,7 @@ import com.smartorder.edu.student.domain.vo.DraftAnswerVO;
 import com.smartorder.edu.student.mapper.EvaluationAnswerRecordMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionGenerationItemMapper;
 import com.smartorder.edu.student.config.EvaluationRedisConstants;
+import com.smartorder.edu.student.mapper.EvaluationLearningReportMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
 import com.smartorder.edu.student.mapper.EvaluationSessionMapper;
 import com.smartorder.edu.student.service.IEvaluationSessionService;
@@ -27,16 +29,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -58,11 +54,19 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class EvaluationSessionServiceImpl implements IEvaluationSessionService {
 
+    private static final String REPORT_TYPE_SINGLE_TEST = "single_test";
+    private static final String REPORT_STATUS_NOT_STARTED = "not_started";
+    private static final String REPORT_STATUS_WAITING_GRADING = "waiting_grading";
+    private static final String REPORT_STATUS_GENERATING = "generating";
+    private static final String REPORT_STATUS_READY = "ready";
+    private static final String REPORT_STATUS_FAILED = "failed";
+
     private final EvaluationSessionMapper sessionMapper;
     private final IEvaluationSubmitService submitService;
     private final EvaluationAnswerRecordMapper answerRecordMapper;
     private final EvaluationQuestionMapper questionMapper;
     private final EvaluationQuestionGenerationItemMapper generationItemMapper;
+    private final EvaluationLearningReportMapper reportMapper;
     private final PracticeReminderUtils practiceReminderUtils;
     private final EvaluationCacheService cacheService;
     private final RedisTemplate<String, Object> redisTemplate;
@@ -366,122 +370,32 @@ public class EvaluationSessionServiceImpl implements IEvaluationSessionService {
         }
 
         String cacheKey = EvaluationRedisConstants.sessionReportKey(sessionId, userId);
+        EvaluationLearningReport report = reportMapper.selectOne(
+                new LambdaQueryWrapper<EvaluationLearningReport>()
+                        .eq(EvaluationLearningReport::getSessionId, sessionId)
+                        .eq(EvaluationLearningReport::getUserId, userId)
+                        .eq(EvaluationLearningReport::getReportType, REPORT_TYPE_SINGLE_TEST)
+                        .orderByDesc(EvaluationLearningReport::getUpdatedAt)
+                        .last("LIMIT 1"));
 
-        // 查缓存
-        SessionReportVO cached = cacheService.get(cacheKey, SessionReportVO.class);
-        if (cached != null) {
-            // 检查是否是"生成中"占位符
-            if (cached.getMasterySummary() != null && !cached.getMasterySummary().isEmpty()) {
-                return cached;
-            }
-            // 占位符 → 返回空报告，前端展示 loading
-            if (cached.getGeneratedBy() == null || "generating".equals(cached.getGeneratedBy())) {
-                return SessionReportVO.builder()
-                        .sessionId(sessionId)
-                        .title(session.getTopic())
-                        .generatedBy("generating")
-                        .build();
-            }
-        }
-
-        // 获取最新判分结果
-        TaskSubmitResultVO result = submitService.getResult(sessionId, userId);
-
-        // 检查是否有待判分题目
-        List<EvaluationAnswerRecord> records = answerRecordMapper.selectList(
-                new LambdaQueryWrapper<EvaluationAnswerRecord>()
-                        .eq(EvaluationAnswerRecord::getSessionId, sessionId)
-                        .eq(EvaluationAnswerRecord::getUserId, userId));
-
-        long pendingCount = records.stream()
-                .filter(r -> r.getIsCorrect() == null)
-                .count();
-        if (pendingCount > 0) {
-            // 写入"生成中"占位符
-            cacheService.set(cacheKey,
-                    Map.of("status", "generating", "pendingCount", pendingCount, "generatedBy", "generating"),
-                    EvaluationRedisConstants.TTL_REPORT_GENERATING);
-            return SessionReportVO.builder()
+        if (report == null) {
+            SessionReportVO notStarted = SessionReportVO.builder()
                     .sessionId(sessionId)
                     .title(session.getTopic())
-                    .generatedBy("generating")
+                    .reportType(REPORT_TYPE_SINGLE_TEST)
+                    .status(REPORT_STATUS_NOT_STARTED)
+                    .message(reportStatusMessage(REPORT_STATUS_NOT_STARTED, 0))
+                    .pendingCount(0)
                     .build();
+            cacheService.set(cacheKey, notStarted, EvaluationRedisConstants.TTL_REPORT_GENERATING);
+            return notStarted;
         }
 
-        // 查询关联题目
-        Map<Long, EvaluationQuestion> questionMap = loadQuestionMap(records);
-
-        // 按知识点聚合掌握度
-        Map<Long, KnowledgeStats> kpStatsMap = new LinkedHashMap<>();
-        for (EvaluationAnswerRecord record : records) {
-            if (record.getIsCorrect() == null) continue;
-
-            Long kpId = 0L;
-            KnowledgeStats stats = kpStatsMap.computeIfAbsent(kpId, k -> new KnowledgeStats());
-            stats.totalCount++;
-            if (record.getIsCorrect() == 1) {
-                stats.correctCount++;
-            }
-            BigDecimal score = record.getScore();
-            if (score != null) {
-                stats.totalScore = stats.totalScore.add(score);
-            }
-            EvaluationQuestion q = questionMap.get(record.getQuestionId());
-            if (q != null && q.getScore() != null) {
-                stats.maxScore = stats.maxScore.add(q.getScore());
-            }
-        }
-
-        // 构建掌握度概览
-        Map<String, Object> masterySummary = new LinkedHashMap<>();
-        List<Map<String, Object>> weakPoints = new ArrayList<>();
-        List<Map<String, Object>> strongPoints = new ArrayList<>();
-
-        for (Map.Entry<Long, KnowledgeStats> entry : kpStatsMap.entrySet()) {
-            KnowledgeStats stats = entry.getValue();
-            BigDecimal rate = stats.totalCount > 0
-                    ? BigDecimal.valueOf(stats.correctCount)
-                        .divide(BigDecimal.valueOf(stats.totalCount), 4, RoundingMode.HALF_UP)
-                    : BigDecimal.ZERO;
-
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("knowledgePointId", entry.getKey());
-            item.put("correctCount", stats.correctCount);
-            item.put("totalCount", stats.totalCount);
-            item.put("accuracy", rate);
-            item.put("score", stats.totalScore);
-
-            masterySummary.put(String.valueOf(entry.getKey()), Map.of(
-                    "accuracy", rate,
-                    "correctCount", stats.correctCount,
-                    "totalCount", stats.totalCount
-            ));
-
-            if (rate.compareTo(BigDecimal.valueOf(0.6)) < 0) {
-                weakPoints.add(item);
-            } else if (rate.compareTo(BigDecimal.valueOf(0.8)) >= 0) {
-                strongPoints.add(item);
-            }
-        }
-
-        SessionReportVO report = SessionReportVO.builder()
-                .sessionId(sessionId)
-                .title(session.getTopic())
-                .reportType(null)
-                .totalScore(session.getTotalScore())
-                .actualScore(result.getActualScore())
-                .accuracy(result.getAccuracy())
-                .masterySummary(masterySummary)
-                .weakPoints(weakPoints)
-                .strongPoints(strongPoints)
-                .createdAt(LocalDateTime.now())
-                .generatedBy("system")
-                .build();
-
-        // 写入缓存
-        cacheService.set(cacheKey, report, EvaluationRedisConstants.TTL_REPORT);
-
-        return report;
+        SessionReportVO vo = toSessionReportVO(report, session);
+        cacheService.set(cacheKey, vo, REPORT_STATUS_READY.equals(vo.getStatus())
+                ? EvaluationRedisConstants.TTL_REPORT
+                : EvaluationRedisConstants.TTL_REPORT_GENERATING);
+        return vo;
     }
 
     // ======================== 私有工具方法 ========================
@@ -505,26 +419,12 @@ public class EvaluationSessionServiceImpl implements IEvaluationSessionService {
                                     .isCorrect(d.getIsCorrect())
                                     .score(d.getScore())
                                     .status(d.getStatus())
+                                    .userAnswer(d.getUserAnswer())
                                     .judgeResult(d.getJudgeResult())
                                     .build())
                             .toList()
                         : List.of())
                 .build();
-    }
-
-    /**
-     * 从答题记录中提取所有 questionId，批量查询题目，构建 Map
-     */
-    private Map<Long, EvaluationQuestion> loadQuestionMap(List<EvaluationAnswerRecord> records) {
-        Set<Long> questionIds = records.stream()
-                .map(EvaluationAnswerRecord::getQuestionId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-        if (questionIds.isEmpty()) {
-            return Map.of();
-        }
-        return questionMapper.selectBatchIds(questionIds).stream()
-                .collect(Collectors.toMap(EvaluationQuestion::getId, q -> q, (a, b) -> a));
     }
 
     /**
@@ -542,12 +442,43 @@ public class EvaluationSessionServiceImpl implements IEvaluationSessionService {
         }
     }
 
-    // ======================== 内部统计类 ========================
+    private SessionReportVO toSessionReportVO(EvaluationLearningReport report, EvaluationSession session) {
+        String status = report.getStatus() != null ? report.getStatus() : REPORT_STATUS_READY;
+        Integer pendingCount = report.getPendingCount() != null ? report.getPendingCount() : 0;
+        return SessionReportVO.builder()
+                .sessionId(report.getSessionId())
+                .reportId(report.getId())
+                .title(session != null ? session.getTopic() : null)
+                .reportType(report.getReportType())
+                .status(status)
+                .message(reportStatusMessage(status, pendingCount))
+                .pendingCount(pendingCount)
+                .errorMessage(report.getErrorMessage())
+                .totalScore(report.getTotalScore())
+                .actualScore(report.getActualScore())
+                .accuracy(report.getAccuracy())
+                .masterySummary(report.getMasterySummary())
+                .weakPoints(report.getWeakPoints())
+                .strongPoints(report.getStrongPoints())
+                .abilityEvaluation(report.getAbilityEvaluation())
+                .learningSuggestions(report.getLearningSuggestions())
+                .nextRecommendationJson(report.getNextRecommendationJson())
+                .reportContent(report.getReportContent())
+                .generatedBy(report.getGeneratedBy())
+                .createdAt(report.getCreatedAt())
+                .finishedAt(report.getFinishedAt())
+                .build();
+    }
 
-    private static class KnowledgeStats {
-        int totalCount = 0;
-        int correctCount = 0;
-        BigDecimal totalScore = BigDecimal.ZERO;
-        BigDecimal maxScore = BigDecimal.ZERO;
+    private String reportStatusMessage(String status, int pendingCount) {
+        return switch (status) {
+            case REPORT_STATUS_WAITING_GRADING -> pendingCount > 0
+                    ? "还有 " + pendingCount + " 道题正在批阅，练习分析报告会在全部批阅完成后自动生成。"
+                    : "题目批阅即将完成，练习分析报告稍后生成。";
+            case REPORT_STATUS_GENERATING -> "AI 正在整理你的练习分析报告，稍后再来查看。";
+            case REPORT_STATUS_READY -> "练习分析报告已生成。";
+            case REPORT_STATUS_FAILED -> "练习分析报告生成失败，请稍后重试。";
+            default -> "练习分析报告尚未生成，请稍后再来查看。";
+        };
     }
 }

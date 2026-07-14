@@ -11,16 +11,19 @@ import com.smartorder.edu.student.codejudge.ICodeJudgeService;
 import com.smartorder.edu.student.domain.dto.SubmitAnswersDTO;
 import com.smartorder.edu.student.domain.entity.EvaluationAnswerRecord;
 import com.smartorder.edu.student.domain.entity.EvaluationCodeTestCase;
+import com.smartorder.edu.student.domain.entity.EvaluationLearningReport;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestion;
 import com.smartorder.edu.student.domain.entity.EvaluationSession;
 import com.smartorder.edu.student.domain.enums.QuestionScore;
 import com.smartorder.edu.student.domain.vo.TaskSubmitResultVO;
 import com.smartorder.edu.student.mapper.EvaluationAnswerRecordMapper;
 import com.smartorder.edu.student.mapper.EvaluationCodeTestCaseMapper;
+import com.smartorder.edu.student.mapper.EvaluationLearningReportMapper;
 import com.smartorder.edu.student.mapper.EvaluationQuestionMapper;
 import com.smartorder.edu.student.config.EvaluationRabbitConfig;
 import com.smartorder.edu.student.config.EvaluationRedisConstants;
 import com.smartorder.edu.student.domain.mq.CodeGradingMessage;
+import com.smartorder.edu.student.domain.mq.ReportGenerateMessage;
 import com.smartorder.edu.student.domain.mq.SubjectiveGradingMessage;
 import com.smartorder.edu.student.mapper.EvaluationSessionMapper;
 import com.smartorder.edu.student.service.IEvaluationSubmitService;
@@ -57,8 +60,15 @@ import java.util.*;
 @RequiredArgsConstructor
 public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
 
+    private static final String REPORT_TYPE_SINGLE_TEST = "single_test";
+    private static final String REPORT_STATUS_WAITING_GRADING = "waiting_grading";
+    private static final String REPORT_STATUS_GENERATING = "generating";
+    private static final String REPORT_STATUS_FAILED = "failed";
+    private static final String REPORT_ANALYSIS_VERSION = "v1";
+
     private final EvaluationAnswerRecordMapper answerRecordMapper;
     private final EvaluationQuestionMapper questionMapper;
+    private final EvaluationLearningReportMapper reportMapper;
     private final EvaluationSessionMapper sessionMapper;
     private final TransactionTemplate transactionTemplate;
     private final StudentPromptFileLoader promptFileLoader;
@@ -146,7 +156,7 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
                     record.setScore(BigDecimal.ZERO);
                     record.setJudgeResult(Map.of("status", "pending_review", "message", "代码题等待沙箱判题"));
                     subjectivePending++;
-                    details.add(buildDetail(question.getId(), null, BigDecimal.ZERO, "pending_review", record.getJudgeResult()));
+                    details.add(buildDetail(question.getId(), null, BigDecimal.ZERO, "pending_review", record.getUserAnswer(), record.getJudgeResult()));
                 } else {
                     // 降级：同步 Docker 判题
                     GradeCodeResult gcr = gradeCode(question, item.getUserAnswer());
@@ -159,7 +169,7 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
                     }
                     objectiveScore = objectiveScore.add(gcr.score);
                     objectiveTotal = objectiveTotal.add(gcr.maxScore);
-                    details.add(buildDetail(question.getId(), gcr.accepted, gcr.score, "graded", gcr.judgeResult));
+                    details.add(buildDetail(question.getId(), gcr.accepted, gcr.score, "graded", record.getUserAnswer(), gcr.judgeResult));
                 }
             } else if (qs.isObjective()) {
                 // 客观题：程序判分
@@ -173,14 +183,14 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
                 }
                 objectiveScore = objectiveScore.add(gr.score);
                 objectiveTotal = objectiveTotal.add(question.getScore() != null ? question.getScore() : qs.getDefaultScore());
-                details.add(buildDetail(question.getId(), gr.isCorrect, gr.score, "graded", record.getJudgeResult()));
+                details.add(buildDetail(question.getId(), gr.isCorrect, gr.score, "graded", record.getUserAnswer(), record.getJudgeResult()));
             } else {
                 // 主观题：标记 pending
                 record.setIsCorrect(null);
                 record.setScore(BigDecimal.ZERO);
                 record.setJudgeResult(Map.of("status", "pending_review", "message", "主观题等待AI批阅"));
                 subjectivePending++;
-                details.add(buildDetail(question.getId(), null, BigDecimal.ZERO, "pending_review", record.getJudgeResult()));
+                details.add(buildDetail(question.getId(), null, BigDecimal.ZERO, "pending_review", record.getUserAnswer(), record.getJudgeResult()));
             }
 
             records.add(record);
@@ -241,7 +251,10 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
             log.warn("清除结果缓存失败（不影响主流程）: sessionId={}, userId={}", taskId, userId, e);
         }
 
-        // 7. 返回值给前端
+        // 7. 创建报告占位并异步触发生成。报告消费者会在仍有待判分题时保持 waiting_grading。
+        prepareReportAndNotify(taskId, spaceId, userId, total, objectiveScore, subjectivePending);
+
+        // 8. 返回值给前端
         return TaskSubmitResultVO.builder()
                 .taskId(taskId)
                 .totalScore(total)
@@ -310,6 +323,7 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
                     r.getIsCorrect() != null ? r.getIsCorrect() == 1 : null,
                     r.getScore(),
                     status,
+                    r.getUserAnswer(),
                     r.getJudgeResult()));
         }
 
@@ -354,12 +368,14 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
      */
     private TaskSubmitResultVO.AnswerDetailVO buildDetail(Long questionId, Boolean isCorrect,
                                                            BigDecimal score, String status,
+                                                           Map<String, Object> userAnswer,
                                                            Map<String, Object> judgeResult) {
         return TaskSubmitResultVO.AnswerDetailVO.builder()
                 .questionId(questionId)
                 .isCorrect(isCorrect)
                 .score(score)
                 .status(status)
+                .userAnswer(userAnswer)
                 .judgeResult(judgeResult)
                 .build();
     }
@@ -584,6 +600,86 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
         record.setUpdatedAt(LocalDateTime.now());
         answerRecordMapper.updateById(record);
         learningAlgorithmService.processGradedRecord(record, question);
+    }
+
+    private void prepareReportAndNotify(Long sessionId, Long spaceId, Long userId,
+                                        BigDecimal totalScore, BigDecimal currentScore,
+                                        int pendingCount) {
+        upsertReportPlaceholder(sessionId, spaceId, userId, totalScore, currentScore, pendingCount);
+        try {
+            rabbitTemplate.convertAndSend(
+                    EvaluationRabbitConfig.REPORT_EXCHANGE,
+                    EvaluationRabbitConfig.RK_REPORT,
+                    new ReportGenerateMessage(sessionId, userId));
+            log.info("报告生成消息已发送: sessionId={}, userId={}, pendingCount={}",
+                    sessionId, userId, pendingCount);
+        } catch (Exception e) {
+            log.warn("发送报告生成消息失败: sessionId={}, userId={}", sessionId, userId, e);
+            if (pendingCount == 0) {
+                markReportFailed(sessionId, userId, "报告生成任务投递失败: " + e.getMessage());
+            }
+        }
+    }
+
+    private void upsertReportPlaceholder(Long sessionId, Long spaceId, Long userId,
+                                         BigDecimal totalScore, BigDecimal currentScore,
+                                         int pendingCount) {
+        try {
+            EvaluationLearningReport report = reportMapper.selectOne(
+                    new LambdaQueryWrapper<EvaluationLearningReport>()
+                            .eq(EvaluationLearningReport::getSessionId, sessionId)
+                            .eq(EvaluationLearningReport::getUserId, userId)
+                            .eq(EvaluationLearningReport::getReportType, REPORT_TYPE_SINGLE_TEST)
+                            .last("LIMIT 1"));
+            LocalDateTime now = LocalDateTime.now();
+            if (report == null) {
+                report = new EvaluationLearningReport();
+                report.setUserId(userId);
+                report.setLearningSpaceId(spaceId);
+                report.setSessionId(sessionId);
+                report.setReportType(REPORT_TYPE_SINGLE_TEST);
+                report.setCreatedAt(now);
+                report.setRetryCount(0);
+            }
+            report.setStatus(pendingCount > 0 ? REPORT_STATUS_WAITING_GRADING : REPORT_STATUS_GENERATING);
+            report.setPendingCount(pendingCount);
+            report.setErrorMessage(null);
+            report.setTotalScore(totalScore);
+            report.setActualScore(currentScore);
+            report.setAnalysisVersion(REPORT_ANALYSIS_VERSION);
+            report.setStartedAt(pendingCount > 0 ? null : now);
+            report.setFinishedAt(null);
+            report.setUpdatedAt(now);
+            if (report.getId() == null) {
+                reportMapper.insert(report);
+            } else {
+                reportMapper.updateById(report);
+            }
+        } catch (Exception e) {
+            log.warn("写入报告占位失败（不影响提交）: sessionId={}, userId={}", sessionId, userId, e);
+        }
+    }
+
+    private void markReportFailed(Long sessionId, Long userId, String message) {
+        try {
+            EvaluationLearningReport report = reportMapper.selectOne(
+                    new LambdaQueryWrapper<EvaluationLearningReport>()
+                            .eq(EvaluationLearningReport::getSessionId, sessionId)
+                            .eq(EvaluationLearningReport::getUserId, userId)
+                            .eq(EvaluationLearningReport::getReportType, REPORT_TYPE_SINGLE_TEST)
+                            .last("LIMIT 1"));
+            if (report == null) {
+                return;
+            }
+            report.setStatus(REPORT_STATUS_FAILED);
+            report.setErrorMessage(message);
+            report.setFinishedAt(LocalDateTime.now());
+            report.setUpdatedAt(LocalDateTime.now());
+            reportMapper.updateById(report);
+            cacheService.delete(EvaluationRedisConstants.sessionReportKey(sessionId, userId));
+        } catch (Exception e) {
+            log.warn("标记报告失败状态异常: sessionId={}, userId={}", sessionId, userId, e);
+        }
     }
 
     private void gradeSubjectiveByAI(EvaluationAnswerRecord record, EvaluationQuestion question) {
