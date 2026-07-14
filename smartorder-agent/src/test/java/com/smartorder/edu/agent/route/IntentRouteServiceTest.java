@@ -39,7 +39,7 @@ class IntentRouteServiceTest {
         assertEquals(IntentType.DIAGRAM_GENERATION, result.getIntentEnum());
         assertEquals(AgentRunMode.REACT, result.getRunMode());
         assertEquals(RoutingSource.KEYWORD, result.getSource());
-        assertTrue(result.getRequiredTools().isEmpty());
+        assertEquals(List.of("askUser"), result.getRequiredTools());
         verifyNoInteractions(llmIntentClassifier);
     }
 

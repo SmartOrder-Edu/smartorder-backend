@@ -1,6 +1,7 @@
 package com.smartorder.edu.learning.controller;
 
 import com.smartorder.edu.common.model.vo.Result;
+import com.smartorder.edu.common.util.AliOSSUtils;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import com.smartorder.edu.learning.dto.LearningSpaceDTO;
 import com.smartorder.edu.learning.domain.vo.LearningSpaceVO;
@@ -13,7 +14,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 
 /**
@@ -30,6 +33,34 @@ public class LearningSpaceController {
 
     private final LearningSpaceServiceImpl learningSpaceService;
     private final ISpaceDashboardService spaceDashboardService;
+    private final AliOSSUtils aliOSSUtils;
+
+    /**
+     * 上传学习空间封面
+     * @param file 封面图片
+     * @return 上传后的封面URL
+     */
+    @PostMapping("/upload/cover")
+    @Operation(summary = "上传学习空间封面", description = "上传学习空间封面图片，返回可保存到 coverUrl 的图片地址")
+    public Result<String> uploadCover(@RequestParam("file") MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("封面图片不能为空");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new IllegalArgumentException("只能上传图片文件");
+        }
+        if (file.getSize() > 5 * 1024 * 1024) {
+            throw new IllegalArgumentException("封面图片不能超过5MB");
+        }
+        try {
+            String url = aliOSSUtils.upload(file, "learning-space-covers/");
+            return Result.success(url, "上传成功");
+        } catch (IOException e) {
+            log.error("学习空间封面上传失败", e);
+            throw new RuntimeException("图片上传失败，请稍后重试");
+        }
+    }
 
     /**
      * 创建学习空间

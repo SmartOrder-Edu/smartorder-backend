@@ -34,6 +34,7 @@ class AgentOrchestratorImplTest {
         TraceEventDispatcher dispatcher = mock(TraceEventDispatcher.class);
         ConversationMemoryService memoryService = mock(ConversationMemoryService.class);
         AgentConversationAttachmentService attachmentService = mock(AgentConversationAttachmentService.class);
+        ProfileUpdateCoordinator profileUpdateCoordinator = mock(ProfileUpdateCoordinator.class);
         AgentRunSupervisor runSupervisor = mock(AgentRunSupervisor.class);
         ProfileUpdateCoordinator profileUpdateCoordinator = mock(ProfileUpdateCoordinator.class);
         AgentOrchestratorImpl orchestrator = new AgentOrchestratorImpl(
@@ -57,6 +58,7 @@ class AgentOrchestratorImplTest {
                 .reason("test")
                 .build();
         when(routeService.route(any(RouteContext.class))).thenReturn(routeResult);
+        when(memoryService.getRecentChatMessages("conversation-1", 30)).thenReturn(List.of());
         doAnswer(invocation -> {
             Runnable runnable = invocation.getArgument(3);
             runnable.run();

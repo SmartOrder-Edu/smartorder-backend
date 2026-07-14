@@ -33,7 +33,7 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(loginInterceptor).excludePathPatterns
                 ("/druid/**", "/auth/login", "/auth/register", "/auth/refreshToken", "/auth/github/login", "/auth/github/state", "/auth/gitee/login", "/auth/gitee/state", "/templates/error", "/auth/sendVerificationCode/**", "/auth/forget", "/admin/**",
                         "/doc.html", "/swagger-resources/**", "/webjars/**", "/v3/api-docs/**",
-                        "/hybridaction/**", "/ppt-builder/**", normalizePublicPattern(studyMediaPublicPrefix)
+                        "/hybridaction/**", "/ppt-builder/**", "/resources/bilibili/cover", normalizePublicPattern(studyMediaPublicPrefix)
                 );
     }
 

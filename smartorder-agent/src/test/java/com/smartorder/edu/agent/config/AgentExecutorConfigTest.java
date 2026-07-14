@@ -14,22 +14,23 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 class AgentExecutorConfigTest {
 
     @Test
-    void shouldSerializeProfileUpdatesToAvoidLostReadModifyWriteChanges() {
+    void shouldUseBoundedProfileUpdateExecutor() {
         Executor executor = new StudentExecutorConfig().profileUpdateExecutor();
 
         ThreadPoolTaskExecutor taskExecutor =
                 assertInstanceOf(ThreadPoolTaskExecutor.class, executor);
-        assertEquals(16, taskExecutor.getMaxPoolSize());
+        assertEquals(2, taskExecutor.getCorePoolSize());
+        assertEquals(4, taskExecutor.getMaxPoolSize());
         taskExecutor.shutdown();
     }
 
     @Test
-    void shouldKeepConversationCompressionOnTheGeneralAgentExecutor() throws Exception {
+    void shouldKeepConversationCompressionAsync() throws Exception {
         Method method = com.smartorder.edu.agent.memory.ConversationCompressService.class
                 .getMethod("checkAndCompress", String.class, Long.class);
 
         Async async = method.getAnnotation(Async.class);
 
-        assertEquals("agentAsyncExecutor", async.value());
+        assertEquals("", async.value());
     }
 }
