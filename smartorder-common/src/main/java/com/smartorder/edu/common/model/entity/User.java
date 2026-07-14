@@ -90,4 +90,12 @@ public class User {
      * GitHub 用户名
      */
     private String githubUsername;
+    /**
+     * Gitee 用户唯一标识
+     */
+    private String giteeId;
+    /**
+     * Gitee 用户名
+     */
+    private String giteeUsername;
 }

@@ -406,3 +406,10 @@ github:
   # 支持多种形式的密钥读取，依次尝试：github_client_secret -> client_secret -> GITHUB_CLIENT_SECRET -> 兜底空字符串
   client-secret: ${github_client_secret:${client_secret:${GITHUB_CLIENT_SECRET:}}}
   redirect-uri: ${github_redirect_uri:${redirect_uri:${GITHUB_REDIRECT_URI:http://localhost:5172/oauth/callback/github}}}
+
+gitee:
+  # 支持多种形式的系统环境变量读取，依次尝试：Client_ID_gitee -> gitee_client_id -> GITEE_CLIENT_ID
+  client-id: ${Client_ID_gitee:${gitee_client_id:${GITEE_CLIENT_ID:}}}
+  # 支持多种形式的密钥读取，依次尝试：Client_Secret_gitee -> gitee_client_secret -> GITEE_CLIENT_SECRET
+  client-secret: ${Client_Secret_gitee:${gitee_client_secret:${GITEE_CLIENT_SECRET:}}}
+  redirect-uri: ${gitee_redirect_uri:${GITEE_REDIRECT_URI:http://localhost:5172/oauth/callback/gitee}}

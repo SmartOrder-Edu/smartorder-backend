@@ -337,4 +337,12 @@ public class UserServiceImpl implements IUserService {
         }
         return userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getGithubId, githubId));
     }
+
+    @Override
+    public User getUserByGiteeId(String giteeId) {
+        if (giteeId == null || giteeId.isBlank()) {
+            return null;
+        }
+        return userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getGiteeId, giteeId));
+    }
 }

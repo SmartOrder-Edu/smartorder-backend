@@ -106,4 +106,11 @@ public interface IUserService {
      * @return 用户实体，不存在返回 null
      */
     User getUserByGithubId(String githubId);
+
+    /**
+     * 根据 Gitee 用户唯一标识查询用户
+     * @param giteeId Gitee ID
+     * @return 用户实体，不存在返回 null
+     */
+    User getUserByGiteeId(String giteeId);
 }

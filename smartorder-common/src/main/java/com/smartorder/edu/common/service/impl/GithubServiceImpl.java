@@ -89,32 +89,44 @@ public class GithubServiceImpl implements IGithubService {
             githubUser.setLogin((String) githubUserMap.get("login"));
             githubUser.setName((String) githubUserMap.get("name"));
             githubUser.setAvatarUrl((String) githubUserMap.get("avatar_url"));
-            githubUser.setEmail((String) githubUserMap.get("email"));
+            githubUser.setAccessToken(accessToken);
 
-            // 如果普通资料中邮箱为空，尝试利用获取到的 accessToken 额外查询私有邮箱列表，过滤出 primary 首选邮箱
-            if (!org.springframework.util.StringUtils.hasText(githubUser.getEmail())) {
-                log.info("GitHub 用户公开邮箱为空，尝试调用 /user/emails 接口获取私有及首选邮箱");
-                try {
-                    @SuppressWarnings("rawtypes")
-                    ResponseEntity<java.util.List> emailsResponse = restTemplate.exchange(
-                        "https://api.github.com/user/emails",
-                        HttpMethod.GET,
-                        userRequest,
-                        java.util.List.class
-                    );
-                    @SuppressWarnings("unchecked")
-                    java.util.List<Map<String, Object>> emails = emailsResponse.getBody();
-                    if (emails != null) {
-                        for (Map<String, Object> emailMap : emails) {
-                            if (Boolean.TRUE.equals(emailMap.get("primary"))) {
-                                githubUser.setEmail((String) emailMap.get("email"));
-                                log.info("成功获取并使用用户的 primary 邮箱: {}", githubUser.getEmail());
-                                break;
-                            }
+            // 始终通过 /user/emails 接口获取 primary 邮箱
+            // 因为 /user 接口的 email 字段可能是非 primary 的公开邮箱，也可能是 null
+            log.info("调用 GitHub /user/emails 接口获取用户的 primary 邮箱");
+            try {
+                @SuppressWarnings("rawtypes")
+                ResponseEntity<java.util.List> emailsResponse = restTemplate.exchange(
+                    "https://api.github.com/user/emails",
+                    HttpMethod.GET,
+                    userRequest,
+                    java.util.List.class
+                );
+                @SuppressWarnings("unchecked")
+                java.util.List<Map<String, Object>> emails = emailsResponse.getBody();
+                if (emails != null) {
+                    for (Map<String, Object> emailMap : emails) {
+                        if (Boolean.TRUE.equals(emailMap.get("primary"))) {
+                            githubUser.setEmail((String) emailMap.get("email"));
+                            log.info("成功获取用户的 primary 邮箱: {}", githubUser.getEmail());
+                            break;
                         }
                     }
-                } catch (Exception ex) {
-                    log.warn("调用 GitHub /user/emails 接口获取邮箱失败: {}", ex.getMessage());
+                }
+            } catch (Exception ex) {
+                log.warn("调用 GitHub /user/emails 接口获取邮箱失败: {}", ex.getMessage());
+            }
+
+            // 防御性判断：若始终未获取到 primary 邮箱（理论上不可能，但保留保护），
+            // 则回退到 /user 接口的公开邮箱
+            if (!org.springframework.util.StringUtils.hasText(githubUser.getEmail())) {
+                String publicEmail = (String) githubUserMap.get("email");
+                if (org.springframework.util.StringUtils.hasText(publicEmail)) {
+                    log.info("未能获取 primary 邮箱，回退使用 /user 接口的公开邮箱: {}", publicEmail);
+                    githubUser.setEmail(publicEmail);
+                } else {
+                    log.error("GitHub 用户 {} 无 primary 邮箱且无公开邮箱，无法完成登录", githubUser.getLogin());
+                    throw new BusinessException("无法获取您的 GitHub 账户邮箱，请确保 GitHub 账户已绑定邮箱后重试");
                 }
             }
 
