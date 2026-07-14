@@ -28,7 +28,13 @@ public enum ResultCode {
     // ========== 新增分片上传相关错误码 ==========
     UPLOAD_TASK_NOT_FOUND(800, "上传任务不存在"),
     UPDATE_CHUNK_ERROR(801, "更新分片信息失败"),
-    MERGE_CHUNK_ERROR(802, "合并分片失败");
+    MERGE_CHUNK_ERROR(802, "合并分片失败"),
+
+    // ========== 资源广场相关错误码 ==========
+    RESOURCE_SQUARE_FILE_NOT_BELONG(900, "文件不属于当前用户"),
+    RESOURCE_SQUARE_NOT_FOUND(901, "广场资源不存在"),
+    RESOURCE_SQUARE_ALREADY_PUBLISHED(902, "该文件已发布到广场"),
+    RESOURCE_SQUARE_ALREADY_DOWNLOADED(903, "您已转存过该资源");
 
 
 
