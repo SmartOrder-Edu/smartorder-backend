@@ -5,6 +5,8 @@ import com.smartorder.edu.knowledge.domain.entity.KnowledgeGraphNode;
 import com.smartorder.edu.knowledge.domain.entity.KnowledgeNodeMastery;
 import com.smartorder.edu.knowledge.mapper.KnowledgeGraphNodeMapper;
 import com.smartorder.edu.knowledge.mapper.KnowledgeNodeMasteryMapper;
+import com.smartorder.edu.student.domain.entity.LearningEvidenceEvent;
+import com.smartorder.edu.student.mapper.LearningEvidenceEventMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -21,6 +23,7 @@ public class LearningAlgorithmQueryService {
 
     private final KnowledgeGraphNodeMapper knowledgeGraphNodeMapper;
     private final KnowledgeNodeMasteryMapper masteryMapper;
+    private final LearningEvidenceEventMapper evidenceEventMapper;
 
     public Map<String, Object> getLearningState(Long userId, Long spaceId) {
         List<KnowledgeGraphNode> nodes = knowledgeGraphNodeMapper.selectList(
@@ -38,9 +41,11 @@ public class LearningAlgorithmQueryService {
 
         Map<Long, KnowledgeNodeMastery> masteryByNode = masteryList.stream()
                 .collect(Collectors.toMap(KnowledgeNodeMastery::getNodeId, Function.identity(), (a, b) -> a));
+        Map<Long, List<LearningEvidenceEvent>> recentEvidenceByNode = loadRecentEvidence(userId, spaceId, nodeIds);
 
         List<Map<String, Object>> knowledgeStates = nodes.stream()
-                .map(node -> toNodeState(node, masteryByNode.get(node.getId())))
+                .map(node -> toNodeState(node, masteryByNode.get(node.getId()),
+                        recentEvidenceByNode.getOrDefault(node.getId(), List.of())))
                 .sorted(Comparator
                         .comparing((Map<String, Object> item) -> ((Number) item.get("mastery")).doubleValue())
                         .thenComparing(item -> -((Number) item.get("importance")).intValue()))
@@ -75,7 +80,9 @@ public class LearningAlgorithmQueryService {
         return result;
     }
 
-    private Map<String, Object> toNodeState(KnowledgeGraphNode node, KnowledgeNodeMastery mastery) {
+    private Map<String, Object> toNodeState(KnowledgeGraphNode node,
+                                            KnowledgeNodeMastery mastery,
+                                            List<LearningEvidenceEvent> recentEvidence) {
         double masteryLevel = mastery != null && mastery.getMasteryLevel() != null ? mastery.getMasteryLevel() : 0.25;
         double confidence = mastery != null && mastery.getConfidence() != null ? mastery.getConfidence() : 0.0;
         int assessmentCount = mastery != null && mastery.getAssessmentCount() != null ? mastery.getAssessmentCount() : 0;
@@ -91,6 +98,41 @@ public class LearningAlgorithmQueryService {
         item.put("level", levelOf(masteryLevel, confidence));
         item.put("lastAssessedAt", mastery != null ? mastery.getLastAssessedAt() : null);
         item.put("explanationFacts", mastery != null ? mastery.getEvidenceSources() : null);
+        item.put("recentEvidence", recentEvidence.stream()
+                .limit(3)
+                .map(this::toEvidenceSummary)
+                .toList());
+        return item;
+    }
+
+    private Map<Long, List<LearningEvidenceEvent>> loadRecentEvidence(Long userId, Long spaceId, List<Long> nodeIds) {
+        if (nodeIds == null || nodeIds.isEmpty()) {
+            return Map.of();
+        }
+        List<LearningEvidenceEvent> events = evidenceEventMapper.selectList(
+                new LambdaQueryWrapper<LearningEvidenceEvent>()
+                        .eq(LearningEvidenceEvent::getUserId, userId)
+                        .eq(LearningEvidenceEvent::getSpaceId, spaceId)
+                        .in(LearningEvidenceEvent::getKnowledgeNodeId, nodeIds)
+                        .eq(LearningEvidenceEvent::getIsDeleted, 0)
+                        .orderByDesc(LearningEvidenceEvent::getCreateTime)
+                        .last("LIMIT 200"));
+        return events.stream().collect(Collectors.groupingBy(
+                LearningEvidenceEvent::getKnowledgeNodeId,
+                LinkedHashMap::new,
+                Collectors.toList()));
+    }
+
+    private Map<String, Object> toEvidenceSummary(LearningEvidenceEvent event) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("sourceType", event.getSourceType());
+        item.put("sourceId", event.getSourceId());
+        item.put("questionId", event.getQuestionId());
+        item.put("score", event.getScore());
+        item.put("isCorrect", event.getIsCorrect());
+        item.put("evidenceWeight", event.getEvidenceWeight());
+        item.put("errorType", event.getErrorType());
+        item.put("createdAt", event.getCreateTime());
         return item;
     }
 
