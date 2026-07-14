@@ -45,6 +45,11 @@ public class QueryTasksTool implements ToolHandler {
     }
 
     @Override
+    public ToolCategory.RiskLevel riskLevel() {
+        return ToolCategory.RiskLevel.READ;
+    }
+
+    @Override
     public Object execute(Object request, ToolInvokeContext context) {
         QueryTasksRequest req = (QueryTasksRequest) request;
         Long userId = context.getUserId();

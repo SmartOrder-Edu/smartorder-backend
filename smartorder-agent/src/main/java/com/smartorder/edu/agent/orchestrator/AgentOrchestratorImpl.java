@@ -367,7 +367,8 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
     private IntentRouteResult buildForcedRouteResult(AgentRunMode mode) {
         boolean needsPlanning = mode == AgentRunMode.PLAN_AND_EXECUTE;
         List<String> tools = needsPlanning ? List.of()
-                : List.of("getStudentProfile", "queryKnowledge", "queryTasks", "webSearch");
+                : List.of("getStudentProfile", "queryKnowledge", "queryTasks",
+                "listLearningSpaces", "resolveLearningSpace", "getLearningSpaceDashboard", "webSearch");
         return IntentRouteResult.builder()
                 .intentType(needsPlanning ? "目标规划（手动选择）" : "知识问答（手动选择）")
                 .intentEnum(needsPlanning ? IntentType.GOAL_PLANNING : IntentType.KNOWLEDGE_QA)
