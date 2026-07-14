@@ -30,6 +30,11 @@ public enum ResultCode {
     UPDATE_CHUNK_ERROR(801, "更新分片信息失败"),
     MERGE_CHUNK_ERROR(802, "合并分片失败"),
 
+    // ========== 文件夹导出相关错误码 ==========
+    EXPORT_TASK_EXISTS(803, "已有打包任务进行中，请等待完成"),
+    FOLDER_EMPTY(804, "文件夹为空，无法打包"),
+    EXPORT_TASK_NOT_FOUND(805, "导出任务不存在"),
+
     // ========== 资源广场相关错误码 ==========
     RESOURCE_SQUARE_FILE_NOT_BELONG(900, "文件不属于当前用户"),
     RESOURCE_SQUARE_NOT_FOUND(901, "广场资源不存在"),

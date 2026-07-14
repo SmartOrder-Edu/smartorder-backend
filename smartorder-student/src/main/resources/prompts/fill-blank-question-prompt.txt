@@ -1,31 +1,85 @@
 生成填空题，type 固定为 "填空题"。
 
-约束：
-1. 每题 1 到 3 个空，question 中每个空统一写成 ____。
-2. options 必须是空数组 []。
-3. answer 格式：字符串数组，按空的顺序排列答案，如 ["先进先出", "后进先出"]。
-4. answer 数组长度必须等于 question 中 ____ 的数量。
-5. analysis.correct_reason 按空位简述答案依据。
-6. analysis.wrong_reason 为空对象 {}。
-7. score 默认 5。
+# 题目约束
 
-# 最终输出
-只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
+1. 每题包含 1-3 个空，每个空统一使用 ____。
+2. options 固定为 []。
+3. answer 必须是字符串数组，并按空位出现顺序排列。
+4. answer 数量必须与题干中 ____ 的数量完全一致。
+5. 每个空只能考查一个明确知识点，不能存在多个含义不同但都成立的答案。
+6. 不得依赖题干之外的上下文。
+7. score 默认设置为 5。
 
-# 短示例
+# analysis 专属结构
+
+analysis 除通用字段外，必须包含 blank_analysis。
+
+blank_analysis 是数组，每个空包含：
+
 {
-  "questions": [{
-    "question": "数据结构中，队列遵循 ____ 原则，栈遵循 ____ 原则。",
-    "type": "填空题",
-    "options": [],
-    "answer": ["先进先出", "后进先出"],
-    "score": 5,
-    "difficulty": 3,
-    "knowledge_points": ["数据结构", "线性表"],
-    "ability_tags": ["数据结构基础"],
-    "analysis": {
-      "correct_reason": "队列从队头出队体现FIFO，栈从栈顶出栈体现LIFO。",
-      "wrong_reason": {}
+  "index": int,
+  "accepted_answers": string[],
+  "reason": string,
+  "common_errors": [
+    {
+      "example": string,
+      "reason": string,
+      "correction": string
     }
-  }]
+  ]
+}
+
+# blank_analysis 规则
+
+1. blank_analysis 数量必须与 answer 数量一致。
+2. index 必须从 1 开始连续递增，不得重复或缺失。
+3. accepted_answers 第一项必须等于 answer 对应位置的标准答案。
+4. accepted_answers 最多 3 个，只允许含义完全等价的写法、缩写或大小写变体。
+5. 不得把部分正确、范围更宽或概念相近的词加入 accepted_answers。
+6. reason 必须结合当前空位所在句子，说明为什么应填写该答案。
+7. 每空最多生成 1 个高概率 common_errors，整题至少生成 1 个。
+8. 不得为了凑数量编造不真实的错误答案。
+9. common_errors.example 不能与 accepted_answers 中任何答案等价。
+10. common_errors.reason 说明错误答案混淆了什么知识。
+11. correction 给出正确的辨析方式。
+
+# analysis 示例
+
+{
+  "schema_version": 2,
+  "summary": "本题考查队列和栈在元素访问顺序上的本质区别。",
+  "reasoning_steps": [
+    "先回忆队列的入队和出队位置",
+    "再回忆栈顶元素的操作顺序",
+    "根据两种结构的访问规则完成填空"
+  ],
+  "blank_analysis": [
+    {
+      "index": 1,
+      "accepted_answers": ["先进先出", "FIFO"],
+      "reason": "队列从队尾加入元素、从队头移除元素，因此最早进入的元素最先离开。",
+      "common_errors": [
+        {
+          "example": "后进先出",
+          "reason": "后进先出描述的是栈，说明混淆了队列和栈的访问顺序。",
+          "correction": "队列是先进先出，栈才是后进先出。"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "accepted_answers": ["后进先出", "LIFO"],
+      "reason": "栈主要操作栈顶，最后压入栈顶的元素会最先被弹出。",
+      "common_errors": [
+        {
+          "example": "先进先出",
+          "reason": "先进先出描述的是队列，不符合栈顶元素后入先出的特点。",
+          "correction": "判断栈的顺序时，应关注最后压入栈顶的元素。"
+        }
+      ]
+    }
+  ],
+  "common_misconceptions": [
+    "记反栈和队列的访问顺序"
+  ]
 }
