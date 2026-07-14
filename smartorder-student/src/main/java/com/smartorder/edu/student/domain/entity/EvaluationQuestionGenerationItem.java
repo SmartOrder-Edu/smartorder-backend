@@ -45,6 +45,8 @@ public class EvaluationQuestionGenerationItem {
     private Integer retryCount;
     /** 最大重试次数 */
     private Integer maxRetryCount;
+    /** AI生成结果快照 */
+    private String generatedQuestion;
     /** 大模型原始响应（成功时记录，便于回溯） */
     private String rawResponse;
     /** 错误信息 */

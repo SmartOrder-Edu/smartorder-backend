@@ -11,7 +11,7 @@ import lombok.Getter;
 public enum ResultCode {
     TEST(111,"测试枚举"),
     BUSINESS_ERROR(500,"业务异常"), VALIDATION_ERROR(501,"验证异常"),
-    SYSTEM_ERROR(600,"系统异常"), DUPLICATE_KEY_ERROR(601,"数据库唯一冲突异常"), UNAUTHORIZED(401,"未登录"), EMAIL_SEND_TOO_FREQUENTLY(602,"请不要频繁发送验证码"),
+    SYSTEM_ERROR(600,"系统异常"), DUPLICATE_KEY_ERROR(601,"数据库唯一冲突异常"), UNAUTHORIZED(401,"未登录"), EMAIL_SEND_TOO_FREQUENTLY(602,"请不要频繁发送验证码"), REQUEST_TOO_FREQUENTLY(603,"请求过于频繁，请稍后再试"),
     FORBIDDEN(403,"权限不足"), NOT_FOUND(404, "资源未找到"),
 
 

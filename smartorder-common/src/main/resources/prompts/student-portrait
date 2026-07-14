@@ -448,7 +448,7 @@ learningStatus: NOT_STARTED / LEARNING / PRACTICING / REVIEWING / STUCK / NEED_H
 7. 学生说"我已经完全掌握链表了"，不能直接把掌握度设成 100，应记录 selfReportedLevel，然后通过练习验证。
 
 ## 大模型不能直接决定的字段
-- masteryScore、accuracyRate、studyMinutes、completionRate、attemptCount、profileCompleteness、profileConfidenceScore
+- masteryScore、accuracyRate、studyMinutes、completionRate、attemptCount、profileConfidenceScore
 - 这些应由后端程序根据事实计算。
 - 大模型适合生成：错误原因假设、学习困难描述、学习策略建议、画像摘要、对话信息抽取、下一步学习建议。
 

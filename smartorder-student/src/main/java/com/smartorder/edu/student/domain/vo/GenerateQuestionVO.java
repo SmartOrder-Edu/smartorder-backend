@@ -55,7 +55,6 @@ public class GenerateQuestionVO {
         GenerateQuestionVO vo = new GenerateQuestionVO();
         vo.setLearningSpaceId(dto.getLearningSpaceId());
         vo.setChapterId(dto.getChapterId());
-        vo.setKnowledgePointId(dto.getKnowledgePointId());
         vo.setCourseName(dto.getCourseName());
         vo.setTopic(dto.getTopic());
         vo.setTotalQuestionCount(questionList.size());
@@ -163,9 +162,6 @@ public class GenerateQuestionVO {
         /** 章节ID */
         private Long chapterId;
 
-        /** 知识点ID */
-        private Long knowledgePointId;
-
         /** 题型编码 */
         private String questionType;
 
@@ -185,22 +181,22 @@ public class GenerateQuestionVO {
         private String stem;
 
         /** 选项JSON，选择题为 A/B/C/D，填空题和判断题通常为空数组 */
-        private List<Map<String, Object>> optionsJson;
+        private List<Map<String, Object>> options;
 
         /** 标准答案JSON原始结构 */
-        private Map<String, Object> answerJson;
+        private Map<String, Object> correctAnswer;
 
-        /** 标准答案展示值，按题型从 answerJson 中提取 */
+        /** 标准答案展示值，按题型从 correctAnswer 中提取 */
         private Object standardAnswer;
 
         /** 题目解析 */
         private String explanation;
 
         /** 常见错误分析 */
-        private List<Map<String, Object>> commonMistakesJson;
+        private List<Map<String, Object>> commonMistakes;
 
         /** 标签 */
-        private List<String> tagsJson;
+        private List<String> tags;
 
         /** 知识点标签 */
         private List<String> knowledgePoints;
@@ -217,6 +213,9 @@ public class GenerateQuestionVO {
         /** 状态 */
         private Integer status;
 
+        /** 审核状态 */
+        private String reviewStatus;
+
         /** 创建时间 */
         private LocalDateTime createdAt;
 
@@ -229,24 +228,24 @@ public class GenerateQuestionVO {
             vo.setQuestionCode(question.getQuestionCode());
             vo.setLearningSpaceId(question.getLearningSpaceId());
             vo.setChapterId(question.getChapterId());
-            vo.setKnowledgePointId(question.getKnowledgePointId());
             vo.setQuestionType(question.getQuestionType());
             vo.setQuestionTypeName(resolveQuestionTypeName(question.getQuestionType()));
             vo.setDifficulty(question.getDifficulty());
             vo.setScore(question.getScore());
             vo.setAbilityDimension(question.getAbilityDimension());
             vo.setStem(question.getStem());
-            vo.setOptionsJson(question.getOptionsJson());
-            vo.setAnswerJson(question.getAnswerJson());
-            vo.setStandardAnswer(resolveStandardAnswer(question.getAnswerJson()));
+            vo.setOptions(question.getOptions());
+            vo.setCorrectAnswer(question.getCorrectAnswer());
+            vo.setStandardAnswer(resolveStandardAnswer(question.getCorrectAnswer()));
             vo.setExplanation(question.getExplanation());
-            vo.setCommonMistakesJson(question.getCommonMistakesJson());
-            vo.setTagsJson(question.getTagsJson());
-            vo.setKnowledgePoints(question.getKnowledgePointsJson());
+            vo.setCommonMistakes(question.getCommonMistakes());
+            vo.setTags(question.getTags());
+            vo.setKnowledgePoints(question.getKnowledgePoints());
             vo.setAbilityTags(question.getAbilityTagsJson());
             vo.setAnalysis(question.getAnalysisJson());
             vo.setGenerationSource(question.getGenerationSource());
             vo.setStatus(question.getStatus());
+            vo.setReviewStatus(question.getReviewStatus());
             vo.setCreatedAt(question.getCreatedAt());
             vo.setUpdatedAt(question.getUpdatedAt());
             return vo;

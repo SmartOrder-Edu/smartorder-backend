@@ -5,7 +5,7 @@
 2. answer 格式：单一字母字符串，如 "A"、"B"、"C"、"D"，且只能有 1 个正确选项。
 3. 不要出现"以上都对""以上都不对""无法判断"等选项。
 4. 干扰项要合理、有迷惑性，但严格意义下不能成立。
-5. analysis.correct_reason 简短说明正确项依据。
+5. analysis.correct_reason 为对象，key 为正确选项字母（如 "B"），value 为该选项的判断依据说明。
 6. analysis.wrong_reason 为对象，key 为错误选项字母，value 为该选项的错误原因，至少覆盖 2 个错误选项。
 7. score 默认 5。
 
@@ -24,7 +24,9 @@
     "knowledge_points": ["数据结构", "栈"],
     "ability_tags": ["数据结构基础", "概念理解"],
     "analysis": {
-      "correct_reason": "栈遵循后进先出（LIFO），最后入栈的元素最先出栈。",
+      "correct_reason": {
+        "B": "栈遵循后进先出（LIFO），最后入栈的元素最先出栈。"
+      },
       "wrong_reason": {
         "A": "把栈和队列混淆，队列才是先进先出",
         "C": "误以为栈可任意下标访问，栈只能访问栈顶",

@@ -36,6 +36,7 @@ class AgentOrchestratorImplTest {
         AgentConversationAttachmentService attachmentService = mock(AgentConversationAttachmentService.class);
         ProfileUpdateCoordinator profileUpdateCoordinator = mock(ProfileUpdateCoordinator.class);
         AgentRunSupervisor runSupervisor = mock(AgentRunSupervisor.class);
+        ProfileUpdateCoordinator profileUpdateCoordinator = mock(ProfileUpdateCoordinator.class);
         AgentOrchestratorImpl orchestrator = new AgentOrchestratorImpl(
                 routeService,
                 reActEngine,

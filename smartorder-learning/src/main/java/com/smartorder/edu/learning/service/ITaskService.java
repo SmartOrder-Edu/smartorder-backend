@@ -54,4 +54,9 @@ public interface ITaskService {
      * 查询指定学习空间的逾期任务
      */
     List<Task> getOverdueBySpaceId(Long spaceId, Long userId);
+
+    /**
+     * 提交/完成指定的任务
+     */
+    void completeTask(Long taskId, Long userId);
 }

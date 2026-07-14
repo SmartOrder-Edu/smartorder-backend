@@ -2,7 +2,7 @@ package com.smartorder.edu.student.service;
 
 import com.smartorder.edu.student.domain.dto.GenerateQuestionDTO;
 import com.smartorder.edu.student.domain.vo.EvaluationQuestionVO;
-import com.smartorder.edu.student.domain.vo.EvaluationTaskVO;
+import com.smartorder.edu.student.domain.entity.EvaluationSession;
 import com.smartorder.edu.student.domain.vo.GenerateQuestionVO;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -21,5 +21,9 @@ public interface IEvaluationQuestionService {
      */
     List<EvaluationQuestionVO> listQuestions(Long learningSpaceId, Integer limit, Long taskId);
 
-    List<EvaluationTaskVO> listQuestionsTaskList(Long learningSpaceId, Long currentUserId);
+    /**
+     * 查询测评任务（Session）列表，用于前端展示可参与的测评。
+     * <p>返回完整 EvaluationSession，前端根据 status 判断是否已完成。</p>
+     */
+    List<EvaluationSession> listQuestionsTaskList(Long learningSpaceId, Long currentUserId);
 }
