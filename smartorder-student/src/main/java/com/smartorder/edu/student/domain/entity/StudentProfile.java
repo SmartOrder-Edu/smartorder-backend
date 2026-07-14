@@ -74,7 +74,9 @@ public class StudentProfile {
     /** 根据结构化画像生成的自然语言摘要，仅作为大模型上下文缓存 */
     private String profileSummary;
 
-
+    /** 画像完整度（实时计算，不持久化，提供给前端使用） */
+    @TableField(exist = false)
+    private Integer profileCompleteness;
 
     /** 整份学生画像可信度，范围0到100 */
     private BigDecimal profileConfidenceScore;
