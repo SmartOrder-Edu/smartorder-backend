@@ -3,10 +3,13 @@ package com.smartorder.edu.student.service.impl;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.smartorder.edu.common.constant.ResultCode;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.common.service.IUserService;
 import com.smartorder.edu.common.util.AliOSSUtils;
 import com.smartorder.edu.student.domain.dto.FileFolderDTO;
+import com.smartorder.edu.student.domain.dto.FolderExportTask;
 import com.smartorder.edu.student.domain.entity.FileFolder;
 import com.smartorder.edu.student.domain.entity.FileResource;
 import com.smartorder.edu.student.domain.vo.FileFolderContentVO;
@@ -19,16 +22,24 @@ import com.smartorder.edu.student.service.IUserFileQuotaService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.context.ApplicationContext;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import jakarta.validation.constraints.NotNull;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @Slf4j
 @Service
@@ -40,6 +51,18 @@ public class FileFolderServiceImpl implements IFileFolderService {
     private final IUserService userService;
     private final AliOSSUtils aliOSSUtils;
     private final IUserFileQuotaService userFileQuotaService;
+    private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper;
+    private final ApplicationContext applicationContext;
+
+    /** Redis key 前缀 */
+    private static final String EXPORT_TASK_KEY = "yun:export:task:";
+    private static final String EXPORT_LOCK_KEY = "yun:export:lock:";
+
+    /** 压缩缓冲区大小：5MB */
+    private static final int BUFFER_SIZE = 5 * 1024 * 1024;
+    /** Redis TTL：25h（比 OSS 24h 生命周期多 1h） */
+    private static final long TASK_TTL_HOURS = 25;
 
     @Override
     public FileFolderContentVO getFolderTree(Long userId) {
@@ -474,5 +497,308 @@ public class FileFolderServiceImpl implements IFileFolderService {
                 moveFile(fileVO.getId(), targetFolderId, userId);
             }
         }
+    }
+
+    // ==================== 文件夹导出 ====================
+
+    @Override
+    public String exportFolder(Long folderId, Long userId) {
+        // 1. 并发锁检查：每用户最多 1 个导出任务
+        String lockKey = EXPORT_LOCK_KEY + userId;
+        Boolean locked = redisTemplate.opsForValue()
+                .setIfAbsent(lockKey, "1", TASK_TTL_HOURS, TimeUnit.HOURS);
+        if (Boolean.FALSE.equals(locked)) {
+            throw new BusinessException(ResultCode.EXPORT_TASK_EXISTS.getMsg());
+        }
+
+        // 2. 校验文件夹存在且属于当前用户
+        FileFolder folder = null;
+        String folderName = "根目录";
+        if (folderId != 0) {
+            folder = fileFolderMapper.selectById(folderId);
+            if (folder == null) {
+                releaseExportLock(userId);
+                throw new BusinessException("文件夹不存在");
+            }
+            if (!folder.getUserId().equals(userId)) {
+                releaseExportLock(userId);
+                throw new BusinessException("无权访问该文件夹");
+            }
+            folderName = folder.getFolderName();
+        }
+
+        // 3. BFS 收集所有子孙文件夹 ID
+        List<Long> allFolderIds = new ArrayList<>();
+        allFolderIds.add(folderId);
+        if (folderId != 0) {
+            allFolderIds.addAll(findAllChildFolderIds(folderId, userId));
+        }
+
+        // 4. 查询所有文件
+        List<FileResource> allFiles = findAllChildFileIds(allFolderIds, userId);
+        if (allFiles.isEmpty()) {
+            releaseExportLock(userId);
+            throw new BusinessException(ResultCode.FOLDER_EMPTY.getMsg());
+        }
+
+        // 5. 计算总大小
+        long totalBytes = allFiles.stream()
+                .filter(f -> f.getFileSize() != null)
+                .mapToLong(FileResource::getFileSize)
+                .sum();
+
+        // 6. 生成 taskId 并写 Redis
+        String taskId = String.valueOf(IdUtil.getSnowflakeNextId());
+        FolderExportTask task = new FolderExportTask();
+        task.setTaskId(taskId);
+        task.setUserId(userId);
+        task.setFolderId(folderId);
+        task.setFolderName(folderName);
+        task.setStatus(FolderExportTask.STATUS_PENDING);
+        task.setTotalFiles(allFiles.size());
+        task.setTotalBytes(totalBytes);
+        task.setCreatedAt(LocalDateTime.now().toString());
+
+        String taskKey = EXPORT_TASK_KEY + taskId;
+        redisTemplate.opsForValue().set(taskKey, task.toJson(), TASK_TTL_HOURS, TimeUnit.HOURS);
+
+        // 7. 通过 ApplicationContext 获取代理以触发 @Async
+        applicationContext.getBean(FileFolderServiceImpl.class).executeExport(taskId);
+
+        return taskId;
+    }
+
+    /**
+     * 异步执行压缩导出（由 Spring AOP 代理调用以启用 @Async）
+     */
+    @Async("exportExecutor")
+    public void executeExport(String taskId) {
+        String taskKey = EXPORT_TASK_KEY + taskId;
+        FolderExportTask task = readTaskFromRedis(taskKey);
+        if (task == null) return;
+
+        Long userId = task.getUserId();
+        String ossObjectKey = "yun/temp/" + userId + "/" + taskId + ".zip";
+        String uploadId = null;
+        List<com.aliyun.oss.model.PartETag> partETags = new java.util.ArrayList<>();
+        int partNumber = 1;
+
+        try {
+            // 1. 设置 PROCESSING
+            task.setStatus(FolderExportTask.STATUS_PROCESSING);
+            updateTaskInRedis(taskKey, task);
+
+            // 2. BFS 收集文件夹和文件
+            List<Long> allFolderIds = new ArrayList<>();
+            allFolderIds.add(task.getFolderId());
+            if (task.getFolderId() != 0) {
+                allFolderIds.addAll(findAllChildFolderIds(task.getFolderId(), userId));
+            }
+            List<FileResource> allFiles = findAllChildFileIds(allFolderIds, userId);
+
+            // 3. 构建 folderId → 相对路径 映射
+            Map<Long, String> folderPathMap = buildFolderPathMap(allFolderIds, task.getFolderId(), task.getFolderName());
+
+            // 4. 初始化 OSS 分片上传
+            uploadId = aliOSSUtils.initiateMultipartUpload(ossObjectKey);
+
+            // 5. 逐文件压缩并分片上传
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream(BUFFER_SIZE);
+            ZipOutputStream zos = new ZipOutputStream(buffer);
+
+            for (FileResource file : allFiles) {
+                // 检查取消标志
+                FolderExportTask current = readTaskFromRedis(taskKey);
+                if (current != null && FolderExportTask.STATUS_CANCELLED.equals(current.getStatus())) {
+                    // 取消：清理 OSS 分片、Redis、锁
+                    if (uploadId != null) {
+                        aliOSSUtils.abortMultipartUpload(ossObjectKey, uploadId);
+                    }
+                    redisTemplate.delete(taskKey);
+                    releaseExportLock(userId);
+                    zos.close();
+                    return;
+                }
+
+                // 下载文件流
+                if (file.getFileUrl() == null || file.getFileUrl().isEmpty()) {
+                    continue;
+                }
+
+                try (InputStream fileStream = aliOSSUtils.downloadFile(file.getFileUrl())) {
+                    // 构建 zip 内路径
+                    String folderPath = folderPathMap.getOrDefault(file.getFolderId(), "");
+                    String entryName;
+                    if (folderPath.isEmpty()) {
+                        entryName = task.getFolderName() + "/" + file.getFileName();
+                    } else {
+                        entryName = task.getFolderName() + "/" + folderPath + "/" + file.getFileName();
+                    }
+
+                    ZipEntry entry = new ZipEntry(entryName);
+                    zos.putNextEntry(entry);
+
+                    byte[] readBuf = new byte[8192];
+                    int len;
+                    while ((len = fileStream.read(readBuf)) != -1) {
+                        zos.write(readBuf, 0, len);
+                        // 缓冲区满了就上传一个分片
+                        if (buffer.size() >= BUFFER_SIZE) {
+                            zos.closeEntry();
+                            zos.flush();
+                            com.aliyun.oss.model.PartETag partETag =
+                                    aliOSSUtils.uploadPart(ossObjectKey, uploadId, partNumber,
+                                            buffer.toByteArray());
+                            partETags.add(partETag);
+                            partNumber++;
+                            buffer.reset();
+                        }
+                    }
+                    zos.closeEntry();
+                } catch (Exception e) {
+                    log.warn("跳过无法下载的文件: fileId={}, fileName={}, error={}",
+                            file.getId(), file.getFileName(), e.getMessage());
+                }
+
+                // 更新 Redis 进度
+                task.setProcessedFiles(task.getProcessedFiles() + 1);
+                if (file.getFileSize() != null) {
+                    task.setProcessedBytes(task.getProcessedBytes() + file.getFileSize());
+                }
+                updateTaskInRedis(taskKey, task);
+            }
+
+            // 6. 刷新剩余缓冲区
+            zos.flush();
+            zos.close();
+            if (buffer.size() > 0) {
+                com.aliyun.oss.model.PartETag partETag =
+                        aliOSSUtils.uploadPart(ossObjectKey, uploadId, partNumber, buffer.toByteArray());
+                partETags.add(partETag);
+            }
+
+            // 7. 合并分片
+            if (partETags.isEmpty()) {
+                // 没有文件或所有文件都跳过了
+                aliOSSUtils.abortMultipartUpload(ossObjectKey, uploadId);
+                task.setStatus(FolderExportTask.STATUS_FAILED);
+                task.setErrorMessage("没有可下载的文件");
+                updateTaskInRedis(taskKey, task);
+            } else {
+                aliOSSUtils.completeMultipartUpload(ossObjectKey, uploadId, partETags);
+                task.setStatus(FolderExportTask.STATUS_COMPLETED);
+                task.setOssObjectKey(ossObjectKey);
+                updateTaskInRedis(taskKey, task);
+            }
+
+        } catch (Exception e) {
+            log.error("导出文件夹失败, taskId={}", taskId, e);
+            // 异常：标记 FAILED + 清理 OSS 分片
+            if (uploadId != null) {
+                try {
+                    aliOSSUtils.abortMultipartUpload(ossObjectKey, uploadId);
+                } catch (Exception ignored) {}
+            }
+            task.setStatus(FolderExportTask.STATUS_FAILED);
+            task.setErrorMessage(e.getMessage());
+            updateTaskInRedis(taskKey, task);
+        } finally {
+            // 释放并发锁
+            releaseExportLock(userId);
+        }
+    }
+
+    @Override
+    public FolderExportTask getExportProgress(String taskId, Long userId) {
+        FolderExportTask task = readTaskFromRedis(EXPORT_TASK_KEY + taskId);
+        if (task == null) {
+            throw new BusinessException(ResultCode.EXPORT_TASK_NOT_FOUND.getMsg());
+        }
+        if (!task.getUserId().equals(userId)) {
+            throw new BusinessException("无权访问该任务");
+        }
+        return task;
+    }
+
+    @Override
+    public void cancelExport(String taskId, Long userId) {
+        FolderExportTask task = readTaskFromRedis(EXPORT_TASK_KEY + taskId);
+        if (task == null) {
+            throw new BusinessException(ResultCode.EXPORT_TASK_NOT_FOUND.getMsg());
+        }
+        if (!task.getUserId().equals(userId)) {
+            throw new BusinessException("无权操作该任务");
+        }
+        // 仅处理中的任务可以取消
+        if (FolderExportTask.STATUS_PROCESSING.equals(task.getStatus())
+                || FolderExportTask.STATUS_PENDING.equals(task.getStatus())) {
+            task.setStatus(FolderExportTask.STATUS_CANCELLED);
+            updateTaskInRedis(EXPORT_TASK_KEY + taskId, task);
+        }
+    }
+
+    @Override
+    public String getExportDownloadUrl(String taskId, Long userId) {
+        FolderExportTask task = readTaskFromRedis(EXPORT_TASK_KEY + taskId);
+        if (task == null) {
+            throw new BusinessException(ResultCode.EXPORT_TASK_NOT_FOUND.getMsg());
+        }
+        if (!task.getUserId().equals(userId)) {
+            throw new BusinessException("无权访问该任务");
+        }
+        if (!FolderExportTask.STATUS_COMPLETED.equals(task.getStatus())) {
+            throw new BusinessException("任务尚未完成，无法下载");
+        }
+        // 生成 5 分钟预签名 URL
+        return aliOSSUtils.getSignedUrlWithExpiry(task.getOssObjectKey(), 300_000);
+    }
+
+    // ==================== 导出私有辅助方法 ====================
+
+    private FolderExportTask readTaskFromRedis(String taskKey) {
+        String json = redisTemplate.opsForValue().get(taskKey);
+        if (json == null) return null;
+        try {
+            return FolderExportTask.fromJson(json);
+        } catch (Exception e) {
+            log.error("反序列化导出任务失败, key={}", taskKey, e);
+            return null;
+        }
+    }
+
+    private void updateTaskInRedis(String taskKey, FolderExportTask task) {
+        redisTemplate.opsForValue().set(taskKey, task.toJson(), TASK_TTL_HOURS, TimeUnit.HOURS);
+    }
+
+    private void releaseExportLock(Long userId) {
+        redisTemplate.delete(EXPORT_LOCK_KEY + userId);
+    }
+
+    /**
+     * 构建 folderId → 相对路径 的映射（从根文件夹名称下一级开始）
+     */
+    private Map<Long, String> buildFolderPathMap(List<Long> folderIds, Long rootFolderId, String rootFolderName) {
+        Map<Long, String> pathMap = new HashMap<>();
+        // 根目录本身不设路径
+        for (Long folderId : folderIds) {
+            if (folderId.equals(rootFolderId)) continue;
+            FileFolder folder = fileFolderMapper.selectById(folderId);
+            if (folder == null) continue;
+            List<String> segments = new ArrayList<>();
+            Long currentParentId = folder.getParentId();
+            while (currentParentId != null && currentParentId != 0 && !currentParentId.equals(rootFolderId)) {
+                FileFolder parent = fileFolderMapper.selectById(currentParentId);
+                if (parent != null) {
+                    segments.add(0, parent.getFolderName());
+                    currentParentId = parent.getParentId();
+                } else {
+                    break;
+                }
+            }
+            if (!segments.isEmpty()) {
+                pathMap.put(folderId, String.join("/", segments));
+            }
+        }
+        return pathMap;
     }
 }
