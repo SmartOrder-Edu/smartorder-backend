@@ -147,6 +147,12 @@ public class IntentRouteService {
             "学得怎么样", "进度如何", "学习报告"
     );
 
+    // 学习空间查询关键词
+    private static final List<String> SPACE_KEYWORDS = List.of(
+            "学习空间", "空间状态", "空间进度", "我的空间", "有哪些空间",
+            "哪个空间", "进入空间", "这个空间", "那门课", "这门课"
+    );
+
     // 任务管理关键词
     private static final List<String> TASK_KEYWORDS = List.of(
             "添加任务", "标记完成", "修改任务", "今天学什么",
@@ -199,18 +205,28 @@ public class IntentRouteService {
         // 5. 进度查询
         if (containsAny(message, PROGRESS_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.PROGRESS_REVIEW, AgentRunMode.REACT,
-                    0.85, List.of("queryLearningProgress", "getStudentProfile", "askUser"),
+                    0.85, List.of("queryLearningProgress", "listLearningSpaces",
+                            "resolveLearningSpace", "getLearningSpaceDashboard", "getStudentProfile", "askUser"),
                     "用户查询学习进度");
         }
 
-        // 6. 任务管理
+        // 6. 学习空间查询
+        if (containsAny(message, SPACE_KEYWORDS.toArray(new String[0]))) {
+            return buildKeywordResult(IntentType.PROGRESS_REVIEW, AgentRunMode.REACT,
+                    0.86, List.of("listLearningSpaces", "resolveLearningSpace",
+                            "getLearningSpaceDashboard", "queryTasks", "askUser"),
+                    "用户查询学习空间状态");
+        }
+
+        // 7. 任务管理
         if (containsAny(message, TASK_KEYWORDS.toArray(new String[0]))) {
             return buildKeywordResult(IntentType.TASK_MANAGEMENT, AgentRunMode.REACT,
-                    0.85, List.of("queryTasks", "askUser"),
+                    0.85, List.of("queryTasks", "listLearningSpaces",
+                            "resolveLearningSpace", "getLearningSpaceDashboard", "askUser"),
                     "用户管理学习任务");
         }
 
-        // 7. 简单知识问答（短消息 + 定义类关键词）
+        // 8. 简单知识问答（短消息 + 定义类关键词）
         if (message.length() <= 30 && containsAny(message, "什么是", "解释一下", "定义")) {
             return buildKeywordResult(IntentType.KNOWLEDGE_QA, AgentRunMode.REACT,
                     0.80, List.of("ragRetrieve", "askUser"),
@@ -309,9 +325,11 @@ public class IntentRouteService {
 
         return switch (intent) {
             case PROBLEM_HELP -> List.of("getStudentProfile", "queryKnowledge", "queryTasks", "webSearch", "askUser");
-            case PROGRESS_REVIEW -> List.of("queryLearningProgress", "getStudentProfile", "askUser");
+            case PROGRESS_REVIEW -> List.of("queryLearningProgress", "listLearningSpaces",
+                    "resolveLearningSpace", "getLearningSpaceDashboard", "getStudentProfile", "askUser");
             case KNOWLEDGE_QA, DIAGRAM_GENERATION, UNKNOWN -> List.of("webSearch", "ragRetrieve", "askUser");
-            case TASK_MANAGEMENT -> List.of("queryTasks", "manageLearningTask", "askUser");
+            case TASK_MANAGEMENT -> List.of("queryTasks", "listLearningSpaces",
+                    "resolveLearningSpace", "getLearningSpaceDashboard", "askUser");
             default -> List.of(); // GOAL_PLANNING, PLAN_CONFIRMATION, RESOURCE_GENERATION → PLAN_AND_EXECUTE
         };
     }
