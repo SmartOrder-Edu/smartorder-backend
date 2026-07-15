@@ -120,4 +120,12 @@ public interface IUserService {
      * @return 用户实体，不存在返回 null
      */
     User getUserById(Long userId);
+
+    /**
+     * 修改用户邮箱（验证码校验 + 防重复）
+     * @param userId 用户ID
+     * @param newEmail 新邮箱
+     * @param verificationCode 邮箱验证码
+     */
+    void changeEmail(Long userId, String newEmail, String verificationCode);
 }

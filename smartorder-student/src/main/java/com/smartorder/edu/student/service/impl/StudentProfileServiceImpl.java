@@ -17,6 +17,7 @@ import com.smartorder.edu.student.domain.dto.student.LearningPreferenceDTO;
 import com.smartorder.edu.student.domain.dto.student.MetacognitiveProfileDTO;
 import com.smartorder.edu.student.domain.dto.student.dto.SubjectProfilesDTO;
 import com.smartorder.edu.student.domain.entity.StudentProfile;
+import com.smartorder.edu.student.domain.support.AbilityProfileMigration;
 import com.smartorder.edu.student.mapper.StudentProfileMapper;
 import com.smartorder.edu.student.service.IStudentProfileService;
 import lombok.extern.slf4j.Slf4j;
@@ -88,6 +89,11 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
             prepareForPersistence(profile);
             persist(profile);
             log.info("未查询到画像，已自动为用户 {} 创建并保存初始空学生画像", userId);
+        } else if (AbilityProfileMigration.requiresMigration(profile.getAbilityProfile())) {
+            profile.setAbilityProfile(AbilityProfileMigration.migrate(profile.getAbilityProfile()));
+            prepareForPersistence(profile);
+            persist(profile);
+            log.info("已将用户 {} 的综合能力画像迁移为六维模型", userId);
         }
         profile.setProfileCompleteness(calculateCompleteness(profile));
         return profile;
@@ -555,6 +561,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
 
     /** 持久化前的预处理：初始化默认值，精度处理 */
     private void prepareForPersistence(StudentProfile profile) {
+        profile.setAbilityProfile(AbilityProfileMigration.migrate(profile.getAbilityProfile()));
         if (profile.getProfileConfidenceScore() == null) {
             profile.setProfileConfidenceScore(new BigDecimal("0.00"));
         } else {

@@ -3,6 +3,7 @@ package com.smartorder.edu.common.controller;
 
 import com.smartorder.edu.common.constant.ResultCode;
 import com.smartorder.edu.common.model.dto.BindAuthDTO;
+import com.smartorder.edu.common.model.dto.ChangeEmailDTO;
 import com.smartorder.edu.common.model.dto.UserDTO;
 import com.smartorder.edu.common.model.vo.AuthIdentityVO;
 import com.smartorder.edu.common.model.vo.Result;
@@ -123,6 +124,21 @@ public class UserController {
         return Result.success("用户信息更新成功");
     }
 
+
+    /**
+     * 修改邮箱（需验证码）
+     * @param changeEmailDTO 包含新邮箱和验证码
+     * @return Result 结果
+     */
+    @PostMapping("/email")
+    @Operation(summary = "修改邮箱", description = "通过邮箱验证码修改绑定邮箱")
+    public Result<String> changeEmail(@RequestBody ChangeEmailDTO changeEmailDTO) {
+        Claims claims = ThreadLocalUtils.get();
+        Long userId = claims.get("userId", Long.class);
+        userService.changeEmail(userId, changeEmailDTO.getNewEmail(), changeEmailDTO.getVerificationCode());
+        log.info("用户 {} 邮箱修改成功", userId);
+        return Result.success(null, "邮箱修改成功");
+    }
 
     @PutMapping("/avatar")
     public Result<String> updateAvatar(@RequestParam("file") MultipartFile avatar){

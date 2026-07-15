@@ -43,7 +43,7 @@ public class StudentProfile {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private LearningGoalsDTO learningGoals;
 
-    /** 综合能力：概念理解、问题分析、算法设计、代码实现、调试及知识迁移能力 */
+    /** 综合能力：知识理解、问题分析、方案设计、实践应用、纠错反思及迁移创新能力 */
     @TableField(typeHandler = JacksonTypeHandler.class)
     private AbilityProfileDTO abilityProfile;
 

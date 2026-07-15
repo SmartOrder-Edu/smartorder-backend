@@ -2,7 +2,7 @@ package com.smartorder.edu.student.service;
 
 import com.smartorder.edu.student.domain.entity.EvaluationSession;
 import com.smartorder.edu.student.domain.dto.SubmitAnswersDTO;
-import com.smartorder.edu.student.domain.vo.EvaluationQuestionVO;
+import com.smartorder.edu.student.domain.vo.SessionQuestionVO;
 import com.smartorder.edu.student.domain.vo.SessionResultVO;
 import com.smartorder.edu.student.domain.vo.SessionReportVO;
 import com.smartorder.edu.student.domain.vo.DraftAnswerVO;
@@ -26,7 +26,7 @@ public interface IEvaluationSessionService {
     void startSession(Long sessionId, Long userId);
 
     /** 获取试卷题目列表 */
-    List<EvaluationQuestionVO> getSessionQuestions(Long sessionId, Long userId);
+    List<SessionQuestionVO> getSessionQuestions(Long sessionId, Long userId);
 
     /** 提交答案（批量判分 + 更新 session 分数） */
     SessionResultVO submitAnswers(Long sessionId, Long userId, SubmitAnswersDTO dto);

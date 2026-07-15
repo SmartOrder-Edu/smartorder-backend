@@ -6,6 +6,7 @@ import com.smartorder.edu.student.domain.dto.GenerateQuestionDTO;
 import com.smartorder.edu.student.domain.dto.SubmitAnswersDTO;
 import com.smartorder.edu.student.domain.vo.EvaluationQuestionVO;
 import com.smartorder.edu.student.domain.entity.EvaluationSession;
+import com.smartorder.edu.student.domain.vo.SessionQuestionVO;
 import com.smartorder.edu.student.domain.vo.SessionResultVO;
 import com.smartorder.edu.student.domain.vo.SessionReportVO;
 import com.smartorder.edu.student.domain.vo.DraftAnswerVO;
@@ -101,7 +102,7 @@ public class EvaluationQuestionController {
      */
     @GetMapping("/session/{id}/questions")
     @Operation(summary = "获取试卷题目列表", description = "根据测评会话ID获取该试卷的所有题目")
-    public Result<List<EvaluationQuestionVO>> getSessionQuestions(@PathVariable Long id) throws Exception {
+    public Result<List<SessionQuestionVO>> getSessionQuestions(@PathVariable Long id) throws Exception {
         Long userId = ThreadLocalUtils.getCurrentUserId();
         return Result.success(sessionService.getSessionQuestions(id, userId));
     }

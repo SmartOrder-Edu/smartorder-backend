@@ -157,17 +157,17 @@
 
 ## 3. ability_profile（综合能力）
 
-综合能力是学生跨知识点、跨任务表现出的能力，共 9 项：
-CONCEPT_UNDERSTANDING（概念理解）、ABSTRACTION_MODELING（抽象建模）、PROBLEM_DECOMPOSITION（问题拆解）、ALGORITHM_DESIGN（算法设计）、COMPLEXITY_ANALYSIS（复杂度分析）、CODING_IMPLEMENTATION（代码实现）、DEBUGGING（调试分析）、KNOWLEDGE_TRANSFER（知识迁移）、TECHNICAL_EXPRESSION（技术表达）
+综合能力是学生跨知识点、跨任务表现出的能力，共 6 项：
+KNOWLEDGE_UNDERSTANDING（知识理解力）、PROBLEM_ANALYSIS（问题分析力）、SOLUTION_DESIGN（方案设计力）、PRACTICAL_APPLICATION（实践应用力）、ERROR_REFLECTION（纠错反思力）、TRANSFER_INNOVATION（迁移创新力）
 
 ```json
 {
   "overallScore": 64.8,
   "overallLevel": "DEVELOPING",
   "abilities": {
-    "CONCEPT_UNDERSTANDING": {
-      "abilityCode": "CONCEPT_UNDERSTANDING",
-      "abilityName": "概念理解",
+    "KNOWLEDGE_UNDERSTANDING": {
+      "abilityCode": "KNOWLEDGE_UNDERSTANDING",
+      "abilityName": "知识理解力",
       "score": 76,
       "level": "PROFICIENT",
       "trend": "IMPROVING",
@@ -178,8 +178,8 @@ CONCEPT_UNDERSTANDING（概念理解）、ABSTRACTION_MODELING（抽象建模）
       "lastEvaluatedAt": "2026-06-15T18:20:00Z"
     }
   },
-  "strengthAbilityCodes": ["CONCEPT_UNDERSTANDING", "CODING_IMPLEMENTATION"],
-  "developmentPriorityCodes": ["COMPLEXITY_ANALYSIS", "DEBUGGING"],
+  "strengthAbilityCodes": ["KNOWLEDGE_UNDERSTANDING", "PRACTICAL_APPLICATION"],
+  "developmentPriorityCodes": ["PROBLEM_ANALYSIS", "ERROR_REFLECTION"],
   "metadata": { "..." }
 }
 ```
