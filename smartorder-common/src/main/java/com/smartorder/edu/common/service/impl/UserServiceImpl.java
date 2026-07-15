@@ -15,6 +15,7 @@ import com.smartorder.edu.common.mapper.UserMapper;
 import com.smartorder.edu.common.service.IUserAuthIdentityService;
 import com.smartorder.edu.common.service.IUserService;
 import com.smartorder.edu.common.util.AliOSSUtils;
+import com.smartorder.edu.common.util.EmailVerificationCodeUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.util.validation.ValidationException;
@@ -50,6 +51,7 @@ public class UserServiceImpl implements IUserService {
     private final IUserAuthIdentityService userAuthIdentityService;
     private final String DEFAULT_AVATAR_URL = "https://xueling-platform.oss-cn-hangzhou.aliyuncs.com/d915734b-a240-4350-acb6-30b6e2d3d981.jpg";
     private final RabbitTemplate rabbitTemplate;
+    private final EmailVerificationCodeUtils emailVerificationCodeUtils;
 
     @Override
     public void insertUser(User user) {
@@ -371,5 +373,49 @@ public class UserServiceImpl implements IUserService {
             return null;
         }
         return userMapper.selectById(userId);
+    }
+
+    @Override
+    public void changeEmail(Long userId, String newEmail, String verificationCode) {
+        // 1. 参数校验
+        if (userId == null) {
+            throw new ValidationException("用户ID不能为空");
+        }
+        if (newEmail == null || newEmail.isBlank()) {
+            throw new ValidationException("新邮箱不能为空");
+        }
+        if (!newEmail.matches("^[a-zA-Z0-9_.-]+@[a-zA-Z0-9-]+(\\.[a-zA-Z0-9-]+)*\\.[a-zA-Z0-9]{2,6}$")) {
+            throw new ValidationException("邮箱格式不正确");
+        }
+        if (verificationCode == null || verificationCode.isBlank()) {
+            throw new ValidationException("验证码不能为空");
+        }
+
+        // 2. 检查新邮箱是否与当前邮箱相同
+        User currentUser = userMapper.selectById(userId);
+        if (currentUser == null) {
+            throw new BusinessException("用户不存在");
+        }
+        if (newEmail.equals(currentUser.getEmail())) {
+            throw new BusinessException("新邮箱不能与当前邮箱相同");
+        }
+
+        // 3. 校验验证码（verifyCode 内部会消费 Redis 中的验证码）
+        emailVerificationCodeUtils.verifyCode(newEmail, verificationCode);
+
+        // 4. 检查新邮箱是否被其他用户占用
+        User existingUser = userMapper.selectOne(
+                new LambdaQueryWrapper<User>().eq(User::getEmail, newEmail)
+        );
+        if (existingUser != null && !existingUser.getId().equals(userId)) {
+            throw new BusinessException("该邮箱已被其他用户使用");
+        }
+
+        // 5. 更新邮箱
+        UpdateWrapper<User> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", userId).set("email", newEmail);
+        userMapper.update(null, updateWrapper);
+
+        log.info("用户 {} 邮箱修改成功: {}", userId, newEmail);
     }
 }
