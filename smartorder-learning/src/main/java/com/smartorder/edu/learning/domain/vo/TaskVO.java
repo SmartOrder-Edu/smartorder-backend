@@ -16,6 +16,9 @@ public class TaskVO {
     private String title;
     private String description;
     private String taskType;
+    private String actionType;
+    private String targetType;
+    private Long targetId;
     private Integer priority;
     private String status;
     private LocalDate dueDate;
@@ -24,6 +27,7 @@ public class TaskVO {
     private Integer actualDurationMinutes;
     private LocalDateTime completedAt;
     private String aiSuggestion;
+    private String agentReason;
     private String metadata;
     private Boolean isOverdue;
     private Boolean isToday;

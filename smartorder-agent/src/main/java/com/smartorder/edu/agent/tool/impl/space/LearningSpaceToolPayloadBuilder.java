@@ -67,10 +67,14 @@ class LearningSpaceToolPayloadBuilder {
         result.put("id", stringId(task.getId()));
         result.put("title", shortText(task.getTitle()));
         result.put("taskType", task.getTaskType());
+        result.put("actionType", task.getActionType());
+        result.put("targetType", task.getTargetType());
+        result.put("targetId", stringId(task.getTargetId()));
         result.put("priority", task.getPriority());
         result.put("status", task.getStatus());
         result.put("dueDate", task.getDueDate() != null ? task.getDueDate().toString() : null);
         result.put("estimatedDurationMinutes", task.getEstimatedDurationMinutes());
+        result.put("agentReason", shortText(task.getAgentReason()));
         result.put("aiSuggestion", shortText(task.getAiSuggestion()));
         return result;
     }
