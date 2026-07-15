@@ -22,6 +22,11 @@ public interface ITaskService {
     Task createTask(Long userId, CreateTaskDTO dto);
 
     /**
+     * 根据当前用户活跃学习空间生成今日可执行任务。
+     */
+    List<Task> planTodayTasks(Long userId, Integer maxTasks);
+
+    /**
      * 根据学习空间ID查询任务列表
      */
     List<Task> getBySpaceId(Long spaceId);

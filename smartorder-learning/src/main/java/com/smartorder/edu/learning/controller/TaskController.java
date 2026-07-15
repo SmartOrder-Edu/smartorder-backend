@@ -6,6 +6,7 @@ import com.smartorder.edu.learning.domain.entity.Task;
 import com.smartorder.edu.learning.domain.vo.TaskVO;
 import com.smartorder.edu.learning.dto.CompleteTaskDTO;
 import com.smartorder.edu.learning.dto.CreateTaskDTO;
+import com.smartorder.edu.learning.dto.PlanTodayTasksDTO;
 import com.smartorder.edu.learning.dto.UpdateTaskStatusDTO;
 import com.smartorder.edu.learning.service.ITaskService;
 import io.jsonwebtoken.Claims;
@@ -65,6 +66,14 @@ public class TaskController {
     public Result<TaskVO> create(@RequestBody CreateTaskDTO dto) {
         Long userId = getCurrentUserId();
         return Result.success(toVO(taskService.createTask(userId, dto)));
+    }
+
+    @PostMapping("/plan-today")
+    @Operation(summary = "生成今日学习任务", description = "根据当前用户活跃学习空间和学习路径生成今日可执行任务")
+    public Result<List<TaskVO>> planToday(@RequestBody(required = false) PlanTodayTasksDTO dto) {
+        Long userId = getCurrentUserId();
+        Integer maxTasks = dto == null ? null : dto.getMaxTasks();
+        return Result.success(taskService.planTodayTasks(userId, maxTasks).stream().map(this::toVO).toList());
     }
 
     @PatchMapping("/{taskId}/status")
