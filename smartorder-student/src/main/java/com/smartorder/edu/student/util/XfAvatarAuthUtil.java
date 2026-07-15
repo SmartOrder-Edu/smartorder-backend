@@ -2,62 +2,58 @@ package com.smartorder.edu.student.util;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
-import java.net.URL;
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.text.SimpleDateFormat;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Base64;
-import java.util.Date;
 import java.util.Locale;
-import java.util.TimeZone;
 
 /**
- * 讯飞虚拟人 WebSocket 鉴权 URL 生成工具
+ * Xfyun avatar WebSocket authorization URL builder.
  */
 public class XfAvatarAuthUtil {
 
-    /**
-     * 根据 基础URL、APIKey、APISecret 拼装带有 HMAC 签名的 WSS URL
-     */
     public static String assembleRequestUrl(String requestUrl, String apiKey, String apiSecret) {
-        URL url = null;
-        // 转换WebSocket的URL，ws转为http，wss转为https，用于计算签名
-        String httpRequestUrl = requestUrl.replace("ws://", "http://").replace("wss://", "https://");
         try {
-            url = new URL(httpRequestUrl);
-            // 设置时间格式并设置UTC时区
-            SimpleDateFormat format = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.US);
-            format.setTimeZone(TimeZone.getTimeZone("UTC"));
-            String date = format.format(new Date());
-            String host = url.getHost();
+            URI uri = URI.create(requestUrl);
+            String host = uri.getHost();
+            String path = uri.getRawPath();
+            if (uri.getRawQuery() != null && !uri.getRawQuery().isBlank()) {
+                path = path + "?" + uri.getRawQuery();
+            }
+            String date = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss 'GMT'", Locale.US)
+                    .format(ZonedDateTime.now(ZoneOffset.UTC));
 
-            // 构建签名字符串
-            StringBuilder builder = new StringBuilder("host: ").append(host).append("\n").
-                    append("date: ").append(date).append("\n").
-                    append("GET").append(" ").append(url.getPath()).append(" HTTP/1.1");
+            String signatureOrigin = "host: " + host + "\n"
+                    + "date: " + date + "\n"
+                    + "GET " + path + " HTTP/1.1";
+            String signature = hmacSha256Base64(signatureOrigin, apiSecret);
+            String authorizationOrigin = "api_key=\"" + apiKey
+                    + "\", algorithm=\"hmac-sha256\", headers=\"host date request-line\", signature=\""
+                    + signature + "\"";
+            String authorization = Base64.getEncoder()
+                    .encodeToString(authorizationOrigin.getBytes(StandardCharsets.UTF_8));
 
-            // 生成 HMAC SHA-256 签名
-            Mac mac = Mac.getInstance("hmacsha256");
-            SecretKeySpec spec = new SecretKeySpec(apiSecret.getBytes(StandardCharsets.UTF_8), "hmacsha256");
-            mac.init(spec);
-            byte[] hexDigits = mac.doFinal(builder.toString().getBytes(StandardCharsets.UTF_8));
-            String sha = Base64.getEncoder().encodeToString(hexDigits);
-
-            // 生成授权头信息
-            String authorization = String.format("hmac username=\"%s\", algorithm=\"%s\", headers=\"%s\", signature=\"%s\"",
-                    apiKey, "hmac-sha256", "host date request-line", sha);
-
-            // 将授权信息编码为 Base64
-            String authBase = Base64.getEncoder().encodeToString(authorization.getBytes(StandardCharsets.UTF_8));
-
-            // 构建最终带有参数的 WSS 连接地址
-            return String.format("%s?authorization=%s&host=%s&date=%s",
-                    requestUrl,
-                    URLEncoder.encode(authBase, "UTF-8"),
-                    URLEncoder.encode(host, "UTF-8"),
-                    URLEncoder.encode(date, "UTF-8"));
+            String separator = requestUrl.contains("?") ? "&" : "?";
+            return requestUrl + separator
+                    + "authorization=" + urlEncode(authorization)
+                    + "&host=" + urlEncode(host)
+                    + "&date=" + urlEncode(date);
         } catch (Exception e) {
-            throw new RuntimeException("拼装讯飞鉴权 URL 失败: " + e.getMessage());
+            throw new RuntimeException("Failed to assemble Xfyun avatar authorization URL: " + e.getMessage(), e);
         }
+    }
+
+    private static String hmacSha256Base64(String content, String secret) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        return Base64.getEncoder().encodeToString(mac.doFinal(content.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private static String urlEncode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 }
