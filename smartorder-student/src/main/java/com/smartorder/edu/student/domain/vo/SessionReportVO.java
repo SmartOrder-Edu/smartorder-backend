@@ -22,6 +22,10 @@ public class SessionReportVO {
     private Long reportId;
     private String title;
     private String reportType;
+    private String status;
+    private String message;
+    private Integer pendingCount;
+    private String errorMessage;
     private BigDecimal totalScore;
     private BigDecimal actualScore;
     private BigDecimal accuracy;
@@ -38,6 +42,12 @@ public class SessionReportVO {
     /** 学习建议 */
     private List<Map<String, Object>> learningSuggestions;
 
+    /** 能力维度评估 */
+    private Map<String, Object> abilityEvaluation;
+
+    /** 下一步推荐 */
+    private Map<String, Object> nextRecommendationJson;
+
     /** 自然语言报告 */
     private String reportContent;
 
@@ -45,4 +55,5 @@ public class SessionReportVO {
     private String generatedBy;
 
     private LocalDateTime createdAt;
+    private LocalDateTime finishedAt;
 }

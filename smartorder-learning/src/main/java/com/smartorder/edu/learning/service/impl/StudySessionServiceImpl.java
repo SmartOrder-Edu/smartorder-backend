@@ -332,6 +332,9 @@ public class StudySessionServiceImpl implements IStudySessionService {
         task.setTitle("学习：" + normalizeId(node.getTitle(), "路径节点"));
         task.setDescription(node.getDescription());
         task.setTaskType("review".equals(dto.getMode()) ? "review" : "daily");
+        task.setActionType("learn_script");
+        task.setTargetType("path_node");
+        task.setTargetId(node.getId());
         task.setPriority(3);
         task.setStatus("pending");
         task.setDueDate(LocalDate.now());
@@ -339,6 +342,7 @@ public class StudySessionServiceImpl implements IStudySessionService {
                 ? 20 : Math.max(5, node.getEstimatedDurationMinutes()));
         task.setSortOrder(0);
         task.setAiSuggestion("由学习路径节点直接进入学习时自动创建。");
+        task.setAgentReason("用户从学习路径节点进入，系统自动创建脚本学习任务。");
         task.setMetadata(toJson(new LinkedHashMap<>(Map.of(
                 "source", "path_node_study_entry",
                 "entrySource", normalizeId(dto.getEntrySource(), "unknown")

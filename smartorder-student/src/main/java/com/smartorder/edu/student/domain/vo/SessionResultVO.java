@@ -48,6 +48,7 @@ public class SessionResultVO {
         private Boolean isCorrect;
         private BigDecimal score;
         private String status; // graded / pending_review
+        private Map<String, Object> userAnswer;
         private Map<String, Object> judgeResult;
     }
 }

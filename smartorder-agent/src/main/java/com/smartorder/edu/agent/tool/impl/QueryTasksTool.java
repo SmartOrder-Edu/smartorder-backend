@@ -78,10 +78,14 @@ public class QueryTasksTool implements ToolHandler {
             m.put("title", t.getTitle());
             m.put("spaceId", t.getSpaceId());
             m.put("taskType", t.getTaskType());
+            m.put("actionType", t.getActionType());
+            m.put("targetType", t.getTargetType());
+            m.put("targetId", t.getTargetId());
             m.put("priority", t.getPriority());
             m.put("status", t.getStatus());
             m.put("dueDate", t.getDueDate() != null ? t.getDueDate().toString() : null);
             m.put("estimatedDurationMinutes", t.getEstimatedDurationMinutes());
+            m.put("agentReason", t.getAgentReason());
             m.put("aiSuggestion", t.getAiSuggestion());
             return m;
         }).toList());

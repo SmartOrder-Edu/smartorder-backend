@@ -118,6 +118,9 @@ public class SpaceDashboardServiceImpl implements ISpaceDashboardService {
         vo.setTitle(task.getTitle());
         vo.setDescription(task.getDescription());
         vo.setTaskType(task.getTaskType());
+        vo.setActionType(task.getActionType());
+        vo.setTargetType(task.getTargetType());
+        vo.setTargetId(task.getTargetId());
         vo.setPriority(task.getPriority());
         vo.setStatus(task.getStatus());
         vo.setDueDate(task.getDueDate());
@@ -126,6 +129,7 @@ public class SpaceDashboardServiceImpl implements ISpaceDashboardService {
         vo.setActualDurationMinutes(task.getActualDurationMinutes());
         vo.setCompletedAt(task.getCompletedAt());
         vo.setAiSuggestion(task.getAiSuggestion());
+        vo.setAgentReason(task.getAgentReason());
         vo.setMetadata(task.getMetadata());
 
         LocalDate today = LocalDate.now();

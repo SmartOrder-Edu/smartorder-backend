@@ -40,6 +40,18 @@ public class EvaluationLearningReport {
     /** 报告类型：single_test/chapter/stage/final/comprehensive */
     private String reportType;
 
+    /** 生成状态：waiting_grading/generating/ready/failed */
+    private String status;
+
+    /** 待批阅题目数量 */
+    private Integer pendingCount;
+
+    /** 生成失败原因 */
+    private String errorMessage;
+
+    /** 重试次数 */
+    private Integer retryCount;
+
     /** 总分 */
     private BigDecimal totalScore;
 
@@ -78,6 +90,15 @@ public class EvaluationLearningReport {
 
     /** 生成方式：agent/system/manual */
     private String generatedBy;
+
+    /** 报告生成开始时间 */
+    private LocalDateTime startedAt;
+
+    /** 报告生成完成时间 */
+    private LocalDateTime finishedAt;
+
+    /** 分析算法/Prompt 版本 */
+    private String analysisVersion;
 
     /** 创建时间 */
     private LocalDateTime createdAt;
