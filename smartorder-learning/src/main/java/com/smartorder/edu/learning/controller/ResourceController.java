@@ -20,6 +20,10 @@ import com.smartorder.edu.learning.service.IResourceService;
 import com.smartorder.edu.learning.service.ITaskService;
 import com.smartorder.edu.learning.service.ResourceAsyncGenerationService;
 import com.smartorder.edu.learning.service.recommendation.BilibiliVideoRecommendationService;
+import com.smartorder.edu.learning.service.ppt.DocmeeApiToken;
+import com.smartorder.edu.learning.service.ppt.PptGenerationRequest;
+import com.smartorder.edu.learning.service.ppt.PptGenerationResult;
+import com.smartorder.edu.learning.service.ppt.PptGenerationService;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -32,6 +36,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -55,6 +60,7 @@ public class ResourceController {
     private final IResourceGenerationJobService resourceGenerationJobService;
     private final ResourceAsyncGenerationService resourceAsyncGenerationService;
     private final BilibiliVideoRecommendationService bilibiliVideoRecommendationService;
+    private final PptGenerationService pptGenerationService;
 
     @GetMapping("/{id}")
     @Operation(summary = "获取学习资源详情", description = "返回资源元信息与最新可预览内容")
@@ -94,6 +100,28 @@ public class ResourceController {
         ResourceGenerationJob job = resourceGenerationJobService.createGeneratePending(userId, resource);
         resourceAsyncGenerationService.submit(job);
         return Result.success(toJobVO(job));
+    }
+
+    @PostMapping("/{id}/generate-ppt")
+    @Operation(summary = "基于当前资源生成 PPT", description = "调用 Docmee 模板和 PPT 生成接口，生成后写入学习空间资源库")
+    public Result<PptGenerationResult> generatePpt(
+            @PathVariable Long id,
+            @RequestBody(required = false) PptGenerationRequest request
+    ) {
+        Long userId = getCurrentUserId();
+        getOwnedResource(userId, id);
+        return Result.success(pptGenerationService.generateFromResource(userId, id, request));
+    }
+
+    @GetMapping("/docmee/token")
+    @Operation(summary = "获取 Docmee PPT 渲染 Token", description = "仅用于前端 iframe 渲染，不返回服务端 API-Key")
+    public Result<Map<String, Object>> docmeeRenderToken(@RequestParam Long resourceId, @RequestParam String pptId) {
+        Long userId = getCurrentUserId();
+        DocmeeApiToken token = pptGenerationService.createRenderToken(userId, resourceId, pptId);
+        return Result.success(Map.of(
+                "token", token.token(),
+                "uid", token.uid()
+        ));
     }
 
     @GetMapping("/{id}/generation-job")

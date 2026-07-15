@@ -229,6 +229,15 @@ python:
     service:
       base-url: http://117.72.159.146:8088/api/v1/execute
 
+docmee:
+  base-url: ${DOCMEE_BASE_URL:https://open.docmee.cn}
+  api-key: ${API_KEY_PPT:}
+  lang: ${DOCMEE_LANG:zh-CN}
+  generate-token-limit: ${DOCMEE_GENERATE_TOKEN_LIMIT:1}
+  render-token-limit: ${DOCMEE_RENDER_TOKEN_LIMIT:0}
+  connect-timeout-millis: ${DOCMEE_CONNECT_TIMEOUT_MILLIS:10000}
+  read-timeout-millis: ${DOCMEE_READ_TIMEOUT_MILLIS:120000}
+
 # =======================================================
 # LangChain4j 核心大模型配置 (用于 Agent 和 Tool Calling)
 # =======================================================

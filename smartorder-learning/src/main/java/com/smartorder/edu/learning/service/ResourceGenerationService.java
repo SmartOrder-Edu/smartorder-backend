@@ -200,7 +200,7 @@ public class ResourceGenerationService {
         }
         String type = raw.trim().toLowerCase();
         return switch (type) {
-            case "markdown", "html", "json", "external_link" -> type;
+            case "markdown", "html", "json", "external_link", "ppt_embed" -> type;
             default -> "markdown";
         };
     }
