@@ -4,7 +4,7 @@ import com.smartorder.edu.common.constant.ResultCode;
 import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import com.smartorder.edu.student.domain.dto.FileFolderDTO;
-
+import com.smartorder.edu.student.domain.dto.FolderExportTask;
 import com.smartorder.edu.student.domain.dto.InitFileUploadDTO;
 import com.smartorder.edu.student.domain.vo.FileFolderContentVO;
 import com.smartorder.edu.student.domain.vo.FileResourceVO;
@@ -16,8 +16,10 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import jakarta.validation.constraints.NotNull;
 
@@ -27,6 +29,7 @@ import java.io.OutputStream;
 import java.net.URLEncoder;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -102,6 +105,140 @@ public class FileFolderController {
         Long userId = claims.get("userId", Long.class);
         fileFolderService.batchMoveToFolder(vo, userId);
         return Result.success("批量移动成功");
+    }
+
+    // ==================== 文件夹导出 ====================
+
+    @PostMapping("/folders/{id}/export")
+    @Operation(summary = "导出文件夹", description = "发起异步打包任务，将文件夹递归压缩为 zip 并上传至 OSS 临时存储")
+    public Result<Map<String, String>> exportFolder(@PathVariable Long id) {
+        Claims claims = ThreadLocalUtils.get();
+        Long userId = claims.get("userId", Long.class);
+        String taskId = fileFolderService.exportFolder(id, userId);
+        return Result.success(Map.of("taskId", taskId));
+    }
+
+    @GetMapping(value = "/folders/export/{taskId}/progress", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "导出进度推送", description = "SSE 端点，实时推送文件夹打包进度")
+    public SseEmitter getExportProgress(@PathVariable String taskId) {
+        Claims claims = ThreadLocalUtils.get();
+        Long userId = claims.get("userId", Long.class);
+        // 先校验任务存在且属于当前用户
+        fileFolderService.getExportProgress(taskId, userId);
+
+        SseEmitter emitter = new SseEmitter(0L); // 无超时
+
+        // 后台轮询线程
+        Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "sse-export-" + taskId);
+            t.setDaemon(true);
+            return t;
+        }).execute(() -> {
+            try {
+                while (true) {
+                    try {
+                        Thread.sleep(500);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+
+                    FolderExportTask task;
+                    try {
+                        task = fileFolderService.getExportProgress(taskId, userId);
+                    } catch (Exception e) {
+                        emitter.send(SseEmitter.event()
+                                .name("error")
+                                .data(Map.of("message", e.getMessage())));
+                        emitter.complete();
+                        break;
+                    }
+
+                    if (task == null) {
+                        emitter.send(SseEmitter.event()
+                                .name("error")
+                                .data(Map.of("message", "任务不存在")));
+                        emitter.complete();
+                        break;
+                    }
+
+                    switch (task.getStatus()) {
+                        case FolderExportTask.STATUS_PENDING:
+                        case FolderExportTask.STATUS_PROCESSING:
+                            emitter.send(SseEmitter.event()
+                                    .name("progress")
+                                    .data(Map.of(
+                                            "processedFiles", task.getProcessedFiles(),
+                                            "totalFiles", task.getTotalFiles(),
+                                            "processedBytes", task.getProcessedBytes(),
+                                            "totalBytes", task.getTotalBytes(),
+                                            "percent", task.getPercent()
+                                    )));
+                            break;
+
+                        case FolderExportTask.STATUS_COMPLETED:
+                            emitter.send(SseEmitter.event()
+                                    .name("complete")
+                                    .data(Map.of(
+                                            "taskId", task.getTaskId(),
+                                            "fileName", task.getFolderName() + ".zip"
+                                    )));
+                            emitter.complete();
+                            return;
+
+                        case FolderExportTask.STATUS_FAILED:
+                            emitter.send(SseEmitter.event()
+                                    .name("error")
+                                    .data(Map.of("message",
+                                            task.getErrorMessage() != null
+                                                    ? task.getErrorMessage()
+                                                    : "导出失败")));
+                            emitter.complete();
+                            return;
+
+                        case FolderExportTask.STATUS_CANCELLED:
+                            emitter.send(SseEmitter.event()
+                                    .name("cancelled")
+                                    .data(Map.of()));
+                            emitter.complete();
+                            return;
+
+                        default:
+                            break;
+                    }
+                }
+            } catch (IOException e) {
+                log.warn("SSE 推送中断, taskId={}", taskId, e);
+                emitter.completeWithError(e);
+            }
+        });
+
+        emitter.onCompletion(() -> log.debug("SSE 完成, taskId={}", taskId));
+        emitter.onTimeout(() -> {
+            log.debug("SSE 超时, taskId={}", taskId);
+            emitter.complete();
+        });
+        emitter.onError(ex -> log.warn("SSE 异常, taskId={}", taskId, ex));
+
+        return emitter;
+    }
+
+    @DeleteMapping("/folders/export/{taskId}")
+    @Operation(summary = "取消导出", description = "取消正在进行的文件夹导出任务")
+    public Result<String> cancelExport(@PathVariable String taskId) {
+        Claims claims = ThreadLocalUtils.get();
+        Long userId = claims.get("userId", Long.class);
+        fileFolderService.cancelExport(taskId, userId);
+        return Result.success("已取消");
+    }
+
+    @GetMapping("/folders/export/{taskId}/download")
+    @Operation(summary = "下载导出文件", description = "302 重定向到 OSS 预签名 URL，浏览器原生下载")
+    public void downloadExportZip(@PathVariable String taskId, HttpServletResponse response) throws IOException {
+        Claims claims = ThreadLocalUtils.get();
+        Long userId = claims.get("userId", Long.class);
+        String presignedUrl = fileFolderService.getExportDownloadUrl(taskId, userId);
+        response.sendRedirect(presignedUrl);
     }
 
     // 文件资源

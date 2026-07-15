@@ -8,7 +8,7 @@ import com.smartorder.edu.student.domain.entity.EvaluationLearningReport;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestion;
 import com.smartorder.edu.student.domain.entity.EvaluationQuestionGenerationItem;
 import com.smartorder.edu.student.domain.entity.EvaluationSession;
-import com.smartorder.edu.student.domain.vo.EvaluationQuestionVO;
+import com.smartorder.edu.student.domain.vo.SessionQuestionVO;
 import com.smartorder.edu.student.domain.vo.SessionResultVO;
 import com.smartorder.edu.student.domain.vo.SessionReportVO;
 import com.smartorder.edu.student.domain.vo.TaskSubmitResultVO;
@@ -114,7 +114,7 @@ public class EvaluationSessionServiceImpl implements IEvaluationSessionService {
     // ======================== 试卷题目 ========================
 
     @Override
-    public List<EvaluationQuestionVO> getSessionQuestions(Long sessionId, Long userId) {
+    public List<SessionQuestionVO> getSessionQuestions(Long sessionId, Long userId) {
         EvaluationSession session = sessionMapper.selectById(sessionId);
         if (session == null || !session.getUserId().equals(userId)) {
             throw new BusinessException("测评任务不存在或无权访问");
@@ -140,7 +140,7 @@ public class EvaluationSessionServiceImpl implements IEvaluationSessionService {
                         return List.of();
                     }
                     return questionMapper.selectBatchIds(questionIds).stream()
-                            .map(EvaluationQuestionVO::from)
+                            .map(SessionQuestionVO::from)
                             .collect(Collectors.toList());
                 });
     }

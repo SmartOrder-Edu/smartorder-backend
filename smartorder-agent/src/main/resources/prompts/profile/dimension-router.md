@@ -2,6 +2,16 @@
 
 任务：判断当前消息是否包含可以写入学生画像的明确证据，并选择要更新的维度。
 
+## 完整性优先：逐条扫描，不得漏选
+
+先逐条扫描当前用户消息中的全部独立事实，再决定 `dimensions`；不要先看到一个事实就停止分析。一个消息可同时包含背景、目标、时间预算、偏好、能力或科目状态等多个事实，必须为每个有明确证据的维度分别输出一项。
+
+- 不得因为已经选中一个维度而忽略同一消息中的其他可写入事实。
+- 同一维度内有多个事实可以输出多项；不同维度必须分别输出，不能用一个维度替代另一个维度。
+- 技术栈或学习内容必须按事实状态归类：仅表达想/准备学习某技术栈或课程时，选择 `learning_goals`；只有用户明确表示正在学习、已经开始投入或已经学过时，才选择 `learning_background`。不得把学习意图推断成既有经验。
+- 时间信息必须按语义归类：目标的截止时间、总学习周期、为目标投入的每周预算 → `learning_goals`；用户客观可支配的每周时间、设备或网络约束 → `learning_background`。同一句同时包含两类信息时必须选择两个维度。
+- 输出前做一次覆盖检查：当前消息中每条明确事实都已被某一条 `dimensions` 的 `evidence` 原文覆盖；若未覆盖，补充对应维度。
+
 只允许输出严格 JSON，不要输出 Markdown。
 
 可选维度：
@@ -25,7 +35,7 @@
    - 归类：learning_goals（含 deadline 或 weekly_time_budget）或 learning_background（含 learning_constraints）
 3. 技术栈/学习内容选择
    - 示例："技术栈打算学习java"、"想学Python"、"准备学SpringBoot"
-   - 归类：learning_goals（作为目标的学习内容）或 learning_background（作为已选技术栈）
+   - 归类：仅表达打算/想要学习时为 learning_goals；明确"正在学"、"已经学过"、"用过"时为 learning_background
 4. 学历/专业/年级背景
    - 示例："我是大三计算机专业的"、"我是高中生"
    - 归类：learning_background
@@ -35,6 +45,17 @@
 6. 学习偏好陈述
    - 示例："喜欢看视频学习"、"偏向刷题"
    - 归类：learning_preference
+
+## 多维消息示例
+
+用户消息："我是大三计算机专业，想在两个月内补完数据结构，每周能投入 10 小时，喜欢先看代码示例。"
+
+必须至少选择：
+- `learning_background`："我是大三计算机专业"、"每周能投入 10 小时"
+- `learning_goals`："想在两个月内补完数据结构"
+- `learning_preference`："喜欢先看代码示例"
+
+不得只选择 `learning_goals`。但如果用户仅说“我想学 Java”，只选择 `learning_goals`，不得凭空选择 `learning_background`。
 
 ## 不要更新画像的情况
 
@@ -65,10 +86,10 @@
       "reason": "用户明确表达时间预算"
     },
     {
-      "dimensionKey": "learning_background",
+      "dimensionKey": "learning_goals",
       "evidence": "技术栈打算学习java",
       "confidence": 0.9,
-      "reason": "用户明确选择技术栈"
+      "reason": "用户明确表达 Java 学习目标"
     }
   ]
 }

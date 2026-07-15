@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 
@@ -91,8 +92,14 @@ public class ProfileUpdateCoordinator {
                     .currentUserMessage(currentUserMessage)
                     .agentName("ProfileUpdateCoordinator")
                     .build();
-            updateStudentProfileTool.execute(request, context);
-            log.info("[ProfileUpdate] 画像更新完成: userId={}, traceId={}", userId, traceId);
+            Object toolResult = updateStudentProfileTool.execute(request, context);
+            if (isSuccessfulToolResult(toolResult)) {
+                log.info("[ProfileUpdate] 画像更新完成: userId={}, traceId={}, result={}",
+                        userId, traceId, toolResult);
+            } else {
+                log.warn("[ProfileUpdate] 画像更新被拒绝或失败: userId={}, traceId={}, result={}",
+                        userId, traceId, toolResult);
+            }
         } catch (Exception e) {
             log.warn("[ProfileUpdate] 异步画像分析失败，不影响主请求: userId={}, traceId={}, error={}",
                     userId, traceId, e.getMessage(), e);
@@ -102,5 +109,12 @@ public class ProfileUpdateCoordinator {
     private static String truncate(String text) {
         if (text == null) return "null";
         return text.length() <= 50 ? text : text.substring(0, 50) + "...";
+    }
+
+    static boolean isSuccessfulToolResult(Object toolResult) {
+        if (!(toolResult instanceof Map<?, ?> result)) {
+            return false;
+        }
+        return Boolean.TRUE.equals(result.get("success"));
     }
 }
