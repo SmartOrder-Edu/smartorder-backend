@@ -130,9 +130,9 @@
     "overallScore": 64.8,
     "overallLevel": "DEVELOPING",
     "abilities": {
-      "CONCEPT_UNDERSTANDING": {
-        "abilityCode": "CONCEPT_UNDERSTANDING",
-        "abilityName": "概念理解",
+      "KNOWLEDGE_UNDERSTANDING": {
+        "abilityCode": "KNOWLEDGE_UNDERSTANDING",
+        "abilityName": "知识理解力",
         "score": 76,
         "level": "PROFICIENT",
         "trend": "IMPROVING",
@@ -142,9 +142,9 @@
         "evidenceIds": ["quiz_ds_001", "dialogue_201"],
         "lastEvaluatedAt": "2026-06-15T18:20:00Z"
       },
-      "ABSTRACTION_MODELING": {
-        "abilityCode": "ABSTRACTION_MODELING",
-        "abilityName": "抽象建模",
+      "SOLUTION_DESIGN": {
+        "abilityCode": "SOLUTION_DESIGN",
+        "abilityName": "方案设计力",
         "score": 62,
         "level": "DEVELOPING",
         "trend": "STABLE",
@@ -154,9 +154,9 @@
         "evidenceIds": ["case_eval_002"],
         "lastEvaluatedAt": "2026-06-15T18:20:00Z"
       },
-      "CODING_IMPLEMENTATION": {
-        "abilityCode": "CODING_IMPLEMENTATION",
-        "abilityName": "代码实现",
+      "PRACTICAL_APPLICATION": {
+        "abilityCode": "PRACTICAL_APPLICATION",
+        "abilityName": "实践应用力",
         "score": 70,
         "level": "DEVELOPING",
         "trend": "IMPROVING",
@@ -166,9 +166,9 @@
         "evidenceIds": ["code_eval_205", "code_eval_208"],
         "lastEvaluatedAt": "2026-06-15T18:20:00Z"
       },
-      "COMPLEXITY_ANALYSIS": {
-        "abilityCode": "COMPLEXITY_ANALYSIS",
-        "abilityName": "复杂度分析",
+      "PROBLEM_ANALYSIS": {
+        "abilityCode": "PROBLEM_ANALYSIS",
+        "abilityName": "问题分析力",
         "score": 52,
         "level": "BEGINNER",
         "trend": "IMPROVING",
@@ -179,12 +179,12 @@
         "lastEvaluatedAt": "2026-06-15T18:20:00Z"
       }
     },
-    "strengthAbilityCodes": ["CONCEPT_UNDERSTANDING", "CODING_IMPLEMENTATION"],
-    "developmentPriorityCodes": ["COMPLEXITY_ANALYSIS", "DEBUGGING", "KNOWLEDGE_TRANSFER"],
+    "strengthAbilityCodes": ["KNOWLEDGE_UNDERSTANDING", "PRACTICAL_APPLICATION"],
+    "developmentPriorityCodes": ["PROBLEM_ANALYSIS"],
     "metadata": {
-      "schemaVersion": "1.0",
+      "schemaVersion": "2.0",
       "confidence": 0.83,
-      "completeness": 88,
+      "completeness": 67,
       "sourceTypes": ["QUIZ_RESULT", "CODE_EVALUATION", "DIALOGUE_INFERENCE"],
       "evidenceIds": ["quiz_ds_001", "code_eval_205", "case_eval_005"],
       "lastUpdatedAt": "2026-06-15T18:30:00Z",

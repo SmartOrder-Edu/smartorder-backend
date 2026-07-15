@@ -19,7 +19,7 @@
   "strength_ability_codes": ["优势能力编码列表"],
   "development_priority_codes": ["优先发展能力编码列表"],
   "metadata": {
-    "schema_version": "1.0",
+    "schema_version": "2.0",
     "confidence": 0.80,
     "completeness": 55,
     "source_types": ["USER_EXPLICIT", "CODE_EVALUATION"],
@@ -32,16 +32,13 @@
 }
 ```
 
-9 项能力维度编码：
-- `CONCEPT_UNDERSTANDING` 概念理解
-- `ABSTRACTION_MODELING` 抽象建模
-- `PROBLEM_DECOMPOSITION` 问题拆解
-- `ALGORITHM_DESIGN` 算法设计
-- `COMPLEXITY_ANALYSIS` 复杂度分析
-- `CODING_IMPLEMENTATION` 代码实现
-- `DEBUGGING` 调试分析
-- `KNOWLEDGE_TRANSFER` 知识迁移
-- `TECHNICAL_EXPRESSION` 技术表达
+6 项综合能力维度编码：
+- `KNOWLEDGE_UNDERSTANDING` 知识理解力
+- `PROBLEM_ANALYSIS` 问题分析力
+- `SOLUTION_DESIGN` 方案设计力
+- `PRACTICAL_APPLICATION` 实践应用力
+- `ERROR_REFLECTION` 纠错反思力
+- `TRANSFER_INNOVATION` 迁移创新力
 
 规则：只记录用户明确自评的能力强弱，不要让模型直接生成 score、overall_score 或客观测评分数。
 
@@ -50,7 +47,7 @@
 更新此维度时必须同时更新 `metadata`，具体规则见 [metadata-schema.md](metadata-schema.md)。
 
 - `confidence`：取本次更新中所有能力项的最低置信度
-- `completeness`：粗估 9 项能力中已评估的比例（如评估了 6 项则约 67）
+- `completeness`：粗估 6 项能力中已评估的比例（如评估了 4 项则约 67）
 - `source_types`：如 `["USER_EXPLICIT"]` 或 `["USER_EXPLICIT", "CODE_EVALUATION"]`
 - `update_reason`：说明更新了哪些能力项及原因
 - `valid_until`：当前时间 + 30天
