@@ -58,6 +58,7 @@ public class ResourceContentGenerator {
         return switch (resourceType) {
             case "doc" -> "md";
             case "html" -> "html";
+            case "ppt" -> "pptx";
             case "mind_map", "video" -> "md";
             case "quiz" -> "json";
             case "image" -> "png";
@@ -69,6 +70,7 @@ public class ResourceContentGenerator {
         return switch (resourceType) {
             case "html" -> "html";
             case "quiz" -> "json";
+            case "ppt" -> "ppt_embed";
             case "link" -> "external_link";
             default -> "markdown";
         };
@@ -88,6 +90,7 @@ public class ResourceContentGenerator {
             case "mind_map" -> mindMapGeneratedContent(resource, context, knowledgePoint, reason);
             case "quiz" -> quizGeneratedContent(resource, context, knowledgePoint, reason, targetMinutes);
             case "link" -> templateGeneratedContent("external_link", linkContent(resource, knowledgePoint, reason));
+            case "ppt" -> templateGeneratedContent("ppt_embed", "{}");
             case "image" -> templateGeneratedContent("markdown", imageGuideContent(resource, knowledgePoint, reason));
             case "video" -> templateGeneratedContent("markdown", videoScriptContent(resource, knowledgePoint, reason));
             default -> docGeneratedContent(resource, context, knowledgePoint, reason, targetMinutes);
