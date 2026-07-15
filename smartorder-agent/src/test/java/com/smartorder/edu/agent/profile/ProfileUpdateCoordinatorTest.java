@@ -85,6 +85,14 @@ class ProfileUpdateCoordinatorTest {
         assertEquals("ProfileUpdateCoordinator", context.getAgentName());
     }
 
+    @Test
+    void shouldRecognizeRejectedToolResultInsteadOfReportingCompletion() {
+        assertEquals(false, ProfileUpdateCoordinator.isSuccessfulToolResult(
+                Map.of("success", false, "error", "evidence 不匹配")));
+        assertEquals(true, ProfileUpdateCoordinator.isSuccessfulToolResult(
+                Map.of("success", true, "dimensions", List.of("learning_goals"))));
+    }
+
     private UpdateStudentProfileRequest requestWithLearningGoal() {
         UpdateStudentProfileRequest.DimensionUpdate update = new UpdateStudentProfileRequest.DimensionUpdate();
         update.setDimensionKey("learning_goals");
