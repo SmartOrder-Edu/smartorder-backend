@@ -121,7 +121,8 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     @Override
     public void generateQuestions(GenerateQuestionDTO dto, SseEmitter emitter) {
         // 插入题库任务总表以及各个题分表
-        GenerationContext context = transactionTemplate.execute(status -> createGenerationContext(dto));
+        Long userId = resolveCurrentUserId();
+        GenerationContext context = transactionTemplate.execute(status -> createGenerationContext(dto, userId));
         log.info("生成问题任务开始: taskId={}, totalCount={}", context.task().getId(), context.task().getTotalCount());
         // SSE 推送「任务开始」事件，便于前端初始化进度条
         sendEvent(emitter, QuestionTaskPlan.QUESTION_TASK_PLAN.getEventName(), Map.of(
@@ -132,6 +133,30 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
         // 提交异步生成任务，立即返回，后续流程通过 SSE 推送进度
         CompletableFuture.runAsync(() -> runGeneration(context, emitter), executor);
+    }
+
+    @Override
+    public PracticeSetGenerationResult generatePracticeSet(GenerateQuestionDTO dto, Long userId) {
+        if (userId == null) {
+            throw new BusinessException("用户ID不能为空");
+        }
+        GenerationContext context = transactionTemplate.execute(status -> createGenerationContext(dto, userId));
+        log.info("Agent同步生成练习集开始: taskId={}, userId={}, totalCount={}",
+                context.task().getId(), userId, context.task().getTotalCount());
+
+        EvaluationSession session = runGeneration(context, null);
+        if (session == null) {
+            throw new BusinessException("练习集生成失败：未创建测评会话");
+        }
+        return PracticeSetGenerationResult.builder()
+                .generationTaskId(context.task().getId())
+                .sessionId(session.getId())
+                .learningSpaceId(session.getLearningSpaceId())
+                .topic(session.getTopic())
+                .questionCount(session.getTotalQuestionCount())
+                .totalScore(session.getTotalScore())
+                .status(session.getStatus())
+                .build();
     }
 
     @Override
@@ -206,10 +231,14 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
      * @param dto 出题请求参数
      * @return 包含 task、item 列表及课程/主题信息的生成上下文
      */
-    private GenerationContext createGenerationContext(GenerateQuestionDTO dto) {
+    private GenerationContext createGenerationContext(GenerateQuestionDTO dto, Long userId) {
+        if (dto.getLearningSpaceId() == null) {
+            throw new BusinessException("学习空间ID不能为空");
+        }
         if (dto.getQuestionTypeCountList() == null || dto.getQuestionTypeCountList().isEmpty()) {
             throw new BusinessException("问题类型数量列表不能为空");
         }
+        validateLearningSpaceOwnership(dto.getLearningSpaceId(), userId);
 
         String courseName = resolveCourseName(dto);
         String topic = trimTextOrDefault(dto.getTopic(), "basic knowledge");
@@ -221,7 +250,6 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
         IdGenerator.setWorkerId(1);
         long id = IdGenerator.nextId();
-        Long userId = resolveCurrentUserId();
         // 构建生成任务(task)记录，初始状态为 pending
         EvaluationQuestionGenerationTask task = EvaluationQuestionGenerationTask.builder()
                 .id(id)
@@ -290,7 +318,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
      * <p>将明细按题型拆分为多个批次并行生成；成功时更新任务为 success，失败时标记未完成的
      * 明细为 failed 并将任务置为 partial_success/failed，并通过 SSE 推送错误。</p>
      */
-    private void runGeneration(GenerationContext context, SseEmitter emitter) {
+    private EvaluationSession runGeneration(GenerationContext context, SseEmitter emitter) {
         // 成功计数（线程安全）；已成功生成题目的 itemId 集合，用于失败兜底时区分成功/失败
         AtomicInteger successCount = new AtomicInteger(0);
         Set<Long> successfulItemIds = ConcurrentHashMap.newKeySet();
@@ -318,7 +346,7 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
             // 出题完成后自动创建测评会话，并通过 SSE 推送给前端
             try {
-                var session = createEvaluationSession(context);
+                EvaluationSession session = createEvaluationSession(context);
                 sendEvent(emitter, "session-created", Map.of(
                         "sessionId", session.getId(),
                         "topic", session.getTopic(),
@@ -330,12 +358,15 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
                 // 出题完成后清除题目列表缓存（新题目入库，旧缓存失效）
                 invalidateQuestionCache(context);
+                completeEmitter(emitter);
+                return session;
             } catch (Exception e) {
                 log.error("创建测评会话失败: taskId={}", context.task().getId(), e);
                 sendEvent(emitter, "session-error", Map.of("message", "会话创建失败: " + e.getMessage()));
+                throw e instanceof RuntimeException runtimeException
+                        ? runtimeException
+                        : new BusinessException("会话创建失败: " + e.getMessage());
             }
-
-            completeEmitter(emitter);
 
         } catch (Exception e) {
             // 失败兜底：未成功的明细标记为 failed，并按成功/失败比例确定任务终态
@@ -346,6 +377,9 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
             log.error("异步生成问题失败: taskId={}, successCount={}, failedCount={}",
                     context.task().getId(), successfulItemIds.size(), failedCount, e);
             completeEmitterWithError(emitter, e);
+            throw e instanceof RuntimeException runtimeException
+                    ? runtimeException
+                    : new BusinessException("题目生成失败: " + e.getMessage());
         }
     }
 
@@ -680,6 +714,16 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
         return learningSpace.getName();
     }
 
+    private void validateLearningSpaceOwnership(Long learningSpaceId, Long userId) {
+        LearningSpace learningSpace = learningSpaceMapper.selectById(learningSpaceId);
+        if (learningSpace == null || (learningSpace.getIsDeleted() != null && learningSpace.getIsDeleted() == 1)) {
+            throw new BusinessException("学习空间不存在");
+        }
+        if (!userId.equals(learningSpace.getUserId())) {
+            throw new BusinessException("无权访问该学习空间");
+        }
+    }
+
     /** 将请求 DTO 序列化为 JSON，用于存储到 task 的 requestPayload（便于回溯原始请求） */
     private String toJson(GenerateQuestionDTO dto) {
         try {
@@ -735,6 +779,9 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
     /** 安全发送 SSE 事件：连接已断开时静默跳过 */
     private void sendEvent(SseEmitter emitter, String name, Object data) {
+        if (emitter == null) {
+            return;
+        }
         try {
             emitter.send(SseEmitter.event().name(name).data(JSON.toJSONString(data)));
         } catch (IOException | IllegalStateException e) {
@@ -744,6 +791,9 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
     /** 正常结束 SSE 连接 */
     private void completeEmitter(SseEmitter emitter) {
+        if (emitter == null) {
+            return;
+        }
         try {
             emitter.complete();
         } catch (Exception e) {
@@ -754,6 +804,9 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
 
     /** 以错误方式结束 SSE 连接 */
     private void completeEmitterWithError(SseEmitter emitter, Exception error) {
+        if (emitter == null) {
+            return;
+        }
         try {
             emitter.completeWithError(error);
         } catch (Exception e) {
