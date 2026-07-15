@@ -339,7 +339,7 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
             map.put("recommendationSource", "bilibili");
             map.put("recommendationProvider", linkRecommendation == null ? "unknown" : linkRecommendation.sourceType());
             map.put("recommendationCacheHit", linkRecommendation != null && linkRecommendation.cacheHit());
-            map.put("recommendationPolicy", "按当前知识点实时检索 B站候选视频，结合标题匹配、播放量、时长和发布时间进行评分；接口不可用时降级为搜索入口。");
+            map.put("recommendationPolicy", "优先按当前知识点实时检索 B站候选视频，结合标题匹配、播放量、时长和发布时间评分；B站接口受限时改用 webSearch 定位公开视频结果，仍不可用时降级为搜索入口。");
             if (linkRecommendation != null) {
                 Map<String, Object> preview = bilibiliVideoRecommendationService.preview(linkRecommendation);
                 if (!preview.isEmpty()) {

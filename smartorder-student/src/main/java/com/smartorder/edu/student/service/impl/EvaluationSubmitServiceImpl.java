@@ -134,43 +134,12 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
             QuestionScore qs = QuestionScore.fromCode(question.getQuestionType());
 
             if ("code".equals(question.getQuestionType())) {
-                // 代码题：优先发 MQ 异步判题，失败时降级为同步 Docker 判题
-                boolean mqSent = false;
-                try {
-                    String language = extractString(item.getUserAnswer(), "language", "cpp17");
-                    String sourceCode = extractString(item.getUserAnswer(), "code", "");
-                    rabbitTemplate.convertAndSend(
-                            EvaluationRabbitConfig.GRADING_EXCHANGE,
-                            EvaluationRabbitConfig.RK_CODE,
-                            new CodeGradingMessage(record.getId(), question.getId(),
-                                    taskId, userId, language, sourceCode));
-                    mqSent = true;
-                    log.debug("代码题判分消息已发送: recordId={}, questionId={}", record.getId(), question.getId());
-                } catch (Exception e) {
-                    log.warn("发送代码题判分 MQ 消息失败，降级为同步判题: recordId={}", record.getId(), e);
-                }
-
-                if (mqSent) {
-                    // MQ 异步判题：暂时记为 pending
-                    record.setIsCorrect(null);
-                    record.setScore(BigDecimal.ZERO);
-                    record.setJudgeResult(Map.of("status", "pending_review", "message", "代码题等待沙箱判题"));
-                    subjectivePending++;
-                    details.add(buildDetail(question.getId(), null, BigDecimal.ZERO, "pending_review", record.getUserAnswer(), record.getJudgeResult()));
-                } else {
-                    // 降级：同步 Docker 判题
-                    GradeCodeResult gcr = gradeCode(question, item.getUserAnswer());
-                    record.setIsCorrect(gcr.accepted ? 1 : 0);
-                    record.setScore(gcr.score);
-                    record.setJudgeResult(gcr.judgeResult);
-                    if (!gcr.accepted && gcr.errorType != null) {
-                        record.setErrorType(gcr.errorType);
-                        record.setErrorReason(gcr.errorReason);
-                    }
-                    objectiveScore = objectiveScore.add(gcr.score);
-                    objectiveTotal = objectiveTotal.add(gcr.maxScore);
-                    details.add(buildDetail(question.getId(), gcr.accepted, gcr.score, "graded", record.getUserAnswer(), gcr.judgeResult));
-                }
+                // 代码题必须先落库获得 recordId，再投递 MQ；判分完成后才生成学习算法证据。
+                record.setIsCorrect(null);
+                record.setScore(BigDecimal.ZERO);
+                record.setJudgeResult(Map.of("status", "pending_review", "message", "代码题等待沙箱判题"));
+                subjectivePending++;
+                details.add(buildDetail(question.getId(), null, BigDecimal.ZERO, "pending_review", record.getUserAnswer(), record.getJudgeResult()));
             } else if (qs.isObjective()) {
                 // 客观题：程序判分
                 GradeResult gr = gradeObjective(question, item.getUserAnswer());
@@ -544,14 +513,25 @@ public class EvaluationSubmitServiceImpl implements IEvaluationSubmitService {
             EvaluationQuestion question = questionMap.get(record.getQuestionId());
             if (question == null) continue;
 
-            // 代码题：submit() 中已尝试 MQ 发送，这里只做 sync 降级兜底
+            // 代码题：记录已落库，此时 recordId 可用；MQ 失败时同步判题兜底。
             if ("code".equals(question.getQuestionType())) {
-                log.info("代码题 MQ 发送已在前置流程处理，执行同步兜底: recordId={}", record.getId());
                 try {
-                    gradeCodeAndUpdate(record, question);
-                } catch (Exception ex) {
-                    log.error("代码题同步判分失败: recordId={}", record.getId(), ex);
-                    markRecordError(record, "判分异常: " + ex.getMessage());
+                    String language = extractString(record.getUserAnswer(), "language", "cpp17");
+                    String sourceCode = extractString(record.getUserAnswer(), "code", "");
+                    rabbitTemplate.convertAndSend(
+                            EvaluationRabbitConfig.GRADING_EXCHANGE,
+                            EvaluationRabbitConfig.RK_CODE,
+                            new CodeGradingMessage(record.getId(), question.getId(),
+                                    taskId, userId, language, sourceCode));
+                    log.debug("代码题判分消息已发送: recordId={}, questionId={}", record.getId(), question.getId());
+                } catch (Exception e) {
+                    log.warn("代码题 MQ 发送失败，降级为同步判题: recordId={}", record.getId(), e);
+                    try {
+                        gradeCodeAndUpdate(record, question);
+                    } catch (Exception ex) {
+                        log.error("代码题同步判分失败: recordId={}", record.getId(), ex);
+                        markRecordError(record, "判分异常: " + ex.getMessage());
+                    }
                 }
                 continue;
             }
