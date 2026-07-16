@@ -39,6 +39,7 @@ public class ResourceGenerationService {
     private final IResourceService resourceService;
     private final IResourceContentService resourceContentService;
     private final ResourceContentGenerator resourceContentGenerator;
+    private final ResourceStreamingGenerationService resourceStreamingGenerationService;
 
     public ResourceGenerationResult generateNew(Long userId, ResourceGenerationRequest request) {
         ResourceGenerationRequest safeRequest = request == null ? new ResourceGenerationRequest() : request;
@@ -109,14 +110,8 @@ public class ResourceGenerationService {
             resourceService.updateStatus(resource.getId(), "generating");
         }
         try {
-            ResourceContent generated = resourceContentGenerator.generate(resource, userId);
-            ResourceContent content = resourceContentService.createContent(
-                    resource.getId(),
-                    generated.getContentType(),
-                    generated.getContent(),
-                    generated.getReviewResult()
-            );
-            resourceService.markGenerated(resource.getId(), resourceContentGenerator.fileFormat(resource.getResourceType()));
+            ResourceContent content = resourceStreamingGenerationService.generate(userId, resource, chunk -> {
+            });
             Resource updated = resourceService.getById(resource.getId());
             Task task = resolveTask(updated.getSpaceId(), updated.getTaskId());
             log.info("[ResourceGeneration] existing completed resource={} space={} type={} contentType={}",

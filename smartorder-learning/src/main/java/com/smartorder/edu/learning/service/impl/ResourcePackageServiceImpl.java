@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.learning.domain.entity.Resource;
+import com.smartorder.edu.learning.domain.entity.ResourceContent;
 import com.smartorder.edu.learning.domain.entity.ResourceGenerationJob;
 import com.smartorder.edu.learning.domain.entity.Task;
 import com.smartorder.edu.learning.domain.vo.AgentActionVO;
@@ -17,11 +18,14 @@ import com.smartorder.edu.learning.service.IResourcePackageService;
 import com.smartorder.edu.learning.service.IResourceService;
 import com.smartorder.edu.learning.service.ITaskService;
 import com.smartorder.edu.learning.service.ResourceAsyncGenerationService;
+import com.smartorder.edu.learning.service.ResourceStreamingGenerationService;
 import com.smartorder.edu.learning.service.recommendation.BilibiliVideoRecommendationService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -30,10 +34,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class ResourcePackageServiceImpl implements IResourcePackageService {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -48,6 +52,28 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
     private final IResourceGenerationJobService resourceGenerationJobService;
     private final ResourceAsyncGenerationService resourceAsyncGenerationService;
     private final BilibiliVideoRecommendationService bilibiliVideoRecommendationService;
+    private final ResourceStreamingGenerationService resourceStreamingGenerationService;
+    private final ExecutorService resourceGenerationExecutor;
+
+    public ResourcePackageServiceImpl(
+            ILearningSpaceService learningSpaceService,
+            ITaskService taskService,
+            IResourceService resourceService,
+            IResourceGenerationJobService resourceGenerationJobService,
+            ResourceAsyncGenerationService resourceAsyncGenerationService,
+            BilibiliVideoRecommendationService bilibiliVideoRecommendationService,
+            ResourceStreamingGenerationService resourceStreamingGenerationService,
+            @Qualifier("learningResourceGenerationExecutor") ExecutorService resourceGenerationExecutor
+    ) {
+        this.learningSpaceService = learningSpaceService;
+        this.taskService = taskService;
+        this.resourceService = resourceService;
+        this.resourceGenerationJobService = resourceGenerationJobService;
+        this.resourceAsyncGenerationService = resourceAsyncGenerationService;
+        this.bilibiliVideoRecommendationService = bilibiliVideoRecommendationService;
+        this.resourceStreamingGenerationService = resourceStreamingGenerationService;
+        this.resourceGenerationExecutor = resourceGenerationExecutor;
+    }
 
     @Override
     public ResourcePackageVO previewPackage(Long userId, Long spaceId, ResourcePackageGenerateDTO dto) {
@@ -85,6 +111,114 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
         log.info("[ResourcePackage] user={} space={} package={} scheduled {} resources",
                 userId, spaceId, packageId, inserted.size());
         return generated;
+    }
+
+    @Override
+    public void streamGeneratePackage(Long userId, Long spaceId, ResourcePackageGenerateDTO dto, SseEmitter emitter) {
+        resourceGenerationExecutor.execute(() -> doStreamGeneratePackage(userId, spaceId, dto, emitter));
+    }
+
+    private void doStreamGeneratePackage(Long userId, Long spaceId, ResourcePackageGenerateDTO dto, SseEmitter emitter) {
+        String packageId = null;
+        try {
+            LearningSpaceVO space = learningSpaceService.getSpaceById(userId, spaceId);
+            Task task = resolveTask(spaceId, dto);
+            ResourcePackageGenerateDTO normalized = normalizeDto(dto);
+            packageId = UUID.randomUUID().toString();
+            ResourcePackageVO preview = buildPackage(space, task, normalized, packageId, false);
+
+            List<Resource> resources = preview.getResources().stream()
+                    .map(vo -> toEntity(vo, preview.getPackageId()))
+                    .toList();
+            List<Resource> inserted = resourceService.batchInsertPlanned(resources);
+            List<ResourceGenerationJob> jobs = inserted.stream()
+                    .map(resource -> resourceGenerationJobService.createPending(userId, resource, preview.getPackageId(), preview.getReason()))
+                    .toList();
+            inserted.forEach(resource -> {
+                resourceService.updateStatus(resource.getId(), "generating");
+                resource.setStatus("generating");
+            });
+
+            ResourcePackageVO runningPackage = copyPackageMetadata(preview);
+            runningPackage.setResources(inserted.stream().map(this::toVO).toList());
+            runningPackage.setStatus("generating");
+            runningPackage.setAgentActions(buildAgentActions(runningPackage.getReason(), "running"));
+            emit(emitter, "package-start", Map.of(
+                    "packageId", runningPackage.getPackageId(),
+                    "package", runningPackage
+            ));
+
+            for (int i = 0; i < inserted.size(); i++) {
+                Resource resource = inserted.get(i);
+                ResourceGenerationJob job = jobs.get(i);
+                streamGenerateResource(userId, resource, job, emitter);
+            }
+
+            emit(emitter, "package-done", Map.of(
+                    "packageId", runningPackage.getPackageId(),
+                    "status", "generated"
+            ));
+            emitter.complete();
+        } catch (Exception e) {
+            log.error("[ResourcePackageStream] package generation failed user={} space={} package={} reason={}",
+                    userId, spaceId, packageId, e.getMessage(), e);
+            safeEmit(emitter, "package-failed", Map.of(
+                    "packageId", packageId == null ? "" : packageId,
+                    "message", e.getMessage() == null ? "资料包生成失败" : e.getMessage()
+            ));
+            emitter.completeWithError(e);
+        }
+    }
+
+    private void streamGenerateResource(Long userId, Resource resource, ResourceGenerationJob job, SseEmitter emitter) {
+        resourceGenerationJobService.markGenerating(job.getId());
+        emit(emitter, "resource-start", Map.of(
+                "jobId", job.getId(),
+                "resourceId", resource.getId(),
+                "resource", toVO(resource),
+                "resourceType", resource.getResourceType(),
+                "title", resource.getTitle()
+        ));
+        try {
+            ResourceContent content = resourceStreamingGenerationService.generate(userId, resource, chunk ->
+                    emit(emitter, "resource-token", Map.of(
+                            "jobId", job.getId(),
+                            "resourceId", resource.getId(),
+                            "chunk", chunk
+                    ))
+            );
+            resourceGenerationJobService.markCompleted(job.getId());
+            emit(emitter, "resource-done", Map.of(
+                    "jobId", job.getId(),
+                    "resourceId", resource.getId(),
+                    "contentId", content.getId() == null ? "" : content.getId(),
+                    "contentType", content.getContentType() == null ? "" : content.getContentType()
+            ));
+        } catch (Exception e) {
+            resourceService.updateStatus(resource.getId(), "failed");
+            resourceGenerationJobService.markFailed(job.getId(), e.getMessage());
+            emit(emitter, "resource-failed", Map.of(
+                    "jobId", job.getId(),
+                    "resourceId", resource.getId(),
+                    "message", e.getMessage() == null ? "资源生成失败" : e.getMessage()
+            ));
+        }
+    }
+
+    private void emit(SseEmitter emitter, String eventName, Object data) {
+        try {
+            emitter.send(SseEmitter.event().name(eventName).data(data));
+        } catch (IOException e) {
+            throw new BusinessException("资源生成事件推送失败：" + e.getMessage());
+        }
+    }
+
+    private void safeEmit(SseEmitter emitter, String eventName, Object data) {
+        try {
+            emitter.send(SseEmitter.event().name(eventName).data(data));
+        } catch (Exception ignored) {
+            log.debug("[ResourcePackageStream] ignored failed event emit: {}", eventName);
+        }
     }
 
     private ResourcePackageVO copyPackageMetadata(ResourcePackageVO source) {

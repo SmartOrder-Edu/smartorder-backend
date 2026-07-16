@@ -31,6 +31,7 @@ class ResourceGenerationServiceTest {
     private IResourceService resourceService;
     private IResourceContentService resourceContentService;
     private ResourceContentGenerator resourceContentGenerator;
+    private ResourceStreamingGenerationService resourceStreamingGenerationService;
     private ResourceGenerationService service;
 
     @BeforeEach
@@ -41,13 +42,15 @@ class ResourceGenerationServiceTest {
         resourceService = mock(IResourceService.class);
         resourceContentService = mock(IResourceContentService.class);
         resourceContentGenerator = mock(ResourceContentGenerator.class);
+        resourceStreamingGenerationService = mock(ResourceStreamingGenerationService.class);
         service = new ResourceGenerationService(
                 learningSpaceService,
                 taskService,
                 pathNodeService,
                 resourceService,
                 resourceContentService,
-                resourceContentGenerator
+                resourceContentGenerator,
+                resourceStreamingGenerationService
         );
     }
 
@@ -148,18 +151,10 @@ class ResourceGenerationServiceTest {
         task.setSpaceId(10L);
         when(taskService.getBySpaceId(10L)).thenReturn(List.of(task));
 
-        ResourceContent generated = new ResourceContent();
-        generated.setContentType("markdown");
-        generated.setContent("# 已生成内容");
-        generated.setReviewResult("{\"status\":\"passed\"}");
-        when(resourceContentGenerator.generate(resource, 7L)).thenReturn(generated);
-
         ResourceContent content = new ResourceContent();
         content.setId(100L);
         content.setResourceId(99L);
-        when(resourceContentService.createContent(99L, "markdown", "# 已生成内容", "{\"status\":\"passed\"}"))
-                .thenReturn(content);
-        when(resourceContentGenerator.fileFormat("doc")).thenReturn("md");
+        when(resourceStreamingGenerationService.generate(eq(7L), eq(resource), any())).thenReturn(content);
         when(resourceService.getById(99L)).thenReturn(resource);
 
         ResourceGenerationResult result = service.generateExistingInBackground(7L, 99L);
@@ -167,6 +162,6 @@ class ResourceGenerationServiceTest {
         assertThat(result.resource()).isSameAs(resource);
         assertThat(result.content()).isSameAs(content);
         verify(resourceService, never()).updateStatus(99L, "generating");
-        verify(resourceService).markGenerated(99L, "md");
+        verify(resourceStreamingGenerationService).generate(eq(7L), eq(resource), any());
     }
 }

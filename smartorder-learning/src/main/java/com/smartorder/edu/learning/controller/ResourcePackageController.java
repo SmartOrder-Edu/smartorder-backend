@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -51,6 +53,25 @@ public class ResourcePackageController {
     ) {
         Long userId = getCurrentUserId();
         return Result.success(resourcePackageService.generatePackage(userId, spaceId, dto));
+    }
+
+    @PostMapping(value = "/generate/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "流式生成资料包", description = "确认资料包方案并通过 SSE 实时返回资源生成过程和内容片段")
+    public SseEmitter generateStream(
+            @PathVariable Long spaceId,
+            @RequestBody(required = false) ResourcePackageGenerateDTO dto
+    ) {
+        Long userId = getCurrentUserId();
+        SseEmitter emitter = new SseEmitter(30 * 60 * 1000L);
+        emitter.onCompletion(() -> log.info("[ResourcePackageStream] completed user={} space={}", userId, spaceId));
+        emitter.onTimeout(() -> {
+            log.warn("[ResourcePackageStream] timeout user={} space={}", userId, spaceId);
+            emitter.complete();
+        });
+        emitter.onError(ex -> log.warn("[ResourcePackageStream] error user={} space={} reason={}",
+                userId, spaceId, ex.getMessage()));
+        resourcePackageService.streamGeneratePackage(userId, spaceId, dto, emitter);
+        return emitter;
     }
 
     @GetMapping("/jobs")
