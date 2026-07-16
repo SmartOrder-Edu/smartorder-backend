@@ -338,7 +338,7 @@ public class PlanAndExecuteEngine {
         PlanContext planContext = buildPlanContext(plan, context);
 
         int totalReplans = 0;
-        int stepIndex = plan.getCurrentStepIndex();
+        int stepIndex = findFirstRunnableStepIndex(sortedSteps);
 
         while (stepIndex < sortedSteps.size()) {
             // 预算检查：超出则抛出 BudgetExceededException，由 AgentRunSupervisor 捕获
@@ -1351,6 +1351,8 @@ public class PlanAndExecuteEngine {
                 case SKIP -> {
                     task.setStatus("SKIPPED");
                     task.setErrorMessage("验证未通过，已跳过: " + verification.getFeedback());
+                    stepOutputs.put(task.getStepId(), task.getErrorMessage());
+                    plan.setStepOutputs(stepOutputs);
                     dispatcher.emit(emitter, context, AgentEventType.EXECUTION_STEP_FAILED, stepToPayload(task));
                     return true; // 跳过视为完成（不阻塞后续任务）
                 }
@@ -1574,11 +1576,17 @@ public class PlanAndExecuteEngine {
     // ============ 拓扑排序 ============
 
     private List<ExecutionStep> topologicalSort(List<ExecutionStep> tasks) {
-        Map<String, ExecutionStep> taskMap = tasks.stream()
-                .collect(Collectors.toMap(ExecutionStep::getStepId, t -> t));
+        Map<String, Integer> originalOrder = new LinkedHashMap<>();
+        for (int i = 0; i < tasks.size(); i++) {
+            originalOrder.put(tasks.get(i).getStepId(), i);
+        }
 
-        Map<String, List<String>> adjacency = new HashMap<>();
-        Map<String, Integer> inDegree = new HashMap<>();
+        Map<String, ExecutionStep> taskMap = tasks.stream()
+                .collect(Collectors.toMap(ExecutionStep::getStepId, t -> t,
+                        (left, right) -> left, LinkedHashMap::new));
+
+        Map<String, List<String>> adjacency = new LinkedHashMap<>();
+        Map<String, Integer> inDegree = new LinkedHashMap<>();
 
         for (ExecutionStep task : tasks) {
             adjacency.put(task.getStepId(), new ArrayList<>());
@@ -1592,7 +1600,7 @@ public class PlanAndExecuteEngine {
             }
         }
 
-        Queue<String> queue = new LinkedList<>();
+        Queue<String> queue = new PriorityQueue<>(Comparator.comparingInt(originalOrder::get));
         for (Map.Entry<String, Integer> entry : inDegree.entrySet()) {
             if (entry.getValue() == 0) queue.add(entry.getKey());
         }
@@ -1612,6 +1620,22 @@ public class PlanAndExecuteEngine {
         }
 
         return result;
+    }
+
+    private int findFirstRunnableStepIndex(List<ExecutionStep> sortedSteps) {
+        for (int i = 0; i < sortedSteps.size(); i++) {
+            ExecutionStep step = sortedSteps.get(i);
+            if (!isTerminalStepStatus(step.getStatus())) {
+                return i;
+            }
+        }
+        return sortedSteps.size();
+    }
+
+    private boolean isTerminalStepStatus(String status) {
+        return "COMPLETED".equals(status)
+                || "SKIPPED".equals(status)
+                || "FAILED".equals(status);
     }
 
     // ============ 辅助方法 ============
