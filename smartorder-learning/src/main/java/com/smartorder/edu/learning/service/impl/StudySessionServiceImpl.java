@@ -764,6 +764,10 @@ public class StudySessionServiceImpl implements IStudySessionService {
         }
 
         String feedbackType = readPayloadString(dto, "feedbackType", dto.getTargetId());
+        if ("draw_diagram".equals(feedbackType) && readPayloadBoolean(dto, "clientHandled", false)) {
+            return List.of(feedbackVisualEffectAction(feedbackType, dto));
+        }
+
         StudyTeachingActionVO reply = agentReplyAction(feedbackType);
         List<StudyTeachingActionVO> actions = new ArrayList<>();
         actions.add(reply);
