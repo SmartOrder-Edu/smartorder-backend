@@ -57,6 +57,12 @@ import java.util.UUID;
 public class StudySessionServiceImpl implements IStudySessionService {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final Set<String> CLIENT_HANDLED_FEEDBACK_TYPES = Set.of(
+            "dont_understand",
+            "another_example",
+            "draw_diagram",
+            "similar_question"
+    );
 
     private final StudySessionMapper studySessionMapper;
     private final StudyEventMapper studyEventMapper;
@@ -764,7 +770,8 @@ public class StudySessionServiceImpl implements IStudySessionService {
         }
 
         String feedbackType = readPayloadString(dto, "feedbackType", dto.getTargetId());
-        if ("draw_diagram".equals(feedbackType) && readPayloadBoolean(dto, "clientHandled", false)) {
+        if (readPayloadBoolean(dto, "clientHandled", false)
+                && CLIENT_HANDLED_FEEDBACK_TYPES.contains(feedbackType)) {
             return List.of(feedbackVisualEffectAction(feedbackType, dto));
         }
 
