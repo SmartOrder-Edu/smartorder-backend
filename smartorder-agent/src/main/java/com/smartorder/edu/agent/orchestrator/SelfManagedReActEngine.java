@@ -95,6 +95,31 @@ public class SelfManagedReActEngine {
         );
     }
 
+    private SystemMessage buildStudyContextInstruction(Map<String, Object> studyContext) {
+        String contextJson = JSON.toJSONString(studyContext);
+        if (contextJson.length() > 6000) {
+            contextJson = contextJson.substring(0, 6000) + "...";
+        }
+        return SystemMessage.from("""
+                [学习执行页上下文]
+                用户正在学习一个教学脚本。下面是前端传入的当前学习环境上下文，回答时必须优先围绕它解释。
+                如果用户说“这里”“这一步”“没听懂”，默认指当前脚本步骤和当前教学段。
+                回答要短、直接、教学化；优先解释当前段落，不要泛泛展开整章内容。可以给出一个小例子或一条临时板书建议。
+
+                上下文 JSON：
+                %s
+                """.formatted(contextJson));
+    }
+
+    private void injectStudyContextIfPresent(List<ChatMessage> messages, AgentRuntimeContext runtimeContext) {
+        Map<String, Object> studyContext = runtimeContext.getStudyContext();
+        if (studyContext == null || studyContext.isEmpty()) {
+            return;
+        }
+        messages.add(Math.min(1, messages.size()), buildStudyContextInstruction(studyContext));
+        log.info("[SelfManagedReActEngine] 注入学习执行页上下文，keys={}", studyContext.keySet());
+    }
+
     /**
      * 执行 ReAct 循环
      */
@@ -110,6 +135,7 @@ public class SelfManagedReActEngine {
         if (runtimeContext.getAttachmentContext() != null && !runtimeContext.getAttachmentContext().isBlank()) {
             messages.add(Math.min(1, messages.size()), SystemMessage.from(runtimeContext.getAttachmentContext()));
         }
+        injectStudyContextIfPresent(messages, runtimeContext);
 
         // 注入 RAG 上下文（自动触发时生成）
         if (runtimeContext.getRagContext() != null && !runtimeContext.getRagContext().isBlank()) {
@@ -178,6 +204,7 @@ public class SelfManagedReActEngine {
         if (runtimeContext.getAttachmentContext() != null && !runtimeContext.getAttachmentContext().isBlank()) {
             messages.add(SystemMessage.from(runtimeContext.getAttachmentContext()));
         }
+        injectStudyContextIfPresent(messages, runtimeContext);
 
         // 注入强制 ragRetrieve 指令（当前端传递了引用资料范围时）
         if (runtimeContext.isForceRagRetrieve()) {
@@ -253,6 +280,7 @@ public class SelfManagedReActEngine {
         if (runtimeContext.getAttachmentContext() != null && !runtimeContext.getAttachmentContext().isBlank()) {
             messages.add(SystemMessage.from(runtimeContext.getAttachmentContext()));
         }
+        injectStudyContextIfPresent(messages, runtimeContext);
 
         // 注入强制 ragRetrieve 指令（当前端传递了引用资料范围时）
         if (runtimeContext.isForceRagRetrieve()) {

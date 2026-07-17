@@ -57,6 +57,12 @@ import java.util.UUID;
 public class StudySessionServiceImpl implements IStudySessionService {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final Set<String> CLIENT_HANDLED_FEEDBACK_TYPES = Set.of(
+            "dont_understand",
+            "another_example",
+            "draw_diagram",
+            "similar_question"
+    );
 
     private final StudySessionMapper studySessionMapper;
     private final StudyEventMapper studyEventMapper;
@@ -764,11 +770,19 @@ public class StudySessionServiceImpl implements IStudySessionService {
         }
 
         String feedbackType = readPayloadString(dto, "feedbackType", dto.getTargetId());
+        if (readPayloadBoolean(dto, "clientHandled", false)
+                && CLIENT_HANDLED_FEEDBACK_TYPES.contains(feedbackType)) {
+            return List.of(feedbackVisualEffectAction(feedbackType, dto));
+        }
+
         StudyTeachingActionVO reply = agentReplyAction(feedbackType);
         List<StudyTeachingActionVO> actions = new ArrayList<>();
         actions.add(reply);
+        actions.add(feedbackVisualEffectAction(feedbackType, dto));
 
-        if ("already_mastered".equals(feedbackType)) {
+        if ("slower".equals(feedbackType)) {
+            actions.add(setPlaybackRateAction(0.75));
+        } else if ("already_mastered".equals(feedbackType)) {
             actions.add(noteAction("Agent：已标记本步为掌握，可直接进入下一步。"));
         } else if ("skip".equals(feedbackType)) {
             StudyTeachingActionVO skip = new StudyTeachingActionVO();
@@ -837,6 +851,33 @@ public class StudySessionServiceImpl implements IStudySessionService {
         action.setSceneType("canvas");
         action.setReason("反馈触发画布补充提示");
         action.setPayload(new LinkedHashMap<>(Map.of("note", note)));
+        return action;
+    }
+
+    private StudyTeachingActionVO feedbackVisualEffectAction(String feedbackType, StudyEventDTO dto) {
+        StudyTeachingActionVO action = new StudyTeachingActionVO();
+        action.setActionId("act-" + UUID.randomUUID());
+        action.setActionType("trigger_feedback_visual_effect");
+        action.setSceneType("canvas");
+        action.setReason("学生反馈触发画布可见响应");
+        action.setPayload(new LinkedHashMap<>(Map.of(
+                "type", feedbackType == null ? "" : feedbackType,
+                "targetType", dto.getTargetType() == null ? "feedback" : dto.getTargetType(),
+                "targetId", dto.getTargetId() == null ? "" : dto.getTargetId(),
+                "currentStepId", dto.getCurrentStepId() == null ? "" : dto.getCurrentStepId(),
+                "currentTimelineId", dto.getCurrentTimelineId() == null ? "" : dto.getCurrentTimelineId(),
+                "timelineTimeMs", dto.getTimelineTimeMs() == null ? 0L : dto.getTimelineTimeMs()
+        )));
+        return action;
+    }
+
+    private StudyTeachingActionVO setPlaybackRateAction(double rate) {
+        StudyTeachingActionVO action = new StudyTeachingActionVO();
+        action.setActionId("act-" + UUID.randomUUID());
+        action.setActionType("set_playback_rate");
+        action.setSceneType("timeline");
+        action.setReason("学生请求调整讲解速度");
+        action.setPayload(new LinkedHashMap<>(Map.of("rate", rate)));
         return action;
     }
 

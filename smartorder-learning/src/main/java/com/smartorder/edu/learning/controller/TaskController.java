@@ -72,8 +72,7 @@ public class TaskController {
     @Operation(summary = "生成今日学习任务", description = "根据当前用户活跃学习空间和学习路径生成今日可执行任务")
     public Result<List<TaskVO>> planToday(@RequestBody(required = false) PlanTodayTasksDTO dto) {
         Long userId = getCurrentUserId();
-        Integer maxTasks = dto == null ? null : dto.getMaxTasks();
-        return Result.success(taskService.planTodayTasks(userId, maxTasks).stream().map(this::toVO).toList());
+        return Result.success(taskService.planTodayTasks(userId, dto).stream().map(this::toVO).toList());
     }
 
     @PatchMapping("/{taskId}/status")

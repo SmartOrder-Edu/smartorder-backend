@@ -2,6 +2,7 @@ package com.smartorder.edu.learning.service;
 
 import com.smartorder.edu.learning.domain.entity.Task;
 import com.smartorder.edu.learning.dto.CreateTaskDTO;
+import com.smartorder.edu.learning.dto.PlanTodayTasksDTO;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -25,6 +26,11 @@ public interface ITaskService {
      * 根据当前用户活跃学习空间生成今日可执行任务。
      */
     List<Task> planTodayTasks(Long userId, Integer maxTasks);
+
+    /**
+     * 根据当前用户活跃学习空间、时间预算和策略生成今日可执行任务。
+     */
+    List<Task> planTodayTasks(Long userId, PlanTodayTasksDTO dto);
 
     /**
      * 根据学习空间ID查询任务列表

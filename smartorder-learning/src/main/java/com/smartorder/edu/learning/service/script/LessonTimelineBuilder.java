@@ -43,14 +43,13 @@ public class LessonTimelineBuilder {
         List<SegmentTimelineSpec> specs = new ArrayList<>();
         for (int i = 0; i < effectiveSegmentTypes.size(); i++) {
             String segmentType = effectiveSegmentTypes.get(i);
-            boolean waitForUser = i == effectiveSegmentTypes.size() - 1 || waitsForUser(segmentType);
-            long durationMs = waitForUser ? 1800L : DEFAULT_SEGMENT_MS + i * 400L;
+            long durationMs = isInteractiveSegment(segmentType) ? 1800L : DEFAULT_SEGMENT_MS + i * 400L;
             specs.add(new SegmentTimelineSpec(
                     step.getId() + "-" + (i + 1),
                     segmentType,
                     "",
                     durationMs,
-                    waitForUser,
+                    true,
                     List.of(),
                     Map.of()
             ));
@@ -125,7 +124,7 @@ public class LessonTimelineBuilder {
                         "segmentIndex", i,
                         "segmentType", segmentType,
                         "waitForUser", true,
-                        "reason", waitsForUser(segmentType) ? "interaction" : "manual_continue"
+                        "reason", pauseReason(segmentType)
                 )));
                 timeline.getCues().add(pauseCue);
             }
@@ -137,14 +136,15 @@ public class LessonTimelineBuilder {
                 "source", source,
                 "stepTitle", step.getTitle(),
                 "nodeType", step.getNodeType(),
-                "contractVersion", 2,
+                "contractVersion", 3,
                 "capabilities", List.of(
                         "segment_reveal",
                         "scene_action",
                         "pause_at_segment_end",
                         "board_block_action_payload",
                         "board_block_reveal",
-                        "board_item_reveal"
+                        "board_item_reveal",
+                        "segment_end_check"
                 )
         )));
         return timeline;
@@ -174,15 +174,14 @@ public class LessonTimelineBuilder {
             String type = text(segment.get("type"), "explain");
             String speechText = speechText(segment);
             int autoAdvanceMs = intValue(segment.get("autoAdvanceMs"), 0);
-            boolean waitForUser = autoAdvanceMs <= 0 || waitsForUser(type);
-            long durationMs = Math.max(autoAdvanceMs, estimateSpeechDurationMs(speechText));
             List<Map<String, Object>> boardBlocks = boardBlocks(segment);
+            long durationMs = resolveSegmentDurationMs(autoAdvanceMs, estimateSpeechDurationMs(speechText), boardBlocks);
             specs.add(new SegmentTimelineSpec(
                     id,
                     type,
                     speechText,
                     durationMs,
-                    waitForUser,
+                    true,
                     boardBlocks,
                     boardActionPayload(boardBlocks)
             ));
@@ -412,6 +411,64 @@ public class LessonTimelineBuilder {
         return Math.max(1800L, Math.min(MAX_SEGMENT_MS, length * CHINESE_CHAR_MS));
     }
 
+    private long resolveSegmentDurationMs(int autoAdvanceMs, long speechMs, List<Map<String, Object>> boardBlocks) {
+        double base = Math.max(autoAdvanceMs, speechMs);
+        int denseBlockCount = 0;
+        int totalTextSize = 0;
+        for (Map<String, Object> block : boardBlocks) {
+            String type = normalizeBlockType(text(block.get("type"), ""));
+            if (List.of("comparison", "vs_compare", "code", "formula", "structure", "trace").contains(type)) {
+                denseBlockCount++;
+            }
+            totalTextSize += boardBlockTextSize(block);
+        }
+        if (denseBlockCount >= 3) {
+            base *= 2;
+        } else if (denseBlockCount >= 2) {
+            base *= 1.5;
+        }
+        if (totalTextSize > 800) {
+            base *= 1.3;
+        }
+        return Math.round(base);
+    }
+
+    private int boardBlockTextSize(Map<String, Object> block) {
+        int total = 0;
+        for (String key : List.of(
+                "title", "content", "caption", "term", "definition", "intuition", "formal",
+                "lead", "question", "summary", "conclusion", "rule", "context", "reminder",
+                "explanation", "invariant", "statement", "whyItMatters", "time", "space", "reason"
+        )) {
+            total += textLength(block.get(key));
+        }
+        for (String key : List.of("items", "points", "steps", "keyPoints", "examples", "cases", "criteria")) {
+            total += textLength(block.get(key));
+        }
+        return total;
+    }
+
+    private int textLength(Object value) {
+        if (value == null) {
+            return 0;
+        }
+        if (value instanceof List<?> list) {
+            int total = 0;
+            for (Object item : list) {
+                total += textLength(item);
+            }
+            return total;
+        }
+        if (value instanceof Map<?, ?> map) {
+            int total = 0;
+            for (Object item : map.values()) {
+                total += textLength(item);
+            }
+            return total;
+        }
+        return String.valueOf(value).length();
+    }
+
     private long clampDuration(long durationMs) {
         return Math.max(MIN_SEGMENT_MS, Math.min(MAX_SEGMENT_MS, durationMs));
     }
@@ -450,9 +507,12 @@ public class LessonTimelineBuilder {
         };
     }
 
-    private boolean waitsForUser(String segmentType) {
+    private String pauseReason(String segmentType) {
+        return isInteractiveSegment(segmentType) ? "interaction" : "segment_end_check";
+    }
+
+    private boolean isInteractiveSegment(String segmentType) {
         return "quiz".equals(segmentType)
-                || "diagram".equals(segmentType)
                 || "teacher_question".equals(segmentType)
                 || "student_try".equals(segmentType)
                 || "self_check".equals(segmentType);
