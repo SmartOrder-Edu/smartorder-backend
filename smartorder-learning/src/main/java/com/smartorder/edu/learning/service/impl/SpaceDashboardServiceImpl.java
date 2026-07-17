@@ -52,9 +52,10 @@ public class SpaceDashboardServiceImpl implements ISpaceDashboardService {
         List<Task> pendingTaskList = taskService.getPendingBySpaceId(spaceId, userId);
         List<Task> overdueTaskList = taskService.getOverdueBySpaceId(spaceId, userId);
 
-        dashboard.setTodayTasks(todayTaskList.stream().map(this::toTaskVO).toList());
-        dashboard.setPendingTasks(pendingTaskList.stream().map(this::toTaskVO).toList());
-        dashboard.setOverdueTasks(overdueTaskList.stream().map(this::toTaskVO).toList());
+        String spaceName = space.getName();
+        dashboard.setTodayTasks(todayTaskList.stream().map(t -> toTaskVO(t, spaceName)).toList());
+        dashboard.setPendingTasks(pendingTaskList.stream().map(t -> toTaskVO(t, spaceName)).toList());
+        dashboard.setOverdueTasks(overdueTaskList.stream().map(t -> toTaskVO(t, spaceName)).toList());
 
         // 4. Path nodes with computed status
         List<LearningPathNode> nodes = pathNodeService.getBySpaceId(spaceId);
@@ -110,7 +111,7 @@ public class SpaceDashboardServiceImpl implements ISpaceDashboardService {
 
     // ============ Conversion Methods ============
 
-    private TaskVO toTaskVO(Task task) {
+    private TaskVO toTaskVO(Task task, String spaceName) {
         TaskVO vo = new TaskVO();
         vo.setId(task.getId());
         vo.setSpaceId(task.getSpaceId());
@@ -131,6 +132,7 @@ public class SpaceDashboardServiceImpl implements ISpaceDashboardService {
         vo.setAiSuggestion(task.getAiSuggestion());
         vo.setAgentReason(task.getAgentReason());
         vo.setMetadata(task.getMetadata());
+        vo.setSpaceName(spaceName);
 
         LocalDate today = LocalDate.now();
         vo.setIsToday(task.getDueDate() != null && task.getDueDate().equals(today));

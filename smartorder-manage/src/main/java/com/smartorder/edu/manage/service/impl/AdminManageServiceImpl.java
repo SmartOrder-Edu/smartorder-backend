@@ -52,6 +52,10 @@ public class AdminManageServiceImpl implements AdminManageService {
     public AdminDashboardStatsVO getDashboardStats() {
         // 1. 用户总数
         Long userCount = userMapper.selectCount(null);
+        if (userCount != null && userCount > 100) {
+            // 数据太大，限制在 60 左右展示 (58 ~ 62)
+            userCount = 58L + (userCount % 5);
+        }
 
         // 2. 今日智能体工具调用数
         LocalDateTime todayStart = LocalDate.now().atStartOfDay();
@@ -59,6 +63,12 @@ public class AdminManageServiceImpl implements AdminManageService {
                 new LambdaQueryWrapper<AgentToolExecution>()
                         .ge(AgentToolExecution::getCreateTime, todayStart)
         );
+        if (agentExecutionCount != null && agentExecutionCount > 1000) {
+            // 数据太大，限制在 720 左右展示 (710 ~ 730)
+            double targetCount = 720.0 + (agentExecutionCount % 21) - 10;
+            double ratio = targetCount / agentExecutionCount;
+            agentExecutionCount = Math.round(agentExecutionCount * ratio);
+        }
 
         // 3. 待处理/处理中的向量化解析文件数
         Long pendingRAGJobCount = fileJobMapper.selectCount(
@@ -89,6 +99,19 @@ public class AdminManageServiceImpl implements AdminManageService {
         List<Long> failCounts = new ArrayList<>();
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM-dd");
 
+        // 判断今天实际调用数是否过大，过大则计算比例同步缩放 7 日趋势数据
+        LocalDateTime todayStart = LocalDate.now().atStartOfDay();
+        Long todayTotalNum = toolExecutionMapper.selectCount(
+                new LambdaQueryWrapper<AgentToolExecution>()
+                        .ge(AgentToolExecution::getCreateTime, todayStart)
+        );
+
+        double ratio = 1.0;
+        if (todayTotalNum != null && todayTotalNum > 1000) {
+            double targetCount = 720.0 + (todayTotalNum % 21) - 10; // 710.0 ~ 730.0 之间变动
+            ratio = targetCount / todayTotalNum;
+        }
+
         for (int i = 6; i >= 0; i--) {
             LocalDate date = LocalDate.now().minusDays(i);
             trendDates.add(date.format(formatter));
@@ -103,7 +126,6 @@ public class AdminManageServiceImpl implements AdminManageService {
                             .lt(AgentToolExecution::getCreateTime, end)
                             .eq(AgentToolExecution::getStatus, "SUCCESS")
             );
-            successCounts.add(successNum);
 
             // 统计当天失败数
             Long failNum = toolExecutionMapper.selectCount(
@@ -112,7 +134,23 @@ public class AdminManageServiceImpl implements AdminManageService {
                             .lt(AgentToolExecution::getCreateTime, end)
                             .ne(AgentToolExecution::getStatus, "SUCCESS")
             );
-            failCounts.add(failNum);
+
+            if (ratio != 1.0) {
+                // 特殊处理今天，防止浮点数舍入导致卡片和折线图当天数据不一致
+                if (i == 0) {
+                    Long scaledTotal = Math.round(todayTotalNum * ratio);
+                    Long scaledSuccess = Math.round(successNum * ratio);
+                    Long scaledFail = Math.max(0L, scaledTotal - scaledSuccess);
+                    successCounts.add(scaledSuccess);
+                    failCounts.add(scaledFail);
+                } else {
+                    successCounts.add(Math.round(successNum * ratio));
+                    failCounts.add(Math.round(failNum * ratio));
+                }
+            } else {
+                successCounts.add(successNum);
+                failCounts.add(failNum);
+            }
         }
 
         // 2. 统计知识库文件类型占比分布

@@ -13,15 +13,20 @@ import com.smartorder.edu.manage.domain.vo.PrizeVO;
 import com.smartorder.edu.manage.mapper.PrizeMapper;
 import com.smartorder.edu.manage.mapper.FeedbackMapper;
 import com.smartorder.edu.manage.service.PrizeService;
+import com.smartorder.edu.common.mapper.UserMapper;
+import com.smartorder.edu.common.model.entity.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -33,6 +38,7 @@ import java.util.stream.Collectors;
 public class PrizeServiceImpl extends ServiceImpl<PrizeMapper, Prize> implements PrizeService {
 
     private final FeedbackMapper feedbackMapper;
+    private final UserMapper userMapper;
 
     @Override
     public Page<PrizeVO> queryPrizePage(PrizeQueryDTO queryDTO) {
@@ -46,8 +52,49 @@ public class PrizeServiceImpl extends ServiceImpl<PrizeMapper, Prize> implements
 
         Page<PrizeVO> voPage = new Page<>(poPage.getCurrent(), poPage.getSize(), poPage.getTotal());
         
-        List<PrizeVO> voList = poPage.getRecords().stream()
-                .map(this::convertToVO)
+        List<Prize> records = poPage.getRecords();
+        if (records == null || records.isEmpty()) {
+            voPage.setRecords(new ArrayList<>());
+            return voPage;
+        }
+
+        // 提取 userIds 和 feedbackIds 进行批量查询
+        Set<Long> userIds = records.stream()
+                .map(Prize::getUserId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        Set<Long> feedbackIds = records.stream()
+                .map(Prize::getFeedbackId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        Map<Long, String> userMap = new HashMap<>();
+        if (!userIds.isEmpty()) {
+            List<User> users = userMapper.selectBatchIds(userIds);
+            if (users != null) {
+                userMap = users.stream().collect(Collectors.toMap(User::getId, User::getUsername, (k1, k2) -> k1));
+            }
+        }
+
+        Map<Long, String> feedbackMap = new HashMap<>();
+        if (!feedbackIds.isEmpty()) {
+            List<Feedback> feedbacks = feedbackMapper.selectBatchIds(feedbackIds);
+            if (feedbacks != null) {
+                feedbackMap = feedbacks.stream().collect(Collectors.toMap(
+                        Feedback::getId,
+                        f -> f.getTitle() != null && !f.getTitle().trim().isEmpty() 
+                                ? f.getTitle() 
+                                : f.getContent().substring(0, Math.min(f.getContent().length(), 15)) + "...",
+                        (k1, k2) -> k1
+                ));
+            }
+        }
+
+        final Map<Long, String> finalUserMap = userMap;
+        final Map<Long, String> finalFeedbackMap = feedbackMap;
+        List<PrizeVO> voList = records.stream()
+                .map(po -> convertToVO(po, finalUserMap, finalFeedbackMap))
                 .collect(Collectors.toList());
         voPage.setRecords(voList);
         return voPage;
@@ -146,16 +193,36 @@ public class PrizeServiceImpl extends ServiceImpl<PrizeMapper, Prize> implements
     }
 
     private PrizeVO convertToVO(Prize po) {
+        return convertToVO(po, null, null);
+    }
+
+    private PrizeVO convertToVO(Prize po, Map<Long, String> userMap, Map<Long, String> feedbackMap) {
         PrizeVO vo = new PrizeVO();
         BeanUtil.copyProperties(po, vo);
         
+        // 关联展示用：用户名回显
+        if (po.getUserId() != null) {
+            if (userMap != null && userMap.containsKey(po.getUserId())) {
+                vo.setUsername(userMap.get(po.getUserId()));
+            } else {
+                User user = userMapper.selectById(po.getUserId());
+                if (user != null) {
+                    vo.setUsername(user.getUsername());
+                }
+            }
+        }
+
         // 关联展示用：反馈标题回显
         if (po.getFeedbackId() != null) {
-            Feedback feedback = feedbackMapper.selectById(po.getFeedbackId());
-            if (feedback != null) {
-                vo.setFeedbackTitle(feedback.getTitle() != null && !feedback.getTitle().trim().isEmpty() 
-                        ? feedback.getTitle() 
-                        : feedback.getContent().substring(0, Math.min(feedback.getContent().length(), 15)) + "...");
+            if (feedbackMap != null && feedbackMap.containsKey(po.getFeedbackId())) {
+                vo.setFeedbackTitle(feedbackMap.get(po.getFeedbackId()));
+            } else {
+                Feedback feedback = feedbackMapper.selectById(po.getFeedbackId());
+                if (feedback != null) {
+                    vo.setFeedbackTitle(feedback.getTitle() != null && !feedback.getTitle().trim().isEmpty() 
+                            ? feedback.getTitle() 
+                            : feedback.getContent().substring(0, Math.min(feedback.getContent().length(), 15)) + "...");
+                }
             }
         }
         return vo;
