@@ -56,6 +56,11 @@ public class AgentRuntimeContext {
      */
     private List<Long> fileIds;
 
+    /**
+     * 学习执行页的当前脚本/段落/画布/时间轴上下文。
+     */
+    private Map<String, Object> studyContext;
+
     private List<Long> allowedAttachmentFileIds;
 
     @Builder.Default
