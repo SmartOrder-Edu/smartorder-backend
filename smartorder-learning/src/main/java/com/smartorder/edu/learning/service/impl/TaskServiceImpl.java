@@ -6,6 +6,7 @@ import com.smartorder.edu.learning.domain.entity.LearningPathNode;
 import com.smartorder.edu.learning.domain.entity.LearningSpace;
 import com.smartorder.edu.learning.domain.entity.Task;
 import com.smartorder.edu.learning.dto.CreateTaskDTO;
+import com.smartorder.edu.learning.dto.PlanTodayTasksDTO;
 import com.smartorder.edu.learning.mapper.LearningPathNodeMapper;
 import com.smartorder.edu.learning.mapper.LearningSpaceMapper;
 import com.smartorder.edu.learning.mapper.TaskMapper;
@@ -37,6 +38,9 @@ public class TaskServiceImpl implements ITaskService {
     );
     private static final Set<String> ALLOWED_STATUSES = Set.of(
             "pending", "in_progress", "doing", "completed", "overdue", "cancelled"
+    );
+    private static final Set<String> ALLOWED_PLAN_STRATEGIES = Set.of(
+            "deadline_first", "weakness_first", "balanced"
     );
 
     private final TaskMapper taskMapper;
@@ -92,12 +96,31 @@ public class TaskServiceImpl implements ITaskService {
 
     @Override
     public List<Task> planTodayTasks(Long userId, Integer maxTasks) {
-        int limit = normalizePlanLimit(maxTasks);
-        List<LearningSpace> spaces = selectActiveSpaces(userId);
+        PlanTodayTasksDTO dto = new PlanTodayTasksDTO();
+        dto.setMaxTasks(maxTasks);
+        return planTodayTasks(userId, dto);
+    }
+
+    @Override
+    public List<Task> planTodayTasks(Long userId, PlanTodayTasksDTO dto) {
+        PlanTodayTasksDTO request = dto == null ? new PlanTodayTasksDTO() : dto;
+        int limit = normalizePlanLimit(request.getMaxTasks());
+        int remainingMinutes = normalizeDailyBudget(request.getTotalAvailableMinutes(), limit);
+        String strategy = normalizeStrategy(request.getStrategy());
+        Set<String> allowedActionTypes = normalizeAllowedActionTypes(request.getAllowedActionTypes());
+        if (!allowedActionTypes.contains("learn_script")) {
+            log.info("今日任务规划跳过：allowedActionTypes 未包含 learn_script，userId={}", userId);
+            return List.of();
+        }
+
+        List<LearningSpace> spaces = sortSpacesByStrategy(selectActiveSpaces(userId), strategy);
         List<Task> createdTasks = new ArrayList<>();
 
         for (LearningSpace space : spaces) {
             if (createdTasks.size() >= limit) {
+                break;
+            }
+            if (remainingMinutes < 5) {
                 break;
             }
             if (hasActiveTodayTask(space.getId(), userId)) {
@@ -109,9 +132,12 @@ public class TaskServiceImpl implements ITaskService {
                 continue;
             }
 
-            Task task = buildTodayLearningTask(userId, space, nextNode, createdTasks.size());
+            Task task = buildTodayLearningTask(userId, space, nextNode, createdTasks.size(), strategy);
+            int plannedMinutes = Math.min(task.getEstimatedDurationMinutes(), remainingMinutes);
+            task.setEstimatedDurationMinutes(Math.max(5, plannedMinutes));
             taskMapper.insert(task);
             createdTasks.add(task);
+            remainingMinutes -= task.getEstimatedDurationMinutes();
         }
 
         return createdTasks;
@@ -286,7 +312,7 @@ public class TaskServiceImpl implements ITaskService {
         return assignedNodeIds;
     }
 
-    private Task buildTodayLearningTask(Long userId, LearningSpace space, LearningPathNode node, int sortOrder) {
+    private Task buildTodayLearningTask(Long userId, LearningSpace space, LearningPathNode node, int sortOrder, String strategy) {
         Task task = new Task();
         task.setUserId(userId);
         task.setSpaceId(space.getId());
@@ -304,10 +330,21 @@ public class TaskServiceImpl implements ITaskService {
         task.setEstimatedDurationMinutes(normalizeEstimatedMinutes(node.getEstimatedDurationMinutes()));
         task.setSortOrder(sortOrder);
         task.setAiSuggestion("建议先完成本节点学习脚本，再根据掌握情况生成练习或复习任务。");
-        task.setAgentReason("系统根据活跃学习空间「" + space.getName() + "」的学习路径，选择当前尚未安排的下一节点。");
-        task.setMetadata("{\"source\":\"plan_today\",\"target\":\"path_node\"}");
+        task.setAgentReason(buildPlanReason(space, strategy));
+        task.setMetadata("{\"source\":\"plan_today\",\"target\":\"path_node\",\"strategy\":\"" + strategy + "\"}");
         task.setIsDeleted(0);
         return task;
+    }
+
+    private String buildPlanReason(LearningSpace space, String strategy) {
+        String base = "系统根据活跃学习空间「" + space.getName() + "」的学习路径，选择当前尚未安排的下一节点。";
+        if ("deadline_first".equals(strategy)) {
+            return base + "当前采用截止时间优先策略。";
+        }
+        if ("weakness_first".equals(strategy)) {
+            return base + "当前采用薄弱优先策略，优先推进进度较低的学习空间。";
+        }
+        return base + "当前采用均衡分配策略，尽量保持多学习空间稳定推进。";
     }
 
     private Integer calculateSpacePriority(LearningSpace space) {
@@ -342,6 +379,59 @@ public class TaskServiceImpl implements ITaskService {
             return 3;
         }
         return Math.max(1, Math.min(8, maxTasks));
+    }
+
+    private int normalizeDailyBudget(Integer totalAvailableMinutes, int limit) {
+        if (totalAvailableMinutes == null || totalAvailableMinutes <= 0) {
+            return Math.max(30, limit * 30);
+        }
+        return Math.max(5, Math.min(600, totalAvailableMinutes));
+    }
+
+    private String normalizeStrategy(String strategy) {
+        String normalized = normalizeText(strategy);
+        if (normalized == null) {
+            return "deadline_first";
+        }
+        if (!ALLOWED_PLAN_STRATEGIES.contains(normalized)) {
+            throw new BusinessException("不支持的任务编排策略：" + normalized);
+        }
+        return normalized;
+    }
+
+    private Set<String> normalizeAllowedActionTypes(List<String> allowedActionTypes) {
+        if (allowedActionTypes == null || allowedActionTypes.isEmpty()) {
+            return ALLOWED_ACTION_TYPES;
+        }
+        Set<String> normalized = new HashSet<>();
+        for (String value : allowedActionTypes) {
+            String actionType = normalizeText(value);
+            if (actionType == null) {
+                continue;
+            }
+            if (!ALLOWED_ACTION_TYPES.contains(actionType)) {
+                throw new BusinessException("不支持的执行动作类型：" + actionType);
+            }
+            normalized.add(actionType);
+        }
+        return normalized.isEmpty() ? ALLOWED_ACTION_TYPES : normalized;
+    }
+
+    private List<LearningSpace> sortSpacesByStrategy(List<LearningSpace> spaces, String strategy) {
+        List<LearningSpace> sorted = new ArrayList<>(spaces);
+        if ("deadline_first".equals(strategy)) {
+            sorted.sort(Comparator
+                    .comparing((LearningSpace space) -> space.getTargetEndDate() == null ? LocalDate.MAX : space.getTargetEndDate())
+                    .thenComparing(space -> space.getSortOrder() == null ? Integer.MAX_VALUE : space.getSortOrder())
+                    .thenComparing(space -> space.getCreateTime() == null ? LocalDateTime.MIN : space.getCreateTime(), Comparator.reverseOrder()));
+            return sorted;
+        }
+        if ("weakness_first".equals(strategy)) {
+            sorted.sort(Comparator
+                    .comparing((LearningSpace space) -> space.getProgress() == null ? 100.0 : space.getProgress())
+                    .thenComparing(space -> space.getTargetEndDate() == null ? LocalDate.MAX : space.getTargetEndDate()));
+        }
+        return sorted;
     }
 
     private String firstNonBlank(String value, String fallback) {
