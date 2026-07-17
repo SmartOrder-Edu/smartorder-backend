@@ -29,6 +29,7 @@ public class TaskVO {
     private String aiSuggestion;
     private String agentReason;
     private String metadata;
+    private String spaceName;
     private Boolean isOverdue;
     private Boolean isToday;
 }

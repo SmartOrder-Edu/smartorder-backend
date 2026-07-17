@@ -8,6 +8,8 @@ import com.smartorder.edu.learning.dto.CompleteTaskDTO;
 import com.smartorder.edu.learning.dto.CreateTaskDTO;
 import com.smartorder.edu.learning.dto.PlanTodayTasksDTO;
 import com.smartorder.edu.learning.dto.UpdateTaskStatusDTO;
+import com.smartorder.edu.learning.domain.vo.LearningSpaceVO;
+import com.smartorder.edu.learning.service.ILearningSpaceService;
 import com.smartorder.edu.learning.service.ITaskService;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,36 +31,36 @@ import java.util.List;
 public class TaskController {
 
     private final ITaskService taskService;
+    private final ILearningSpaceService learningSpaceService;
 
     @GetMapping
     @Operation(summary = "获取学习空间的任务列表", description = "返回指定学习空间的所有任务")
     public Result<List<TaskVO>> listBySpace(@RequestParam Long spaceId) {
         Long userId = getCurrentUserId();
-        return Result.success(taskService.getBySpaceId(spaceId).stream()
+        return Result.success(toVOList(taskService.getBySpaceId(spaceId).stream()
                 .filter(task -> userId.equals(task.getUserId()))
-                .map(this::toVO)
-                .toList());
+                .toList(), userId));
     }
 
     @GetMapping("/today")
     @Operation(summary = "获取今日任务", description = "返回当前用户今日所有学习任务")
     public Result<List<TaskVO>> today() {
         Long userId = getCurrentUserId();
-        return Result.success(taskService.getTodayTasks(userId).stream().map(this::toVO).toList());
+        return Result.success(toVOList(taskService.getTodayTasks(userId), userId));
     }
 
     @GetMapping("/pending")
     @Operation(summary = "获取待完成任务", description = "返回当前用户所有待完成的学习任务")
     public Result<List<TaskVO>> pending() {
         Long userId = getCurrentUserId();
-        return Result.success(taskService.getPendingTasks(userId).stream().map(this::toVO).toList());
+        return Result.success(toVOList(taskService.getPendingTasks(userId), userId));
     }
 
     @GetMapping("/overdue")
     @Operation(summary = "获取延期任务", description = "返回当前用户所有已延期的学习任务")
     public Result<List<TaskVO>> overdue() {
         Long userId = getCurrentUserId();
-        return Result.success(taskService.getOverdueTasks(userId).stream().map(this::toVO).toList());
+        return Result.success(toVOList(taskService.getOverdueTasks(userId), userId));
     }
 
     @PostMapping
@@ -72,7 +74,7 @@ public class TaskController {
     @Operation(summary = "生成今日学习任务", description = "根据当前用户活跃学习空间和学习路径生成今日可执行任务")
     public Result<List<TaskVO>> planToday(@RequestBody(required = false) PlanTodayTasksDTO dto) {
         Long userId = getCurrentUserId();
-        return Result.success(taskService.planTodayTasks(userId, dto).stream().map(this::toVO).toList());
+        return Result.success(toVOList(taskService.planTodayTasks(userId, dto), userId));
     }
 
     @PatchMapping("/{taskId}/status")
@@ -96,6 +98,21 @@ public class TaskController {
     }
 
     private TaskVO toVO(Task task) {
+        java.util.Map<Long, String> spaceMap = new java.util.HashMap<>();
+        if (task.getSpaceId() != null) {
+            try {
+                LearningSpaceVO space = learningSpaceService.getSpaceById(task.getUserId(), task.getSpaceId());
+                if (space != null) {
+                    spaceMap.put(space.getId(), space.getName());
+                }
+            } catch (Exception e) {
+                log.error("获取学习空间名称失败, spaceId: {}", task.getSpaceId(), e);
+            }
+        }
+        return toVO(task, spaceMap);
+    }
+
+    private TaskVO toVO(Task task, java.util.Map<Long, String> spaceMap) {
         TaskVO vo = new TaskVO();
         vo.setId(task.getId());
         vo.setSpaceId(task.getSpaceId());
@@ -119,6 +136,27 @@ public class TaskController {
         vo.setIsToday(task.getDueDate() != null && task.getDueDate().equals(java.time.LocalDate.now()));
         vo.setIsOverdue(task.getDueDate() != null && task.getDueDate().isBefore(java.time.LocalDate.now())
                 && !"completed".equals(task.getStatus()) && !"cancelled".equals(task.getStatus()));
+        if (task.getSpaceId() != null && spaceMap != null) {
+            vo.setSpaceName(spaceMap.get(task.getSpaceId()));
+        }
         return vo;
+    }
+
+    private List<TaskVO> toVOList(List<Task> tasks, Long userId) {
+        if (tasks == null || tasks.isEmpty()) {
+            return List.of();
+        }
+        java.util.Map<Long, String> spaceMap = new java.util.HashMap<>();
+        try {
+            List<LearningSpaceVO> spaces = learningSpaceService.listSpaces(userId, null);
+            if (spaces != null) {
+                for (LearningSpaceVO space : spaces) {
+                    spaceMap.put(space.getId(), space.getName());
+                }
+            }
+        } catch (Exception e) {
+            log.error("加载用户学习空间列表失败, userId: {}", userId, e);
+        }
+        return tasks.stream().map(task -> toVO(task, spaceMap)).toList();
     }
 }
