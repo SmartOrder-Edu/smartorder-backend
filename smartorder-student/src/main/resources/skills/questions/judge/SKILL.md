@@ -1,0 +1,48 @@
+---
+name: judge
+description: 生成判断题，可明确判断真假的陈述句，包含判断依据解析
+when_to_use: 当请求题型编码为 judge 或需要生成判断题时加载
+keywords:
+  - 判断题
+  - judge
+  - 判断
+  - 对错
+priority: 90
+auto_invoke: false
+question_type: judge
+objective: true
+default_score: 3
+---
+
+生成判断题，type 固定为 "判断题"。
+
+约束：
+1. question 必须是可明确判断真假的陈述句，不写疑问句。
+2. 避免"通常""可能"等易争议表述，除非答案仍可明确判定。
+3. options 必须是空数组 []。
+4. answer 格式：true 或 false，必须是 JSON 布尔值。
+5. 同一批题目中正确题和错误题都要有；如果 {{count}} >= 4，二者数量差不超过 1。
+6. analysis.correct_reason 说明判断依据。
+7. analysis.wrong_reason 为空对象 {}。
+8. score 默认 3。
+
+# 最终输出
+只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
+
+# 短示例
+{
+  "questions": [{
+    "question": "在数据结构中，普通队列的删除操作一般发生在队头。",
+    "type": "判断题",
+    "options": [],
+    "answer": true,
+    "score": 3,
+    "difficulty": 2,
+    "knowledge_points": ["数据结构", "队列"],
+    "ability_tags": ["数据结构基础"],
+    "analysis": {
+      "correct_reason": "普通队列从队尾入队、队头出队，符合先进先出原则。",
+      "wrong_reason": {}
+    }
+  }]
+}

@@ -24,5 +24,5 @@ public class GiteeProperties {
     /**
      * Gitee OAuth 回调重定向 URI
      */
-    private String redirectUri = "http://localhost:5172/oauth/callback/gitee";
+    private String redirectUri = "http://117.72.222.3/oauth/callback/gitee";
 }

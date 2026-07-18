@@ -31,10 +31,13 @@ import com.smartorder.edu.student.mapper.EvaluationSessionMapper;
 import com.smartorder.edu.student.service.IEvaluationQuestionService;
 import com.smartorder.edu.student.service.IEvaluationSessionService;
 import com.smartorder.edu.student.service.impl.EvaluationCacheService;
+import com.smartorder.edu.student.skill.QuestionSkillPromptAssembler;
+import com.smartorder.edu.student.skill.QuestionSkillRegistry;
 import com.smartorder.edu.student.util.StudentPromptFileLoader;
 import dev.langchain4j.model.input.PromptTemplate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -100,6 +103,12 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
     private final EvaluationSessionMapper sessionMapper;
     private final EvaluationCodeTestCaseMapper codeTestCaseMapper;
     private final EvaluationCacheService cacheService;
+    private final QuestionSkillPromptAssembler skillPromptAssembler;
+    private final QuestionSkillRegistry skillRegistry;
+
+    /** Skill 出题开关：true=走 Skill 体系，false=走老逻辑 */
+    @Value("${smartorder.question.skill-enabled:false}")
+    private boolean skillEnabled;
 
     /** 每题型默认生成数量 */
     private static final int DEFAULT_COUNT = 3;
@@ -538,11 +547,18 @@ public class EvaluationQuestionServiceImpl implements IEvaluationQuestionService
                                    int optionCount,
                                    String programmingLanguage) {
 
-        // 根据题型加载对应提示词文件（如 sql/code 等专属规则）
+        // === Skill 体系路径（由配置项 smartorder.question.skill-enabled 控制） ===
+        if (skillEnabled && skillRegistry.contains(questionType)) {
+            return skillPromptAssembler.assemble(
+                    questionType, courseName, topic, count, difficulty,
+                    optionCount, programmingLanguage);
+        }
+
+        // === 老逻辑：直接读 prompts/*.txt（完全保留） ===
         PromptFile promptFile = PromptFile.fromCode(questionType);
         String commonPrompt = studentPromptFileLoader.load(COMMON_RULES_FILE);
-        String typeRulePrompt = studentPromptFileLoader.load(PROMPTS_DIR + promptFile.getPromptFileName());
-        // 将题型专属规则注入通用规则的 {{questionTypeRules}} 占位符
+        String typeRulePrompt = studentPromptFileLoader.load(
+                PROMPTS_DIR + promptFile.getPromptFileName());
         String mergedPrompt = commonPrompt.replace("{{questionTypeRules}}", typeRulePrompt);
 
         return PromptTemplate.from(mergedPrompt)
