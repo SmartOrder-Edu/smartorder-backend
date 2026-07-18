@@ -5,7 +5,7 @@ target/
 !**/src/test/**/target/
 .claude
 .agents
-smartorder-backend\docs
+docs
 
 ### 编译产物 ###
 *.class
