@@ -7,6 +7,16 @@ server:
       enabled: true
 
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,threaddump,heapdump
+  endpoint:
+    health:
+      show-details: always
+
+
 spring:
   servlet:
     multipart:
