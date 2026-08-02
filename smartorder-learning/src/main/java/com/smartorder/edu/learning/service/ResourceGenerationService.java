@@ -28,8 +28,10 @@ import java.util.UUID;
 public class ResourceGenerationService {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final String GENERATED_ANIMATION_VIDEO_URL =
+            "https://qihui-duomo.oss-cn-beijing.aliyuncs.com/videos/GeneratedVideoScene_with_audio.mp4";
     private static final Set<String> ALLOWED_RESOURCE_TYPES = Set.of(
-            "ppt", "doc", "html", "video", "mind_map", "quiz",
+            "ppt", "doc", "html", "video", "animation_video", "mind_map", "quiz",
             "case_study", "flashcard_set", "image", "audio", "link"
     );
 
@@ -238,6 +240,7 @@ public class ResourceGenerationService {
             case "image" -> "图解卡片：" + knowledgePoint;
             case "audio" -> "音频讲稿：" + knowledgePoint;
             case "video" -> "短视频脚本：" + knowledgePoint;
+            case "animation_video" -> "动画视频：" + knowledgePoint;
             case "link" -> "外部资源推荐：" + knowledgePoint;
             default -> "学习资料：" + knowledgePoint;
         };
@@ -253,6 +256,7 @@ public class ResourceGenerationService {
             case "html" -> "以结构化页面组织知识点，适合边看边操作。";
             case "image" -> "把抽象概念压缩成一张可复盘的图解卡片。";
             case "video" -> "生成可用于后续视频合成的讲解脚本和分镜。";
+            case "animation_video" -> "生成带语音讲解的动画视频，用于快速建立直观理解。";
             case "link" -> "为当前知识点推荐外部学习入口。";
             default -> "按 " + minutes + " 分钟学习节奏整理核心概念、例题和复盘要点。";
         };
@@ -262,6 +266,9 @@ public class ResourceGenerationService {
         String encoded = URLEncoder.encode(knowledgePoint, StandardCharsets.UTF_8);
         if ("link".equals(type)) {
             return "https://search.bilibili.com/all?keyword=" + encoded;
+        }
+        if ("animation_video".equals(type)) {
+            return GENERATED_ANIMATION_VIDEO_URL;
         }
         return "/learning-resources/generated/" + generationId + "/" + type;
     }
@@ -292,7 +299,7 @@ public class ResourceGenerationService {
             case "mind_map", "flashcard_set" -> "复盘";
             case "quiz" -> "测评";
             case "image" -> "理解";
-            case "video", "audio", "link" -> "补充讲解";
+            case "video", "animation_video", "audio", "link" -> "补充讲解";
             case "case_study" -> "应用";
             default -> "学习";
         };

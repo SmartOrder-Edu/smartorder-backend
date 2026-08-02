@@ -41,9 +41,11 @@ import java.util.concurrent.ExecutorService;
 public class ResourcePackageServiceImpl implements IResourcePackageService {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final String GENERATED_ANIMATION_VIDEO_URL =
+            "https://qihui-duomo.oss-cn-beijing.aliyuncs.com/videos/GeneratedVideoScene_with_audio.mp4";
     private static final List<String> DEFAULT_RESOURCE_TYPES = List.of("doc", "mind_map", "quiz", "link");
     private static final List<String> ALLOWED_RESOURCE_TYPES = List.of(
-            "doc", "html", "mind_map", "quiz", "image", "video", "link"
+            "doc", "html", "mind_map", "quiz", "image", "video", "animation_video", "link"
     );
 
     private final ILearningSpaceService learningSpaceService;
@@ -492,6 +494,7 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
             case "quiz" -> "专项练习：" + knowledgePoint;
             case "image" -> "图解卡片：" + knowledgePoint;
             case "video" -> "短视频脚本：" + knowledgePoint;
+            case "animation_video" -> "动画视频：" + knowledgePoint;
             case "link" -> "B站视频推荐：" + knowledgePoint;
             default -> "学习资料：" + knowledgePoint;
         };
@@ -506,6 +509,7 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
             case "quiz" -> "围绕当前任务生成巩固题，用于学习后即时检测。";
             case "image" -> "把抽象概念转成一张图解卡片，适合快速理解。";
             case "video" -> "生成可用于后续合成视频的讲解脚本和分镜结构。";
+            case "animation_video" -> "生成带语音讲解的动画视频，用于快速建立直观理解。";
             case "link" -> "按当前知识点检索并筛选 B站学习视频，标记为 AI 筛选推荐。";
             default -> "Agent 为当前学习任务生成的配套资料。";
         };
@@ -515,6 +519,9 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
         String encoded = URLEncoder.encode(knowledgePoint, StandardCharsets.UTF_8);
         if ("link".equals(type)) {
             return "https://search.bilibili.com/all?keyword=" + encoded;
+        }
+        if ("animation_video".equals(type)) {
+            return GENERATED_ANIMATION_VIDEO_URL;
         }
         return "/learning-resources/generated/" + packageId + "/" + type;
     }
@@ -526,6 +533,7 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
             case "mind_map", "video" -> "md";
             case "quiz" -> "json";
             case "image" -> "png";
+            case "animation_video" -> "mp4";
             default -> "link";
         };
     }
@@ -536,7 +544,7 @@ public class ResourcePackageServiceImpl implements IResourcePackageService {
             case "mind_map" -> "复盘";
             case "quiz" -> "测评";
             case "image" -> "理解";
-            case "video", "link" -> "补充讲解";
+            case "video", "animation_video", "link" -> "补充讲解";
             default -> "学习";
         };
     }
