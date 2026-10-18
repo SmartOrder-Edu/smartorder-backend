@@ -112,19 +112,27 @@ public class FeedbackServiceImpl extends ServiceImpl<FeedbackMapper, Feedback> i
         
         this.updateById(Feedback);
 
-        // 触发对应的业务通知与奖惩逻辑
+        // 触发对应的业务通知与奖惩逻辑：状态 3 只代表有效反馈，状态 5 才代表采纳并赠送卡密。
         if (newStatus == 4) {
             sendMockNotification(Feedback.getUserId(), "您的反馈未通过人工复核，原因：" + reviewDTO.getReviewRemark());
-        } else if (newStatus == 3 || newStatus == 5) {
-            log.info("用户反馈审核通过/被采纳，用户ID: {}, 反馈ID: {}。开始尝试安全分配卡密奖励...", Feedback.getUserId(), Feedback.getId());
+        } else if (newStatus == 3) {
+            log.info("用户反馈已通过人工复核，暂不发放卡密奖励，用户ID: {}, 反馈ID: {}", Feedback.getUserId(), Feedback.getId());
+        } else if (newStatus == 5) {
+            log.info("用户反馈被采纳，用户ID: {}, 反馈ID: {}。开始尝试安全分配卡密奖励...", Feedback.getUserId(), Feedback.getId());
             // 1. 原子排他锁安全出库卡密
             String prizeCode = prizeService.allocatePrize(Feedback.getId(), Feedback.getUserId());
             if (prizeCode != null) {
+                // 将兑换码追加到官方回复中，前端局部刷新时可直接展示完整闭环结果。
+                String baseReply = Feedback.getReplyContent() == null ? "" : Feedback.getReplyContent();
+                Feedback.setReplyContent(baseReply + "\n【系统发放奖品：兑换码：" + prizeCode + "】");
+                Feedback.setUpdateTime(LocalDateTime.now());
+                this.updateById(Feedback);
+
                 // 2. 构造卡密邮件消息模型
                 com.smartorder.edu.manage.domain.dto.PrizeMailMessage mailMessage = new com.smartorder.edu.manage.domain.dto.PrizeMailMessage();
                 mailMessage.setFeedbackId(Feedback.getId());
                 mailMessage.setUserId(Feedback.getUserId());
-                mailMessage.setPrizeName(newStatus == 5 ? "【特等采纳奖】京东卡 100 元" : "【有效反馈奖】京东卡 10 元");
+                mailMessage.setPrizeName("【特等采纳奖】京东卡 100 元");
                 mailMessage.setPrizeCode(prizeCode);
                 mailMessage.setEmail(Feedback.getContact()); // 用反馈联系方式（如邮箱）作为派发终点
                 
@@ -255,7 +263,7 @@ public class FeedbackServiceImpl extends ServiceImpl<FeedbackMapper, Feedback> i
         for (java.util.Map<String, Object> map : maps) {
             Integer status = (Integer) map.get("status");
             Long count = ((Number) map.get("cnt")).longValue();
-            if (status == 1) pendingReview = count;
+            if (status == 0 || status == 1) pendingReview += count;
             else if (status == 2) aiRejected = count;
             else if (status == 5) accepted = count;
         }

@@ -1,6 +1,5 @@
 package com.smartorder.edu.common.model.vo;
 
-
 import com.smartorder.edu.common.constant.ResultCode;
 import lombok.AllArgsConstructor;
 import lombok.Data;

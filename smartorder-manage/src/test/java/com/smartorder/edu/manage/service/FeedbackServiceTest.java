@@ -22,6 +22,7 @@ import com.smartorder.edu.manage.producer.PrizeMessageProducer;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -170,7 +171,7 @@ public class FeedbackServiceTest {
     }
 
     @Test
-    public void testReviewFeedback_PassWithReply() {
+    public void testReviewFeedback_PassDoesNotAllocatePrize() {
         Feedback po = new Feedback();
         po.setId(100L);
         po.setUserId(1L);
@@ -186,9 +187,6 @@ public class FeedbackServiceTest {
         reviewDTO.setReviewRemark("非常实用的建议！");
         reviewDTO.setReplyContent("亲爱的学生，我们已经将夜间模式列入排期，感谢反馈！");
 
-        // Mock prizeService & producer
-        when(prizeService.allocatePrize(100L, 1L)).thenReturn("PRIZE_CODE_XYZ");
-
         FeedbackVO vo = feedbackService.reviewFeedback(100L, reviewDTO);
 
         assertNotNull(vo);
@@ -197,8 +195,51 @@ public class FeedbackServiceTest {
         assertEquals("亲爱的学生，我们已经将夜间模式列入排期，感谢反馈！", vo.getReplyContent());
         assertNotNull(vo.getReplyTime());
         verify(feedbackMapper, times(1)).updateById(any(Feedback.class));
+        verify(prizeService, never()).allocatePrize(anyLong(), anyLong());
+        verify(prizeMessageProducer, never()).sendPrizeMailMessage(any());
+    }
+
+    @Test
+    public void testReviewFeedback_AdoptAllocatesPrize() {
+        Feedback po = new Feedback();
+        po.setId(100L);
+        po.setUserId(1L);
+        po.setType(2);
+        po.setContent("高质量建议");
+        po.setStatus(1); // 待人工复核
+
+        when(feedbackMapper.selectById(100L)).thenReturn(po);
+        when(feedbackMapper.updateById(any(Feedback.class))).thenReturn(1);
+        when(prizeService.allocatePrize(100L, 1L)).thenReturn("PRIZE_CODE_XYZ");
+
+        FeedbackReviewDTO reviewDTO = new FeedbackReviewDTO();
+        reviewDTO.setStatus(5); // 5=采纳并赠送卡密
+        reviewDTO.setReviewRemark("优质建议，采纳并赠奖。");
+        reviewDTO.setReplyContent("感谢反馈，已采纳。");
+
+        FeedbackVO vo = feedbackService.reviewFeedback(100L, reviewDTO);
+
+        assertNotNull(vo);
+        assertEquals(5, vo.getStatus());
+        assertTrue(vo.getReplyContent().contains("PRIZE_CODE_XYZ"));
         verify(prizeService, times(1)).allocatePrize(100L, 1L);
         verify(prizeMessageProducer, times(1)).sendPrizeMailMessage(any());
+    }
+
+    @Test
+    public void testGetFeedbackStats_CountsAiPendingAndReviewPendingTogether() {
+        when(feedbackMapper.selectMaps(any())).thenReturn(List.of(
+                Map.of("status", 0, "cnt", 2L),
+                Map.of("status", 1, "cnt", 3L),
+                Map.of("status", 2, "cnt", 4L),
+                Map.of("status", 5, "cnt", 5L)
+        ));
+
+        Map<String, Long> stats = feedbackService.getFeedbackStats();
+
+        assertEquals(5L, stats.get("pendingReview"));
+        assertEquals(4L, stats.get("aiRejected"));
+        assertEquals(5L, stats.get("accepted"));
     }
 
     @Test
