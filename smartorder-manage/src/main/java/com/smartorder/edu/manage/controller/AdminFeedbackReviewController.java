@@ -6,6 +6,7 @@ import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import com.smartorder.edu.manage.domain.dto.FeedbackQueryDTO;
 import com.smartorder.edu.manage.domain.dto.FeedbackReviewDTO;
+import com.smartorder.edu.manage.domain.vo.AdminFrontendPayload;
 import com.smartorder.edu.manage.domain.vo.FeedbackVO;
 import com.smartorder.edu.manage.service.FeedbackService;
 import io.jsonwebtoken.Claims;
@@ -13,6 +14,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 /**
  * 运营管理端：反馈人工审核接口
@@ -48,36 +51,39 @@ public class AdminFeedbackReviewController {
      * 分页查询用户反馈列表
      */
     @GetMapping("/page")
-    public Result<Page<FeedbackVO>> queryPage(FeedbackQueryDTO queryDTO) {
+    public Result<Map<String, Object>> queryPage(FeedbackQueryDTO queryDTO) {
         if (!isAdmin()) {
             return Result.fail(ResultCode.FORBIDDEN, "无权操作，仅限管理员");
         }
         Page<FeedbackVO> result = feedbackService.queryFeedbackPage(queryDTO);
-        return Result.success(result, "获取反馈列表成功");
+        // 反馈列表保持 records/total/page/size，兼容前端当前直接读取 res.records 的写法。
+        return Result.success(AdminFrontendPayload.page(result), "获取反馈列表成功");
     }
 
     /**
      * 人工审核并回答用户反馈（通过/驳回/标记采纳）
      */
     @PostMapping("/{id}/review")
-    public Result<FeedbackVO> reviewFeedback(
+    public Result<Map<String, Object>> reviewFeedback(
             @PathVariable("id") Long id,
             @Valid @RequestBody FeedbackReviewDTO reviewDTO) {
         if (!isAdmin()) {
             return Result.fail(ResultCode.FORBIDDEN, "无权操作，仅限管理员");
         }
         FeedbackVO result = feedbackService.reviewFeedback(id, reviewDTO);
-        return Result.success(result, "审核操作成功");
+        // 审核结果平铺返回，前端可直接读取 replyContent 并刷新局部数据。
+        return Result.success(AdminFrontendPayload.data(result), "审核操作成功");
     }
     /**
      * 获取用户反馈各项看板统计指标 (待人工复核/已被AI拦截/已被采纳)
      */
     @GetMapping("/stats")
-    public Result<java.util.Map<String, Long>> getStats() {
+    public Result<Map<String, Object>> getStats() {
         if (!isAdmin()) {
             return Result.fail(ResultCode.FORBIDDEN, "无权操作，仅限管理员");
         }
-        java.util.Map<String, Long> result = feedbackService.getFeedbackStats();
-        return Result.success(result, "获取看板指标统计数据成功");
+        Map<String, Long> result = feedbackService.getFeedbackStats();
+        // 统计卡片字段平铺返回，兼容 res.pendingReview / res.accepted。
+        return Result.success(AdminFrontendPayload.data(result), "获取看板指标统计数据成功");
     }
 }

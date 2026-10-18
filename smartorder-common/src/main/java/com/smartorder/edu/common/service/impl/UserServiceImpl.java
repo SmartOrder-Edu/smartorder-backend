@@ -61,7 +61,7 @@ public class UserServiceImpl implements IUserService {
         if (user.getUsername() == null || user.getUsername().isBlank()) {
             long count = userMapper.selectCount(null);
             long index = count + 1;
-            user.setUsername("启慧" + index);
+            user.setUsername("知序智学" + index);
         }
         if (user.getRole() == null) {
             user.setRole(0);

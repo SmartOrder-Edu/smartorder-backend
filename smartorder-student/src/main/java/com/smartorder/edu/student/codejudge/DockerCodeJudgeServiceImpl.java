@@ -4,6 +4,7 @@ import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.student.domain.entity.EvaluationCodeTestCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
@@ -25,6 +26,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
+@ConditionalOnProperty(prefix = "smartorder.code-judge", name = "provider", havingValue = "docker", matchIfMissing = true)
 @RequiredArgsConstructor
 public class DockerCodeJudgeServiceImpl implements ICodeJudgeService {
 

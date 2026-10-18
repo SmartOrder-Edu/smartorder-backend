@@ -4,6 +4,9 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * 代码判题配置属性
  *
@@ -17,6 +20,9 @@ public class CodeJudgeProperties {
 
     /** 是否启用代码判题 */
     private boolean enabled = true;
+
+    /** 判题服务提供方：docker 或 judge0 */
+    private String provider = "docker";
 
     /** 判题工作目录 */
     private String workDir = "./target/code-judge-work";
@@ -38,6 +44,32 @@ public class CodeJudgeProperties {
 
     /** 最大输出长度(字符) */
     private int maxOutputLength = 8192;
+
+    /** Judge0 服务地址，例如：http://127.0.0.1:2358 */
+    private String judge0BaseUrl = "http://127.0.0.1:2358";
+
+    /** Judge0 鉴权令牌，私有部署未开启鉴权时可留空 */
+    private String judge0AuthToken = "";
+
+    /** Judge0 请求/响应是否使用 Base64，默认开启以保护中文、换行和特殊字符 */
+    private boolean judge0Base64Encoded = true;
+
+    /** Judge0 轮询间隔，单位毫秒 */
+    private int judge0PollIntervalMs = 500;
+
+    /** Judge0 单次判题轮询超时，单位毫秒 */
+    private int judge0PollTimeoutMs = 10000;
+
+    /** Judge0 语言映射，可通过配置覆盖以适配 CE/Extra CE 或私有镜像 */
+    private Map<String, Integer> judge0LanguageMap = new LinkedHashMap<>(Map.ofEntries(
+            Map.entry("c", 50),
+            Map.entry("c11", 50),
+            Map.entry("cpp", 54),
+            Map.entry("cpp17", 54),
+            Map.entry("java", 62),
+            Map.entry("python", 71),
+            Map.entry("python3", 71)
+    ));
 
     /**
      * GCC 编译器路径前缀。留空则使用系统 PATH 中的 g++/gcc。

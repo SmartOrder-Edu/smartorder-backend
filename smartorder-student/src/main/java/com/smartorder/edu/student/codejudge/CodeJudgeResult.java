@@ -41,6 +41,9 @@ public class CodeJudgeResult {
     /** 各用例判题详情 */
     private List<CodeJudgeCaseResult> cases;
 
+    /** 判题执行来源，用于前端区分 docker / judge0 等执行器 */
+    private String gradedBy;
+
     /**
      * 生成写入 evaluation_answer_record.judgeResult 的 JSON Map
      */
@@ -52,7 +55,7 @@ public class CodeJudgeResult {
         map.put("accepted", accepted != null ? accepted : false);
         map.put("compileMessage", compileMessage != null ? compileMessage : "");
         map.put("runtimeMessage", runtimeMessage != null ? runtimeMessage : "");
-        map.put("gradedBy", "docker-code-judge");
+        map.put("gradedBy", gradedBy != null && !gradedBy.isBlank() ? gradedBy : "docker-code-judge");
 
         // 汇总统计
         Map<String, Object> summary = new LinkedHashMap<>();
