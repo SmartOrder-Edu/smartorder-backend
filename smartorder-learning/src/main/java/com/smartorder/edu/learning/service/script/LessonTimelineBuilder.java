@@ -248,6 +248,10 @@ public class LessonTimelineBuilder {
             copyPayloadField(block, payload, "sortedRange", "sortedRange");
             copyPayloadField(block, payload, "rootId", "rootId");
             copyPayloadField(block, payload, "directed", "directed");
+            copyPayloadField(block, payload, "hashFormula", "hashFormula");
+            copyPayloadField(block, payload, "formula", "formula");
+            copyPayloadField(block, payload, "columns", "columns");
+            copyPayloadField(block, payload, "colCount", "colCount");
             copyPayloadField(block, payload, "displayLayout", "displayLayout");
             copyPayloadField(block, payload, "layout", "layout");
             copyPayloadField(block, payload, "animation", "animation");
