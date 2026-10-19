@@ -3,6 +3,7 @@ package com.smartorder.edu.student.service.impl;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartorder.edu.common.constant.ResultCode;
 import com.smartorder.edu.common.exception.BusinessException;
@@ -12,6 +13,7 @@ import com.smartorder.edu.student.domain.dto.FileFolderDTO;
 import com.smartorder.edu.student.domain.dto.FolderExportTask;
 import com.smartorder.edu.student.domain.entity.FileFolder;
 import com.smartorder.edu.student.domain.entity.FileResource;
+import com.smartorder.edu.student.domain.entity.UserFileQuota;
 import com.smartorder.edu.student.domain.vo.FileFolderContentVO;
 import com.smartorder.edu.student.domain.vo.FileFolderVO;
 import com.smartorder.edu.student.domain.vo.FileResourceVO;
@@ -55,13 +57,19 @@ public class FileFolderServiceImpl implements IFileFolderService {
     private final ObjectMapper objectMapper;
     private final ApplicationContext applicationContext;
 
-    /** Redis key 前缀 */
+    /**
+     * Redis key 前缀
+     */
     private static final String EXPORT_TASK_KEY = "yun:export:task:";
     private static final String EXPORT_LOCK_KEY = "yun:export:lock:";
 
-    /** 压缩缓冲区大小：5MB */
+    /**
+     * 压缩缓冲区大小：5MB
+     */
     private static final int BUFFER_SIZE = 5 * 1024 * 1024;
-    /** Redis TTL：25h（比 OSS 24h 生命周期多 1h） */
+    /**
+     * Redis TTL：25h（比 OSS 24h 生命周期多 1h）
+     */
     private static final long TASK_TTL_HOURS = 25;
 
     @Override
@@ -85,20 +93,24 @@ public class FileFolderServiceImpl implements IFileFolderService {
         return root;
     }
 
+    /**
+     * 递归构建子文件夹
+     * @param folders
+     * @param parentMap
+     * @return
+     */
     private List<FileFolderVO> buildChildFolders(List<FileFolder> folders, Map<Long, List<FileFolder>> parentMap) {
         return folders.stream()
-                .sorted(Comparator.comparing(FileFolder::getSort, Comparator.nullsLast(Comparator.reverseOrder()))
-                        .thenComparing(FileFolder::getUpdateTime, Comparator.nullsLast(Comparator.reverseOrder())))
-                .map(f -> {
-                    FileFolderVO vo = new FileFolderVO();
-                    vo.setFolderId(f.getId());
-                    vo.setFolderName(f.getFolderName());
-                    vo.setFolderParentId(f.getParentId());
-                    vo.setSort(f.getSort());
-                    vo.setUpdateTime(f.getUpdateTime());
-                    vo.setChildren(buildChildFolders(
-                            parentMap.getOrDefault(f.getId(), Collections.emptyList()), parentMap));
-                    return vo;
+                .sorted(Comparator.comparing(FileFolder::getSort, Comparator.nullsFirst(Comparator.reverseOrder()))
+                        .thenComparing(Comparator.comparing(FileFolder::getUpdateTime, Comparator.nullsFirst(Comparator.reverseOrder()))))
+                .map(fileFolder -> {
+                        FileFolderVO vo = new FileFolderVO();
+                        vo.setSort(fileFolder.getSort());
+                        vo.setFolderName(fileFolder.getFolderName());
+                        vo.setFolderId(fileFolder.getId());
+                        vo.setFolderParentId(fileFolder.getParentId());
+                        vo.setChildren(buildChildFolders(parentMap.getOrDefault(fileFolder.getId(), Collections.emptyList()), parentMap));
+                        return vo;
                 }).toList();
     }
 
@@ -145,26 +157,33 @@ public class FileFolderServiceImpl implements IFileFolderService {
             FileResourceVO vo = new FileResourceVO();
             // 使用hutool包
             BeanUtils.copyProperties(fileResource, vo);
+            // 库里 file_url 存的是 objectKey，统一转成 OSS 公共读直链，前端可直接预览/下载（与知识库文件渲染口径一致）
+            vo.setFileUrl(aliOSSUtils.getPublicUrl(fileResource.getFileUrl()));
             return vo;
         }).toList();
         fileFolderContentVO.setFiles(fileResourceVOS);
+
+        // 4-统计用户已用空间（所有文件夹文件大小之和）
+        // 走配额表预聚合值（上传/合并/删除时增量维护），避免每次对 file_resource 全表 SUM
+        UserFileQuota quota = userFileQuotaService.getQuota(userId);
+        fileFolderContentVO.setUserSpace(quota == null || quota.getUserSpace() == null ? 0L : quota.getUserSpace());
 
         return fileFolderContentVO;
     }
 
     @Override
     public void createFolder(FileFolderDTO dto, @NotNull(message = "用户ID不能为空") Long userId) {
-        // 验证用户是否为学生
+        // todo这个不一定正确 验证用户是否为学生
         if (!userService.isStudentId(userId)) {
             throw new IllegalArgumentException("只有学生用户才能创建文件夹");
         }
 
         // 验证父文件夹是否存在且属于当前用户
-        if(dto.getParentId()!=0){
-        if (!checkFolderBelongsToUser(dto.getParentId(), userId)) {
-            throw new IllegalArgumentException("父文件夹不存在或不属于当前用户");
+        if (dto.getParentId() != 0) {
+            if (!checkFolderBelongsToUser(dto.getParentId(), userId)) {
+                throw new IllegalArgumentException("父文件夹不存在或不属于当前用户");
+            }
         }
-}
         // 验证同级文件夹名称是否重复
         if (checkSameFolderNameExists(dto.getParentId(), dto.getFolderName(), userId)) {
             throw new IllegalArgumentException("同级文件夹名称已存在");
@@ -267,6 +286,39 @@ public class FileFolderServiceImpl implements IFileFolderService {
         return folderIds;
     }
 
+    /**
+     * 收集指定文件夹的所有子孙文件夹 ID（方式二：复用 buildChildFolders 递归构建目标文件夹的子树，再展平收集 ID）
+     * 与 findAllChildFolderIds（BFS 逐层查库）相比：无论树多深都只发 1 条 SQL，避免逐层查库的 N+1。
+     * 注意：只构建目标文件夹的子树，不做整棵树。
+     */
+    private List<Long> findAllChildFolderIds2(Long folderId, Long userId) {
+        // 1. 一次 SQL 查出该用户所有文件夹，按 parentId 分组（与 getFolderTree 同思路）
+        LambdaQueryWrapper<FileFolder> query = new LambdaQueryWrapper<>();
+        query.eq(FileFolder::getUserId, userId);
+        List<FileFolder> allFolders = fileFolderMapper.selectList(query);
+        Map<Long, List<FileFolder>> parentMap = allFolders.stream()
+                .collect(Collectors.groupingBy(FileFolder::getParentId));
+
+        // 2. 复用 buildChildFolders 递归构建目标文件夹的子树（父节点分组里没有 = 无子文件夹，直接空树）
+        List<FileFolderVO> subtree = buildChildFolders(
+                parentMap.getOrDefault(folderId, Collections.emptyList()), parentMap);
+
+        // 3. 展平子树，收集所有子孙 ID
+        List<Long> childIds = new ArrayList<>();
+        collectDescendantIds(subtree, childIds);
+        return childIds;
+    }
+
+    /**
+     * 递归展平文件夹子树，收集所有节点的 folderId
+     */
+    private void collectDescendantIds(List<FileFolderVO> nodes, List<Long> ids) {
+        for (FileFolderVO node : nodes) {
+            ids.add(node.getFolderId());
+            collectDescendantIds(node.getChildren(), ids);
+        }
+    }
+
     private List<FileResource> findAllChildFileIds(List<Long> folderId, Long userId) {
         LambdaQueryWrapper<FileResource> wrapper = new LambdaQueryWrapper<>();
         wrapper.in(FileResource::getFolderId, folderId);
@@ -301,6 +353,7 @@ public class FileFolderServiceImpl implements IFileFolderService {
      * 3. 校验目标文件夹不是当前文件夹
      * 4. 校验目标文件夹下同名文件冲突（如果冲突，生成新文件名）
      * 5. 更新文件的 folderId
+     *
      * @param fileId
      * @param targetFolderId
      * @param userId
@@ -362,9 +415,10 @@ public class FileFolderServiceImpl implements IFileFolderService {
 
     /**
      * 生成唯一文件名，避免文件覆盖（如果文件名已存在，则在文件名后添加数字后缀）
+     *
      * @param originalFileName 原始文件名
-     * @param targetFolderId 目标文件夹ID
-     * @param userId 用户ID
+     * @param targetFolderId   目标文件夹ID
+     * @param userId           用户ID
      * @return String 唯一文件名
      */
     private String generateUniqueFileName(String originalFileName, Long targetFolderId, Long userId) {
@@ -440,7 +494,7 @@ public class FileFolderServiceImpl implements IFileFolderService {
                 throw new BusinessException("目标文件夹不属于当前用户");
             }
 
-            // 4. 防止移到自身或子文件夹中
+            // 4. 防止移到自身或子文件夹中（复用文件夹树查询，1 条 SQL 内存遍历，替代 BFS 逐层查库）
             List<Long> childFolderIds = findAllChildFolderIds(id, userId);
             if (childFolderIds.contains(targetParentId)) {
                 throw new BusinessException("不能将文件夹移动到自身或其子文件夹中");
@@ -458,7 +512,8 @@ public class FileFolderServiceImpl implements IFileFolderService {
                 .set("parent_id", targetParentId)
                 .set("update_time", LocalDateTime.now());
         fileFolderMapper.update(null, wrapper);*/
-        LambdaUpdateWrapper<FileFolder>wrapper = new LambdaUpdateWrapper<>();
+//        LambdaUpdateWrapper<FileFolder> wrapper = new LambdaUpdateWrapper<>();
+        LambdaUpdateWrapper<FileFolder> wrapper = Wrappers.lambdaUpdate(FileFolder.class);
         wrapper.eq(FileFolder::getId, id)
                 .set(FileFolder::getParentId, targetParentId)
                 .set(FileFolder::getUpdateTime, LocalDateTime.now());
@@ -697,7 +752,8 @@ public class FileFolderServiceImpl implements IFileFolderService {
             if (uploadId != null) {
                 try {
                     aliOSSUtils.abortMultipartUpload(ossObjectKey, uploadId);
-                } catch (Exception ignored) {}
+                } catch (Exception ignored) {
+                }
             }
             task.setStatus(FolderExportTask.STATUS_FAILED);
             task.setErrorMessage(e.getMessage());

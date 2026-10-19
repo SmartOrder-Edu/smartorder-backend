@@ -24,9 +24,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import jakarta.validation.constraints.NotNull;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.URLEncoder;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
@@ -42,7 +39,7 @@ public class FileFolderController {
 
     private final IFileResourceService fileResourceService;
 
-    // 文件夹
+    /** 获取当前用户完整文件夹树：一次全查 + 内存按 parentId 递归组树 */
     @GetMapping("/folders/tree")
     @Operation(summary = "获取文件夹树", description = "获取当前用户的文件夹树形结构")
     public Result<FileFolderContentVO> getTree() {
@@ -52,6 +49,7 @@ public class FileFolderController {
         return Result.success(tree);
     }
 
+    /** 获取单层文件夹详情：当前文件夹信息 + 子文件夹列表 + 文件列表（含归属校验） */
     @GetMapping("/folders/{id}")
     @Operation(summary = "获取文件夹详情", description = "根据文件夹ID获取文件夹信息")
     public Result<FileFolderContentVO> getFolderById(@PathVariable Long id) {
@@ -61,6 +59,7 @@ public class FileFolderController {
         return Result.success(vo);
     }
 
+    /** 创建文件夹：校验学生身份、父文件夹归属与同级重名后，用雪花 ID 落库 */
     @PostMapping("/folders")
     @Operation(summary = "创建文件夹", description = "创建新文件夹")
     public Result<String> createFolder(@Validated @RequestBody FileFolderDTO dto) {
@@ -70,6 +69,7 @@ public class FileFolderController {
         return Result.success("文件夹创建成功");
     }
 
+    /** 重命名文件夹：校验存在性与归属后更新名称 */
     @PutMapping("/folders/{id}")
     @Operation(summary = "更新文件夹", description = "重命名文件夹")
     public Result<String> updateFolder(@PathVariable Long id, @NotNull(message = "文件夹名称不能为空") @RequestParam String folderName) {
@@ -79,6 +79,7 @@ public class FileFolderController {
         return Result.success("文件夹重命名成功");
     }
 
+    /** 删除文件夹：BFS 递归收集子树，删 OSS 文件（引用计数）+ 记录 + 释放配额 */
     @DeleteMapping("/folders/{id}")
     @Operation(summary = "删除文件夹", description = "删除文件夹，有子文件夹时不允许删除")
     public Result<String> deleteFolder(@PathVariable Long id) {
@@ -88,6 +89,7 @@ public class FileFolderController {
         return Result.success("文件夹删除成功");
     }
 
+    /** 移动文件夹：归属校验 + 防环（不可移入自身子树）+ 目标同名检查后更新 parentId */
     @PostMapping("/folders/move")
     @Operation(summary = "移动文件夹", description = "将文件夹移动到指定父文件夹")
     public Result<String> moveFolder(@RequestParam Long id,
@@ -98,6 +100,7 @@ public class FileFolderController {
         return Result.success("文件夹移动成功");
     }
 
+    /** 批量移动：将多个文件夹和文件一次性移动到目标文件夹（同一事务） */
     @PostMapping("/folders/batch-move")
     @Operation(summary = "批量移动文件夹和文件", description = "将多个文件夹和文件批量移动到目标文件夹")
     public Result<String> batchMoveToFolder(@RequestBody FileFolderContentVO vo) {
@@ -109,6 +112,7 @@ public class FileFolderController {
 
     // ==================== 文件夹导出 ====================
 
+    /** 发起异步导出：Redis 锁限流（每用户 1 任务）+ 创建任务，立即返回 taskId */
     @PostMapping("/folders/{id}/export")
     @Operation(summary = "导出文件夹", description = "发起异步打包任务，将文件夹递归压缩为 zip 并上传至 OSS 临时存储")
     public Result<Map<String, String>> exportFolder(@PathVariable Long id) {
@@ -118,6 +122,7 @@ public class FileFolderController {
         return Result.success(Map.of("taskId", taskId));
     }
 
+    /** SSE 推送导出进度：服务端后台线程每 500ms 轮询 Redis 任务状态后推事件 */
     @GetMapping(value = "/folders/export/{taskId}/progress", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "导出进度推送", description = "SSE 端点，实时推送文件夹打包进度")
     public SseEmitter getExportProgress(@PathVariable String taskId) {
@@ -223,6 +228,7 @@ public class FileFolderController {
         return emitter;
     }
 
+    /** 取消导出：将任务状态改为 CANCELLED，异步线程检测后中止并清理 OSS 分片 */
     @DeleteMapping("/folders/export/{taskId}")
     @Operation(summary = "取消导出", description = "取消正在进行的文件夹导出任务")
     public Result<String> cancelExport(@PathVariable String taskId) {
@@ -232,6 +238,7 @@ public class FileFolderController {
         return Result.success("已取消");
     }
 
+    /** 下载导出 zip：校验任务完成后 302 重定向到 OSS 5 分钟预签名 URL */
     @GetMapping("/folders/export/{taskId}/download")
     @Operation(summary = "下载导出文件", description = "302 重定向到 OSS 预签名 URL，浏览器原生下载")
     public void downloadExportZip(@PathVariable String taskId, HttpServletResponse response) throws IOException {
@@ -242,6 +249,7 @@ public class FileFolderController {
     }
 
     // 文件资源
+    /** 删除单个文件：OSS 引用计数保护秒传共享对象，删记录并释放配额（事务） */
     @DeleteMapping("/file/{id}")
     @Operation(summary = "删除文件", description = "删除文件资源")
     public Result<String> deleteFile(@PathVariable Long id) {
@@ -251,6 +259,7 @@ public class FileFolderController {
         return Result.success("文件删除成功");
     }
 
+    /** 按 ID 查询文件详情：id + userId 联合校验，防水平越权 */
     @GetMapping("/file/{id}")
     @Operation(summary = "获取文件详情", description = "根据文件ID获取文件信息")
     public Result<FileResourceVO> getFileById(@PathVariable Long id) {
@@ -260,6 +269,7 @@ public class FileFolderController {
         return Result.success(vo);
     }
 
+    /** 移动文件到目标文件夹：多重校验 + 同名冲突自动改名 name(n+1).ext（事务） */
     @PostMapping("/file/move")
     @Operation(summary = "移动文件", description = "将文件移动到指定文件夹")
     public Result<String> moveFile(@RequestParam Long fileId,
@@ -271,6 +281,7 @@ public class FileFolderController {
     }
 
     //todo
+    /** 更新文件解析状态：0-未解析 1-解析中 2-向量化完成 3-解析失败 */
     @PutMapping("/file/{id}/parse-status")
     @Operation(summary = "更新解析状态", description = "更新文件的解析状态，0-未解析，1-解析中，2-向量化完成，3-解析失败")
     public Result<String> updateFileParseStatus(@PathVariable Long id, @RequestParam Integer parseStatus) {
@@ -280,7 +291,7 @@ public class FileFolderController {
         return Result.success("解析状态更新成功");
     }
 
-    // 阿里云oss文件分片
+    /** 初始化分片上传：三分支（Redis 续传 / fileHash 秒传 / 全新 OSS 初始化）并落元数据 */
     @PostMapping("/file/init")
     public Result<Map<String, Object>> initUpload(@RequestBody InitFileUploadDTO dto) {
         log.info("【云盘】初始化OSS分片上传, dto={}", dto);
@@ -290,6 +301,7 @@ public class FileFolderController {
         return Result.success(result,"初始化上传任务成功");
     }
 
+    /** 获取分片上传预签名 URL（15 分钟），前端据此直传 OSS 不经后端 */
     @GetMapping("/file/sign")
     public Result<String> getUploadSign(@RequestParam String fileHash,@RequestParam int partNumber) {
         log.info("【云盘】获取分片上传预签名URL, fileHash={}, partNumber={}", fileHash, partNumber);
@@ -303,6 +315,7 @@ public class FileFolderController {
         }
     }
 
+    /** 通知分片上传完成：将 eTag 回写到 Redis 任务缓存（断点续传依据） */
     @PostMapping("/file/chunk")
     public Result<String> uploadChunk(@RequestParam String fileHash,
                                   @RequestParam int chunkNumber,
@@ -318,6 +331,7 @@ public class FileFolderController {
         }
     }
 
+    /** 合并分片：OSS 合并 + 清理任务缓存 + 配额结算 + uploadStatus 置 1（事务） */
     @PostMapping("/file/merge")
     public Result<Map<String, Object>> mergeChunks(@RequestParam String fileHash, @RequestParam Long fileId) {
         log.info("【云盘】合并分片, fileHash={}, fileId={}", fileHash, fileId);
@@ -331,6 +345,7 @@ public class FileFolderController {
         }
     }
 
+    /** 取消上传：中止 OSS 分片任务 + 清理 Redis 缓存 + 标记上传失败 */
     @PostMapping("/file/cancel")
     public Result<String> cancelUpload(@RequestParam String fileHash) {
         log.info("【云盘】取消文件上传, filehash={}", fileHash);
@@ -340,149 +355,26 @@ public class FileFolderController {
         return Result.success("文件上传取消成功");
     }
 
+    /** 下载文件：校验归属后返回 OSS 公共读直链，由浏览器直连 OSS 下载，后端不再代理文件流 */
     @GetMapping("/download/{id}")
-    @Operation(summary = "下载文件", description = "根据文件ID下载文件")
-    public void downloadFile(@PathVariable String id, HttpServletResponse response) throws IOException {
+    @Operation(summary = "下载文件", description = "返回 OSS 公共读直链，前端直连 OSS 下载")
+    public Result<String> downloadFile(@PathVariable String id) {
         Long downloadFileId = Long.parseLong(id);
         Claims claims = ThreadLocalUtils.get();
         Long userId = claims.get("userId", Long.class);
-
-        IFileResourceService.FileDownloadResult result = fileResourceService.downloadFile(downloadFileId, userId);
-        InputStream inputStream = null;
-        try {
-            inputStream = result.inputStream();
-
-            response.reset();
-            response.setContentType("application/octet-stream");
-            response.setCharacterEncoding("UTF-8");
-
-            String fileName = result.fileName() != null ? result.fileName() : "未命名文件";
-            String fileType = result.fileType();
-            if (fileType != null) {
-                String extension = "." + fileType.toLowerCase();
-                if (!fileName.endsWith(extension)) {
-                    fileName += extension;
-                }
-            }
-            String encodedName = URLEncoder.encode(fileName, "UTF-8").replace("+", "%20");
-            response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + encodedName);
-            response.setHeader("Content-Length", String.valueOf(result.fileSize()));
-            response.setHeader("Cache-Control", "no-cache");
-            response.setHeader("Access-Control-Expose-Headers", "Content-Disposition, Content-Length");
-
-            byte[] buffer = new byte[8192];
-            int len;
-            OutputStream outputStream = response.getOutputStream();
-            while ((len = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, len);
-            }
-            outputStream.flush();
-        } catch (Exception e) {
-            log.error("文件下载失败, id={}", downloadFileId, e);
-            if (!response.isCommitted()) {
-                response.reset();
-                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-                response.setContentType("application/json");
-                response.setCharacterEncoding("UTF-8");
-                response.getWriter().write("{\"code\":500,\"msg\":\"文件下载失败\"}");
-            }
-        } finally {
-            if (inputStream != null) {
-                try {
-                    inputStream.close();
-                } catch (Exception ignored) {}
-            }
-        }
+        String accessUrl = fileResourceService.getFileAccessUrl(downloadFileId, userId);
+        return Result.success(accessUrl);
     }
 
+    /** 在线预览文件：同样返回 OSS 公共读直链，前端按文件类型内联渲染（img/iframe/docx-preview 等） */
     @GetMapping("/preview/{id}")
-    @Operation(summary = "预览文件", description = "根据文件ID在线预览文件")
-    public void previewFile(@PathVariable String id, HttpServletResponse response) throws IOException {
-        Long downloadFileId = Long.parseLong(id);
+    @Operation(summary = "预览文件", description = "返回 OSS 公共读直链，前端直连 OSS 在线预览")
+    public Result<String> previewFile(@PathVariable String id) {
+        Long previewFileId = Long.parseLong(id);
         Claims claims = ThreadLocalUtils.get();
         Long userId = claims.get("userId", Long.class);
-
-        IFileResourceService.FileDownloadResult result = fileResourceService.downloadFile(downloadFileId, userId);
-        InputStream inputStream = null;
-        try {
-            inputStream = result.inputStream();
-
-            response.reset();
-            
-            // 根据文件类型设置 Content-Type
-            String fileType = result.fileType() != null ? result.fileType().toLowerCase() : "";
-            String contentType = getContentType(fileType);
-            response.setContentType(contentType);
-            response.setCharacterEncoding("UTF-8");
-
-            String fileName = result.fileName() != null ? result.fileName() : "未命名文件";
-            if (fileType != null && !fileType.isEmpty()) {
-                String extension = "." + fileType;
-                if (!fileName.endsWith(extension)) {
-                    fileName += extension;
-                }
-            }
-            String encodedName = URLEncoder.encode(fileName, "UTF-8").replace("+", "%20");
-            
-            // 设置为 inline 在线预览，而非 attachment 下载
-            response.setHeader("Content-Disposition", "inline; filename*=UTF-8''" + encodedName);
-            response.setHeader("Content-Length", String.valueOf(result.fileSize()));
-            response.setHeader("Cache-Control", "no-cache");
-            response.setHeader("Access-Control-Expose-Headers", "Content-Disposition, Content-Length");
-
-            byte[] buffer = new byte[8192];
-            int len;
-            OutputStream outputStream = response.getOutputStream();
-            while ((len = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, len);
-            }
-            outputStream.flush();
-        } catch (Exception e) {
-            log.error("文件预览失败, id={}", downloadFileId, e);
-            if (!response.isCommitted()) {
-                response.reset();
-                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-                response.setContentType("application/json");
-                response.setCharacterEncoding("UTF-8");
-                response.getWriter().write("{\"code\":500,\"msg\":\"文件预览失败\"}");
-            }
-        } finally {
-            if (inputStream != null) {
-                try {
-                    inputStream.close();
-                } catch (Exception ignored) {}
-            }
-        }
+        String accessUrl = fileResourceService.getFileAccessUrl(previewFileId, userId);
+        return Result.success(accessUrl);
     }
 
-    private String getContentType(String fileType) {
-        if (fileType == null) {
-            return "application/octet-stream";
-        }
-        return switch (fileType.toLowerCase()) {
-            case "png" -> "image/png";
-            case "jpg", "jpeg" -> "image/jpeg";
-            case "gif" -> "image/gif";
-            case "webp" -> "image/webp";
-            case "pdf" -> "application/pdf";
-            case "mp4" -> "video/mp4";
-            case "webm" -> "video/webm";
-            case "mp3" -> "audio/mpeg";
-            case "wav" -> "audio/wav";
-            case "txt" -> "text/plain;charset=UTF-8";
-            case "html" -> "text/html;charset=UTF-8";
-            case "css" -> "text/css;charset=UTF-8";
-            case "js" -> "application/javascript;charset=UTF-8";
-            case "ts" -> "text/plain;charset=UTF-8";
-            case "json" -> "application/json;charset=UTF-8";
-            case "xml" -> "application/xml;charset=UTF-8";
-            case "java" -> "text/plain;charset=UTF-8";
-            case "py" -> "text/plain;charset=UTF-8";
-            case "md" -> "text/plain;charset=UTF-8";
-            case "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-            case "xls" -> "application/vnd.ms-excel";
-            case "csv" -> "text/csv;charset=UTF-8";
-            default -> "application/octet-stream";
-        };
-    }
 }

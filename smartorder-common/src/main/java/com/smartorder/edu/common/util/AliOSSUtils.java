@@ -164,6 +164,22 @@ public class AliOSSUtils {
     }
 
     /**
+     * 由 objectKey 拼接公共读访问 URL（与合并分片返回的 URL 拼法保持一致）
+     * 兼容历史数据：若传入的已是完整 http(s) URL 则原样返回
+     * @param objectKey OSS存储路径+文件名
+     * @return 公共读访问 URL
+     */
+    public String getPublicUrl(String objectKey) {
+        if (objectKey == null || objectKey.isBlank()) {
+            return null;
+        }
+        if (objectKey.startsWith("http://") || objectKey.startsWith("https://")) {
+            return objectKey;
+        }
+        return endpoint.split("//")[0] + "//" + bucketName + "." + endpoint.split("//")[1] + "/" + objectKey;
+    }
+
+    /**
      * 合并所有分片，完成上传
      * @param objectKey OSS存储路径+文件名
      * @param uploadId 分片上传ID
@@ -180,7 +196,7 @@ public class AliOSSUtils {
         ossClient.completeMultipartUpload(request);
 
         // 返回文件访问URL
-        return endpoint.split("//")[0] + "//" + bucketName + "." + endpoint.split("//")[1] + "/" + objectKey;
+        return getPublicUrl(objectKey);
     }
 
     /**
