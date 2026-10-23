@@ -1,7 +1,9 @@
 package com.smartorder.edu.agent.orchestrator;
 
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
+import com.smartorder.edu.agent.memory.ConversationTitleService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
+import com.smartorder.edu.agent.model.entity.Conversation;
 import com.smartorder.edu.agent.profile.ProfileUpdateCoordinator;
 import com.smartorder.edu.agent.route.AgentRunMode;
 import com.smartorder.edu.agent.route.IntentRouteResult;
@@ -11,6 +13,7 @@ import com.smartorder.edu.agent.route.RouteContext;
 import com.smartorder.edu.agent.route.RoutingSource;
 import com.smartorder.edu.agent.service.AgentConversationAttachmentService;
 import com.smartorder.edu.agent.service.AttachmentNotReadyException;
+import com.smartorder.edu.agent.service.ConversationTurnService;
 import com.smartorder.edu.agent.trace.AgentEventType;
 import com.smartorder.edu.agent.trace.AgentRuntimeContext;
 import com.smartorder.edu.agent.trace.TraceEventDispatcher;
@@ -21,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +40,12 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AgentOrchestratorImpl implements AgentOrchestrator {
 
+    /**
+     * 标题补生成的最大轮次：前 3 条用户消息内，只要标题还是 AUTO（系统兜底）就再试一次。
+     * 超过这个轮次还失败就认了——再往后会话已经聊开了，重命名反而突兀。
+     */
+    private static final int RETITLE_MAX_SEQUENCE = 3;
+
     private final IntentRouteService intentRouteService;
     private final SelfManagedReActEngine reActEngine;
     private final PlanAndExecuteEngine planAndExecuteEngine;
@@ -43,16 +53,18 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
     private final ConversationMemoryService memoryService;
     private final AgentConversationAttachmentService attachmentService;
     private final ProfileUpdateCoordinator profileUpdateCoordinator;
+    private final ConversationTurnService conversationTurnService;
+    private final ConversationTitleService conversationTitleService;
 
     private final AgentRunSupervisor runSupervisor;
 
     @Override
     public void handle(AgentChatRequest request, SseEmitter emitter) {
-        String conversationId = resolveConversationId(request);
+        String traceId = UUID.randomUUID().toString();
 
         AgentRuntimeContext context = AgentRuntimeContext.builder()
-                .traceId(UUID.randomUUID().toString())
-                .conversationId(conversationId)
+                .traceId(traceId)
+                .conversationId(request.getConversationId())
                 .userId(request.getUserId())
                 .message(request.getMessage())
                 .knowledgeBaseIds(request.getKnowledgeBaseIds())
@@ -63,11 +75,59 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         // 初始化执行预算（默认 ReAct 预算，路由后按模式调整）
         context.setBudget(ExecutionBudget.reactDefault());
 
+        // ===== 事务 A：先落库（用户消息 + assistant 占位行），再生成 =====
+        ConversationTurnService.TurnState turn;
         try {
-            // 0. 统一保存用户消息（所有模式都落库，含附件关联）
-            memoryService.saveUserMessage(conversationId, request.getUserId(), request.getMessage(),
-                    request.getFileIds());
-            request.setConversationId(conversationId);
+            turn = conversationTurnService.openTurn(request.getConversationId(), request.getUserId(),
+                    request.getMessage(), request.getFileIds(), traceId);
+        } catch (Exception e) {
+            // 会话已删除 / 无权访问 / 数据库异常：不写库，直接以错误事件收敛
+            log.warn("[AgentOrchestrator] 开轮失败: traceId={}, cid={}, reason={}",
+                    traceId, request.getConversationId(), e.getMessage());
+            context.setConversationId(request.getConversationId());
+            dispatcher.error(emitter, context,
+                    new IllegalStateException(e.getMessage() != null ? e.getMessage() : "会话不可用"));
+            return;
+        }
+
+        String conversationId = turn.getConversationId();
+        request.setConversationId(conversationId);
+        context.setConversationId(conversationId);
+        context.setConversationPk(turn.getConversationPk());
+        context.setTurnId(traceId);
+        context.setAssistantMessageId(turn.getAssistantMessageId());
+        context.setAssistantSequenceNo(turn.getAssistantSequenceNo());
+
+        try {
+            // 0. 通知前端：会话与占位消息已创建
+            if (turn.isCreated()) {
+                Map<String, Object> createdPayload = new LinkedHashMap<>();
+                createdPayload.put("conversationId", conversationId);
+                createdPayload.put("title", turn.getTitle() != null ? turn.getTitle() : "");
+                dispatcher.emit(emitter, context, AgentEventType.CONVERSATION_CREATED, createdPayload);
+            }
+
+            // 0.1 首条消息：异步把用户消息压缩成会话标题（不阻塞 SSE 首包）。
+            //     前端先拿到 conversation.created 里的兜底标题，模型标题稍后通过
+            //     agent.conversation.title 事件补上；失败/超时则保留兜底标题。
+            //     用序号判断而非 created 标志：前端预传 conversationId 时主表可能已存在，
+            //     但消息序号仍为 1，这种情况同样需要生成标题。
+            if (turn.getUserSequenceNo() == 1) {
+                triggerTitleGeneration(conversationId, request, emitter, context);
+            } else if (turn.getUserSequenceNo() <= RETITLE_MAX_SEQUENCE
+                    && Conversation.TITLE_SOURCE_AUTO.equals(turn.getTitleSource())) {
+                // 前几轮标题还是系统兜底：多半是首条消息没实质内容（"你好"）或上次生成失败。
+                // 这时用当前这条消息再试一次，避免整个会话一直挂着一个"你好"。
+                triggerTitleGeneration(conversationId, request, emitter, context);
+            }
+
+            Map<String, Object> messageCreatedPayload = new LinkedHashMap<>();
+            messageCreatedPayload.put("messageId", turn.getAssistantMessageId());
+            messageCreatedPayload.put("parentId", turn.getUserMessageId());
+            messageCreatedPayload.put("role", "assistant");
+            messageCreatedPayload.put("sequenceNo", turn.getAssistantSequenceNo());
+            messageCreatedPayload.put("status", "RUNNING");
+            dispatcher.emit(emitter, context, AgentEventType.MESSAGE_CREATED, messageCreatedPayload);
 
             if (request.getFileIds() != null && !request.getFileIds().isEmpty()) {
                 try {
@@ -206,11 +266,20 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
 
     // ============ Private Methods ============
 
-    private String resolveConversationId(AgentChatRequest request) {
-        if (request.getConversationId() != null && !request.getConversationId().isBlank()) {
-            return request.getConversationId();
+    /**
+     * 触发异步标题生成。
+     * <p>
+     * 线程池拒绝（队列满）时会抛 TaskRejectedException——这里是提交点，必须兜住，
+     * 否则会把整轮对话打挂。标题只是展示优化，任何异常都降级为"保留首条消息截断的标题"。
+     */
+    private void triggerTitleGeneration(String conversationId, AgentChatRequest request,
+                                        SseEmitter emitter, AgentRuntimeContext context) {
+        try {
+            conversationTitleService.generateAsync(conversationId, request.getMessage(), emitter, context);
+        } catch (Exception e) {
+            log.warn("[AgentOrchestrator] 提交标题生成任务失败，保留截断标题: cid={}, reason={}",
+                    conversationId, e.getMessage());
         }
-        return UUID.randomUUID().toString();
     }
 
     private void addAttachmentSearchToolIfNeeded(IntentRouteResult routeResult, AgentRuntimeContext context) {

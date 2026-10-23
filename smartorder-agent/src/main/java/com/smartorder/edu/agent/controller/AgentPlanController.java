@@ -63,6 +63,7 @@ public class AgentPlanController {
     private final ExecutorService executor;
     private final AgentRunStateService runStateService;
     private final AgentPlanDraftMapper draftMapper;
+    private final com.smartorder.edu.agent.service.ConversationService conversationService;
 
     public AgentPlanController(PlanConfirmService planConfirmService,
                                PlanDraftService planDraftService,
@@ -72,7 +73,8 @@ public class AgentPlanController {
                                TraceEventDispatcher dispatcher,
                                @org.springframework.beans.factory.annotation.Qualifier("agentPlanExecutor") ExecutorService executor,
                                AgentRunStateService runStateService,
-                               AgentPlanDraftMapper draftMapper) {
+                               AgentPlanDraftMapper draftMapper,
+                               com.smartorder.edu.agent.service.ConversationService conversationService) {
         this.planConfirmService = planConfirmService;
         this.planDraftService = planDraftService;
         this.planAndExecuteEngine = planAndExecuteEngine;
@@ -82,6 +84,7 @@ public class AgentPlanController {
         this.executor = executor;
         this.runStateService = runStateService;
         this.draftMapper = draftMapper;
+        this.conversationService = conversationService;
     }
 
     @PostMapping(value = "/plan/confirm", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -99,6 +102,9 @@ public class AgentPlanController {
 
         executor.execute(() -> {
             try {
+            // 会话可用性校验：已删除/已归档的会话不允许再确认计划
+            assertConversationUsable(request.getConversationId());
+
             // 先按草稿类型路由（保持 EXECUTION_PLAN 链路不变）
             AgentPlanDraft draft = planDraftService.getByDraftId(draftId);
             if (draft == null) {
@@ -210,6 +216,7 @@ public class AgentPlanController {
 
         executor.execute(() -> {
             try {
+                assertConversationUsable(request.getConversationId());
                 planAndExecuteEngine.resumeAfterClarification(
                         draftId, clarificationId, request.getAnswer(), request.getDisplayAnswer(),
                         userId, request.getConversationId(), emitter, traceId);
@@ -249,6 +256,7 @@ public class AgentPlanController {
 
         executor.execute(() -> {
             try {
+                assertConversationUsable(conversationId);
                 planAndExecuteEngine.resumeAfterConfirmation(
                         draftId, userId, conversationId, emitter, traceId);
             } catch (Exception e) {
@@ -789,6 +797,17 @@ public class AgentPlanController {
     private Long getCurrentUserId() {
         Claims claims = ThreadLocalUtils.get();
         return claims.get("userId", Long.class);
+    }
+
+    /**
+     * 会话可用性校验——防止已删除/已归档的会话还能继续确认计划、提交澄清。
+     * conversationId 为空时跳过（部分入口允许不带会话）。
+     */
+    private void assertConversationUsable(String conversationId) {
+        if (conversationId == null || conversationId.isBlank()) {
+            return;
+        }
+        conversationService.assertActive(conversationId, getCurrentUserId());
     }
 
     /**

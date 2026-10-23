@@ -24,6 +24,26 @@ public class AgentRuntimeContext {
 
     private String conversationId;
 
+    /**
+     * 会话主表内部主键（conversation.id），仅用于服务端关联，不对外
+     */
+    private Long conversationPk;
+
+    /**
+     * 本轮轮次ID（当前实现等于 traceId），用于把"一次请求"和"一次生成"绑定
+     */
+    private String turnId;
+
+    /**
+     * 本轮 assistant 占位行ID（conversation_message.id），done 事件会带回前端
+     */
+    private Long assistantMessageId;
+
+    /**
+     * 本轮 assistant 占位行序号（conversation_message.sequence_no）
+     */
+    private Integer assistantSequenceNo;
+
     private Long userId;
 
     /**

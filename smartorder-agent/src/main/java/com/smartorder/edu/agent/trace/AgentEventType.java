@@ -12,6 +12,23 @@ public enum AgentEventType {
 
     TRACE_STARTED("agent.trace.started", "追踪开始", true),
 
+    /**
+     * 会话已创建（首条消息时下发，前端据此把会话 upsert 到列表头部）
+     */
+    CONVERSATION_CREATED("agent.conversation.created", "会话已创建", true),
+
+    /**
+     * 会话标题已由模型压缩生成（异步下发，前端据此更新列表项标题）。
+     * <p>
+     * 不持久化：标题本身已落在 conversation.title，追踪日志里重复记录没有价值。
+     */
+    CONVERSATION_TITLE("agent.conversation.title", "会话标题已生成", false),
+
+    /**
+     * 助手占位消息已创建（status=RUNNING），前端据此渲染"生成中"气泡
+     */
+    MESSAGE_CREATED("agent.message.created", "消息已创建", false),
+
     ROUTE_COMPLETED("agent.route.completed", "意图路由完成", true),
 
     THINK_DELTA("agent.think.delta", "智能体思考片段", false),

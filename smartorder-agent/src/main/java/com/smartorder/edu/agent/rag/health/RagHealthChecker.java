@@ -6,7 +6,6 @@ import com.smartorder.edu.common.rag.vector.CollectionInitService;
 import com.smartorder.edu.common.service.INeo4jKnowledgeGraphService;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
-import io.milvus.v2.client.MilvusClientV2;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -25,7 +24,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class RagHealthChecker {
 
-    private final MilvusClientV2 milvusClient;
     private final CollectionInitService collectionInitService;
     private final INeo4jKnowledgeGraphService neo4jService;
     private final ChatModel chatModel;

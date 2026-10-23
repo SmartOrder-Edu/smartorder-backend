@@ -69,6 +69,13 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
             Map<String, Object> donePayload = new LinkedHashMap<>();
             donePayload.put("conversationId", context.getConversationId());
             donePayload.put("traceId", context.getTraceId());
+            // 前端用 messageId 定稿占位气泡（RUNNING → COMPLETED）
+            if (context.getAssistantMessageId() != null) {
+                donePayload.put("messageId", context.getAssistantMessageId());
+            }
+            if (context.getAssistantSequenceNo() != null) {
+                donePayload.put("sequenceNo", context.getAssistantSequenceNo());
+            }
             if (context.getPlanRunStatus() != null) {
                 donePayload.put("runStatus", context.getPlanRunStatus());
             }

@@ -1,6 +1,7 @@
 package com.smartorder.edu.agent.orchestrator;
 
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
+import com.smartorder.edu.agent.service.ConversationTurnService;
 import com.smartorder.edu.agent.trace.AgentEventType;
 import com.smartorder.edu.agent.trace.AgentRuntimeContext;
 import com.smartorder.edu.agent.trace.TraceEventDispatcher;
@@ -15,11 +16,13 @@ import java.util.concurrent.*;
 /**
  * Agent 运行监督器——保证任何 Agent 运行最终收敛
  * <p>
- * 无论引擎是正常完成、超时、预算耗尽、还是抛出异常，
- * 都保证：
+ * 无论引擎是正常完成、超时、预算耗尽、还是抛出异常，都保证：
  * 1. 发送用户可读的降级消息（如果引擎没有自己保存 assistant 消息）
- * 2. 保存 assistant 消息到会话历史
+ * 2. 收尾本轮的 assistant 占位行（成功→COMPLETED，异常→FAILED + error_message）
  * 3. 正确关闭 SSE 连接（TRACE_COMPLETED + DONE）
+ * <p>
+ * 与改造前的区别：不再"新插一条兜底消息"，而是收尾 openTurn 时创建的占位行，
+ * 这样库里不会出现"一条失败记录 + 一条兜底消息"两条互相矛盾的数据。
  */
 @Slf4j
 @Component
@@ -27,13 +30,16 @@ public class AgentRunSupervisor {
 
     private final TraceEventDispatcher dispatcher;
     private final ConversationMemoryService memoryService;
+    private final ConversationTurnService turnService;
     private final ExecutorService supervisorExecutor;
 
     public AgentRunSupervisor(TraceEventDispatcher dispatcher,
                               ConversationMemoryService memoryService,
+                              ConversationTurnService turnService,
                               @Qualifier("agentChatExecutor") ExecutorService supervisorExecutor) {
         this.dispatcher = dispatcher;
         this.memoryService = memoryService;
+        this.turnService = turnService;
         this.supervisorExecutor = supervisorExecutor;
     }
 
@@ -48,7 +54,7 @@ public class AgentRunSupervisor {
      * 在监督下执行引擎逻辑，保证必定收敛
      * <p>
      * 引擎通过设置 {@code context.setAssistantMessageSaved(true)} 标记已保存消息。
-     * 如果引擎未设置此标记（异常/超时/预算耗尽），supervisor 会自动生成降级回复并保存。
+     * 如果引擎未设置此标记（异常/超时/预算耗尽），supervisor 会自动生成降级回复并收尾占位行。
      *
      * @param context         运行时上下文（含 budget）
      * @param emitter         SSE 发射器
@@ -91,24 +97,15 @@ public class AgentRunSupervisor {
             log.error("[Supervisor] 意外错误: traceId={}", context.getTraceId(), e);
         }
 
-        // === 保证收敛：如果引擎没有保存 assistant 消息，自动生成降级回复 ===
+        // === 保证收敛：如果引擎没有保存 assistant 消息，自动生成降级回复并收尾占位行 ===
         if (!context.isAssistantMessageSaved()) {
             String fallback = buildFallbackMessage(exitReason);
-            dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA,
-                    Map.of("text", fallback));
             try {
-                memoryService.saveAssistantMessage(
-                        context.getConversationId(),
-                        context.getUserId(),
-                        fallback,
-                        null,
-                        context.getTraceId(),
-                        null
-                );
-                context.setAssistantMessageSaved(true);
-            } catch (Exception saveEx) {
-                log.error("[Supervisor] 保存 assistant 消息失败: traceId={}", context.getTraceId(), saveEx);
+                dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", fallback));
+            } catch (Exception emitEx) {
+                log.warn("[Supervisor] 降级消息推送失败: traceId={}", context.getTraceId());
             }
+            closeTurn(context, fallback, exitReason);
         }
 
         // 始终正确关闭 SSE
@@ -130,6 +127,27 @@ public class AgentRunSupervisor {
             } catch (Exception emitEx) {
                 log.warn("[Supervisor] 降级消息推送失败: traceId={}", context.getTraceId());
             }
+            closeTurn(context, fallback, ExitReason.ENGINE_EXCEPTION);
+        }
+
+        dispatcher.complete(emitter, context);
+    }
+
+    /**
+     * 收尾本轮占位行：
+     * - 异常退出 → FAILED + error_message（前端可展示"生成失败，点击重试"）
+     * - 正常退出但引擎没落库 → 命中占位行就 COMPLETED 收尾，未命中（历史路径）则退化为 INSERT
+     */
+    private void closeTurn(AgentRuntimeContext context, String fallback, ExitReason exitReason) {
+        boolean closed = false;
+        if (exitReason != ExitReason.NORMAL) {
+            try {
+                closed = turnService.failTurn(context.getTraceId(), fallback, fallback);
+            } catch (Exception ex) {
+                log.error("[Supervisor] 失败收尾异常: traceId={}", context.getTraceId(), ex);
+            }
+        }
+        if (!closed) {
             try {
                 memoryService.saveAssistantMessage(
                         context.getConversationId(),
@@ -139,13 +157,11 @@ public class AgentRunSupervisor {
                         context.getTraceId(),
                         null
                 );
-                context.setAssistantMessageSaved(true);
             } catch (Exception saveEx) {
                 log.error("[Supervisor] 保存 assistant 消息失败: traceId={}", context.getTraceId(), saveEx);
             }
         }
-
-        dispatcher.complete(emitter, context);
+        context.setAssistantMessageSaved(true);
     }
 
     /**

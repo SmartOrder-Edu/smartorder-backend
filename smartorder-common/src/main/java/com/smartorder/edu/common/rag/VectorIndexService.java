@@ -2,6 +2,7 @@ package com.smartorder.edu.common.rag;
 
 
 import com.google.gson.JsonObject;
+import com.smartorder.edu.common.config.MilvusClientProvider;
 import com.smartorder.edu.common.model.entity.KnowledgeChunk;
 import com.smartorder.edu.common.model.rag.AttachmentRagSearchResult;
 import com.smartorder.edu.common.model.rag.VectorIndexDocument;
@@ -38,7 +39,7 @@ import java.util.stream.Collectors;
 @Service
 public class VectorIndexService {
 
-    private final MilvusClientV2 milvusClient;
+    private final MilvusClientProvider milvusClientProvider;
     private final EmbeddingModel embeddingModel;
     private final TfidfSparseVectorService tfidfService;
 
@@ -63,10 +64,10 @@ public class VectorIndexService {
             "chunk_type", "section_title", "title_path", "page_number", "embedding_model"
     );
 
-    public VectorIndexService(MilvusClientV2 milvusClient,
+    public VectorIndexService(MilvusClientProvider milvusClientProvider,
                               @Qualifier("embeddingModel") EmbeddingModel embeddingModel,
                               TfidfSparseVectorService tfidfService) {
-        this.milvusClient = milvusClient;
+        this.milvusClientProvider = milvusClientProvider;
         this.embeddingModel = embeddingModel;
         this.tfidfService = tfidfService;
     }
@@ -166,6 +167,11 @@ public class VectorIndexService {
      * 密集向量检索
      */
     private List<AttachmentRagSearchResult> searchDense(String query, String filter, int topK) {
+        MilvusClientV2 milvusClient = milvusClientProvider.get();
+        if (milvusClient == null) {
+            log.warn("Milvus 不可用，跳过密集向量检索");
+            return Collections.emptyList();
+        }
         try {
             Embedding embedding = embeddingModel.embed(TextSegment.from(query)).content();
             List<BaseVector> data = Collections.singletonList(new FloatVec(embedding.vectorAsList()));
@@ -191,6 +197,11 @@ public class VectorIndexService {
      * 稀疏向量检索
      */
     private List<AttachmentRagSearchResult> searchSparse(String query, String filter, int topK) {
+        MilvusClientV2 milvusClient = milvusClientProvider.get();
+        if (milvusClient == null) {
+            log.warn("Milvus 不可用，跳过稀疏向量检索");
+            return Collections.emptyList();
+        }
         try {
             Map<Long, Float> sparseVector = tfidfService.computeTfidfVector(query);
             if (sparseVector == null || sparseVector.isEmpty()) {
@@ -352,6 +363,12 @@ public class VectorIndexService {
     }
 
     private void doUpsert(List<JsonObject> milvusData) {
+        MilvusClientV2 milvusClient = milvusClientProvider.get();
+        if (milvusClient == null) {
+            log.error("Milvus 不可用，向量写入失败，集合: {}, 待写入数量: {}",
+                    collectionName, milvusData.size());
+            throw new IllegalStateException("Milvus 不可用，向量索引写入失败");
+        }
         try {
             UpsertReq upsertReq = UpsertReq.builder()
                     .collectionName(collectionName)
@@ -420,6 +437,12 @@ public class VectorIndexService {
      * 根据知识库ID删除所有向量
      */
     public void deleteByKnowledgeBaseId(Long knowledgeBaseId) {
+        MilvusClientV2 milvusClient = milvusClientProvider.get();
+        if (milvusClient == null) {
+            log.warn("Milvus 不可用，跳过向量删除（检索按 knowledge_base_id 过滤，残留向量不会被召回），knowledgeBaseId={}",
+                    knowledgeBaseId);
+            return;
+        }
         try {
             String filter = "knowledge_base_id == " + knowledgeBaseId;
             DeleteReq deleteReq = DeleteReq.builder()
@@ -438,6 +461,11 @@ public class VectorIndexService {
      * 根据文件ID删除所有向量
      */
     public void deleteByFileId(Long fileId) {
+        MilvusClientV2 milvusClient = milvusClientProvider.get();
+        if (milvusClient == null) {
+            log.warn("Milvus 不可用，跳过向量删除（检索按 file_id 过滤，残留向量不会被召回），fileId={}", fileId);
+            return;
+        }
         try {
             String filter = "file_id == " + fileId;
             DeleteReq deleteReq = DeleteReq.builder()
