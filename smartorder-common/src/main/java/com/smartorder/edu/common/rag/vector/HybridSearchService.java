@@ -1,6 +1,7 @@
 package com.smartorder.edu.common.rag.vector;
 
 import com.google.gson.JsonObject;
+import com.smartorder.edu.common.config.MilvusClientProvider;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -27,7 +28,7 @@ import java.util.stream.Collectors;
 @Service
 public class HybridSearchService {
 
-    private final MilvusClientV2 milvusClient;
+    private final MilvusClientProvider milvusClientProvider;
     private final EmbeddingModel embeddingModel;
     private final TfidfSparseVectorService tfidfService;
 
@@ -46,10 +47,10 @@ public class HybridSearchService {
     @Value("${hybrid-search.rrf-k:60}")
     private int rrfK;
 
-    public HybridSearchService(MilvusClientV2 milvusClient,
+    public HybridSearchService(MilvusClientProvider milvusClientProvider,
                                @Qualifier("embeddingModel") EmbeddingModel embeddingModel,
                                TfidfSparseVectorService tfidfService) {
-        this.milvusClient = milvusClient;
+        this.milvusClientProvider = milvusClientProvider;
         this.embeddingModel = embeddingModel;
         this.tfidfService = tfidfService;
     }
@@ -58,6 +59,10 @@ public class HybridSearchService {
      * 执行混合搜索
      */
     public List<HybridSearchResult> hybridSearch(String query, Long knowledgeBaseId, int topK) {
+        if (milvusClientProvider.get() == null) {
+            log.warn("Milvus 不可用，混合搜索降级返回空结果，查询: {}", query);
+            return Collections.emptyList();
+        }
         log.info("开始混合搜索，查询: {}, 知识库: {}, topK: {}", query, knowledgeBaseId, topK);
 
         // 1. 生成密集向量 (使用现有 EmbeddingModel)
@@ -115,6 +120,11 @@ public class HybridSearchService {
      * 密集向量搜索
      */
     private List<HybridSearchResult> searchDense(List<Float> denseVector, Long knowledgeBaseId, int topK) {
+        MilvusClientV2 milvusClient = milvusClientProvider.get();
+        if (milvusClient == null) {
+            log.warn("Milvus 不可用，跳过密集向量搜索");
+            return Collections.emptyList();
+        }
         try {
             List<BaseVector> data = Collections.singletonList(new FloatVec(denseVector));
             SearchReq.SearchReqBuilder<?, ?> builder = SearchReq.builder()
@@ -140,6 +150,11 @@ public class HybridSearchService {
      * 稀疏向量搜索
      */
     private List<HybridSearchResult> searchSparse(Map<Long, Float> sparseVector, Long knowledgeBaseId, int topK) {
+        MilvusClientV2 milvusClient = milvusClientProvider.get();
+        if (milvusClient == null) {
+            log.warn("Milvus 不可用，跳过稀疏向量搜索");
+            return Collections.emptyList();
+        }
         try {
             SortedMap<Long, Float> sortedSparseVector = new TreeMap<>(sparseVector);
             List<BaseVector> data = Collections.singletonList(new SparseFloatVec(sortedSparseVector));
@@ -317,6 +332,11 @@ public class HybridSearchService {
         }
 
         // 4. 写入 Milvus
+        MilvusClientV2 milvusClient = milvusClientProvider.get();
+        if (milvusClient == null) {
+            log.error("Milvus 不可用，文档索引失败，vectorId: {}", vectorId);
+            throw new IllegalStateException("Milvus 不可用，文档索引失败");
+        }
         try {
             UpsertReq upsertReq = UpsertReq.builder()
                     .collectionName(collectionName)
@@ -378,6 +398,11 @@ public class HybridSearchService {
         }
 
         // 5. 批量写入 Milvus
+        MilvusClientV2 milvusClient = milvusClientProvider.get();
+        if (milvusClient == null) {
+            log.error("Milvus 不可用，批量索引失败，数量: {}", documents.size());
+            throw new IllegalStateException("Milvus 不可用，批量索引失败");
+        }
         try {
             UpsertReq upsertReq = UpsertReq.builder()
                     .collectionName(collectionName)

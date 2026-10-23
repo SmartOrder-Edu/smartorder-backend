@@ -1,5 +1,6 @@
 package com.smartorder.edu.common.rag.vector;
 
+import com.smartorder.edu.common.config.MilvusClientProvider;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.common.DataType;
 import io.milvus.v2.common.IndexParam;
@@ -23,7 +24,7 @@ import java.util.*;
 @Service
 public class CollectionInitService {
 
-    private final MilvusClientV2 milvusClient;
+    private final MilvusClientProvider milvusClientProvider;
 
     @Value("${milvus.collection-name:rag_chunks}")
     private String collectionName;
@@ -31,19 +32,20 @@ public class CollectionInitService {
     @Value("${milvus.dimension:1024}")
     private int denseVectorDim;
 
-    public CollectionInitService(MilvusClientV2 milvusClient) {
-        this.milvusClient = milvusClient;
+    public CollectionInitService(MilvusClientProvider milvusClientProvider) {
+        this.milvusClientProvider = milvusClientProvider;
     }
 
     /**
-     * 应用启动后自动初始化 Collection
+     * 应用启动后自动初始化 Collection。
+     * Milvus 不可用时仅记录告警，不影响应用启动。
      */
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady() {
         try {
             initHybridCollection();
         } catch (Exception e) {
-            log.error("初始化混合搜索 Collection 失败", e);
+            log.warn("初始化混合搜索 Collection 失败（不影响应用运行，Milvus 恢复后可手动重试）: {}", e.getMessage());
         }
     }
 
@@ -51,9 +53,14 @@ public class CollectionInitService {
      * 初始化混合搜索 Collection
      */
     public void initHybridCollection() {
+        MilvusClientV2 milvusClient = milvusClientProvider.get();
+        if (milvusClient == null) {
+            log.warn("Milvus 不可用，跳过 Collection 初始化: {}", collectionName);
+            return;
+        }
         log.info("开始初始化混合搜索 Collection: {}", collectionName);
 
-        if (isCollectionExists()) {
+        if (isCollectionExists(milvusClient)) {
             log.info("Collection {} 已存在，跳过创建", collectionName);
             return;
         }
@@ -76,14 +83,14 @@ public class CollectionInitService {
         }
     }
 
-    private boolean isCollectionExists() {
+    private boolean isCollectionExists(MilvusClientV2 milvusClient) {
         try {
             HasCollectionReq hasReq = HasCollectionReq.builder()
                     .collectionName(collectionName)
                     .build();
             return milvusClient.hasCollection(hasReq);
         } catch (Exception e) {
-            log.warn("检查 Collection 存在性失败", e);
+            log.warn("检查 Collection 存在性失败: {}", e.getMessage());
             return false;
         }
     }
@@ -214,6 +221,10 @@ public class CollectionInitService {
     }
 
     public boolean isCollectionReady() {
+        MilvusClientV2 milvusClient = milvusClientProvider.get();
+        if (milvusClient == null) {
+            return false;
+        }
         try {
             return milvusClient.hasCollection(
                     HasCollectionReq.builder()
