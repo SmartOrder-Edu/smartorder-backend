@@ -7,12 +7,12 @@ import lombok.Getter;
 @AllArgsConstructor
 public enum AbilityDimensions {
 
-    CONCEPT("concept", "概念理解"),
-    APPLICATION("application", "应用能力"),
-    ANALYSIS("analysis", "分析能力"),
-    SOLUTION("solution", "解决问题能力"),
-    EXPLANATION("explanation", "解释能力"),
-    COMPREHENSION("comprehension", "综合能力");
+    KNOWLEDGE_UNDERSTANDING("KNOWLEDGE_UNDERSTANDING", "知识理解力"),
+    PROBLEM_ANALYSIS("PROBLEM_ANALYSIS", "问题分析力"),
+    SOLUTION_DESIGN("SOLUTION_DESIGN", "方案设计力"),
+    PRACTICAL_APPLICATION("PRACTICAL_APPLICATION", "实践应用力"),
+    ERROR_REFLECTION("ERROR_REFLECTION", "纠错反思力"),
+    TRANSFER_INNOVATION("TRANSFER_INNOVATION", "迁移创新力");
 
     private final String code;
     private final String description;

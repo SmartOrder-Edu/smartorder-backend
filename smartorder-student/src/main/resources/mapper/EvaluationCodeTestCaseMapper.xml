@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.smartorder.edu.student.mapper.EvaluationCodeTestCaseMapper">
+
+    <insert id="insertBatch" parameterType="java.util.List">
+        INSERT INTO evaluation_code_test_case (
+            id, question_id, input, expected_output, is_sample,
+            weight, time_limit_ms, memory_limit_mb, sort_order,
+            status, created_at, updated_at
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (
+                #{item.id}, #{item.questionId}, #{item.input}, #{item.expectedOutput},
+                #{item.isSample}, #{item.weight}, #{item.timeLimitMs}, #{item.memoryLimitMb},
+                #{item.sortOrder}, #{item.status}, #{item.createdAt}, #{item.updatedAt}
+            )
+        </foreach>
+    </insert>
+
+</mapper>

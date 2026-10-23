@@ -69,6 +69,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 .message(request.getMessage())
                 .knowledgeBaseIds(request.getKnowledgeBaseIds())
                 .fileIds(request.getFileIds())
+                .studyContext(request.getStudyContext())
                 .build();
 
         // 初始化执行预算（默认 ReAct 预算，路由后按模式调整）

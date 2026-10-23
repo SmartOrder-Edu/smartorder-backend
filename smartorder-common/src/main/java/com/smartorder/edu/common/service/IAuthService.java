@@ -51,4 +51,29 @@ public interface IAuthService {
      */
     void sendPhoneVerificationCode(String phone,String userIP);
 
+    /**
+     * 生成 GitHub OAuth state 参数（防 CSRF），并存入 Redis
+     * @return 随机生成的 state 字符串
+     */
+    String generateGithubOAuthState();
+
+    /**
+     * GitHub OAuth 登录
+     * @param githubLoginDTO 包含 code 和 state 的 DTO
+     * @return 包含 accessToken、refreshToken 和 isNewUser 标识的结果 Map
+     */
+    Map<String, Object> githubLogin(com.smartorder.edu.common.model.dto.GithubLoginDTO githubLoginDTO);
+
+    /**
+     * 生成 Gitee OAuth state 参数（防 CSRF），并存入 Redis
+     * @return 随机生成的 state 字符串
+     */
+    String generateGiteeOAuthState();
+
+    /**
+     * Gitee OAuth 登录
+     * @param giteeLoginDTO 包含 code 和 state 的 DTO
+     * @return 包含 accessToken、refreshToken 和 isNewUser 标识的结果 Map
+     */
+    Map<String, Object> giteeLogin(com.smartorder.edu.common.model.dto.GiteeLoginDTO giteeLoginDTO);
 }

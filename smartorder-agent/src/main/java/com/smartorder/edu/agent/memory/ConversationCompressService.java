@@ -41,7 +41,7 @@ public class ConversationCompressService {
      *
      * 增量摘要策略：旧摘要 + 新增未压缩消息 → 增量摘要，避免多轮压缩后早期信息丢失
      */
-    @Async
+    @Async("agentAsyncExecutor")
     public void checkAndCompress(String conversationId, Long userId) {
         int count = memoryService.countUncompressed(conversationId);
         if (count <= COMPRESS_THRESHOLD) {

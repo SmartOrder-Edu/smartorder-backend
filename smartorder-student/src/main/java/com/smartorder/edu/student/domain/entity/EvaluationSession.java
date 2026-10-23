@@ -10,7 +10,6 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -34,36 +33,23 @@ public class EvaluationSession {
     /** 学习空间ID */
     private Long learningSpaceId;
 
-    /** 测评类型：diagnosis/chapter/weakness/stage/final/comprehensive */
-    private String sessionType;
-
-    /** 测评标题 */
-    private String title;
-
     /** 章节ID */
     private Long chapterId;
 
-    /** 目标知识点列表 */
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private List<Long> targetKnowledgePoints;
+    /** 测评标题 */
+    private String topic;
 
-    /** 题目ID列表 */
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private List<Long> questionIds;
-
-    /** 难度分布 */
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> difficultyDistribution;
-
-    /** 能力维度分布 */
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> abilityDistribution;
+    /** 描述 */
+    private String description;
 
     /** 题目总数 */
     private Integer totalQuestionCount;
 
     /** 已作答数量 */
     private Integer answeredCount;
+
+    /** 关联的taskId */
+    private Long taskId;
 
     /** 总分 */
     private BigDecimal totalScore;
@@ -74,7 +60,7 @@ public class EvaluationSession {
     /** 正确率 */
     private BigDecimal accuracy;
 
-    /** 状态：created/doing/finished/cancelled */
+    /** 状态：todo/doing/finished/error */
     private String status;
 
     /** 组卷策略JSON */

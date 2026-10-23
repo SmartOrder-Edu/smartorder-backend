@@ -11,6 +11,7 @@ import com.smartorder.edu.learning.service.IResourceGenerationJobService;
 import com.smartorder.edu.learning.service.IResourceService;
 import com.smartorder.edu.learning.service.ITaskService;
 import com.smartorder.edu.learning.service.ResourceAsyncGenerationService;
+import com.smartorder.edu.learning.service.ResourceStreamingGenerationService;
 import com.smartorder.edu.learning.service.recommendation.BilibiliVideoRecommendationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -35,6 +37,8 @@ class ResourcePackageServiceImplTest {
     private IResourceService resourceService;
     private IResourceGenerationJobService resourceGenerationJobService;
     private ResourceAsyncGenerationService resourceAsyncGenerationService;
+    private ResourceStreamingGenerationService resourceStreamingGenerationService;
+    private ExecutorService resourceGenerationExecutor;
     private ResourcePackageServiceImpl service;
 
     @BeforeEach
@@ -44,6 +48,8 @@ class ResourcePackageServiceImplTest {
         resourceService = mock(IResourceService.class);
         resourceGenerationJobService = mock(IResourceGenerationJobService.class);
         resourceAsyncGenerationService = mock(ResourceAsyncGenerationService.class);
+        resourceStreamingGenerationService = mock(ResourceStreamingGenerationService.class);
+        resourceGenerationExecutor = mock(ExecutorService.class);
         BilibiliVideoRecommendationService bilibiliVideoRecommendationService =
                 mock(BilibiliVideoRecommendationService.class);
         service = new ResourcePackageServiceImpl(
@@ -52,7 +58,9 @@ class ResourcePackageServiceImplTest {
                 resourceService,
                 resourceGenerationJobService,
                 resourceAsyncGenerationService,
-                bilibiliVideoRecommendationService
+                bilibiliVideoRecommendationService,
+                resourceStreamingGenerationService,
+                resourceGenerationExecutor
         );
     }
 

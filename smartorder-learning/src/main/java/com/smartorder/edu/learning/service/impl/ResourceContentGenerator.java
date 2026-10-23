@@ -30,6 +30,8 @@ public class ResourceContentGenerator {
     private static final String HTML_PROMPT_VERSION = "resource-html-v1";
     private static final String QUIZ_PROMPT_VERSION = "resource-quiz-v1";
     private static final String MIND_MAP_PROMPT_VERSION = "resource-mind-map-v1";
+    private static final String GENERATED_ANIMATION_VIDEO_URL =
+            "https://qihui-duomo.oss-cn-beijing.aliyuncs.com/videos/GeneratedVideoScene_with_audio.mp4";
     private static final int MIN_QUIZ_QUESTION_COUNT = 3;
     private static final int MAX_QUIZ_QUESTION_COUNT = 10;
     private static final int MIN_MIND_MAP_NODE_COUNT = 8;
@@ -58,9 +60,11 @@ public class ResourceContentGenerator {
         return switch (resourceType) {
             case "doc" -> "md";
             case "html" -> "html";
+            case "ppt" -> "pptx";
             case "mind_map", "video" -> "md";
             case "quiz" -> "json";
             case "image" -> "png";
+            case "animation_video" -> "mp4";
             default -> "link";
         };
     }
@@ -69,7 +73,8 @@ public class ResourceContentGenerator {
         return switch (resourceType) {
             case "html" -> "html";
             case "quiz" -> "json";
-            case "link" -> "external_link";
+            case "ppt" -> "ppt_embed";
+            case "link", "animation_video" -> "external_link";
             default -> "markdown";
         };
     }
@@ -88,10 +93,24 @@ public class ResourceContentGenerator {
             case "mind_map" -> mindMapGeneratedContent(resource, context, knowledgePoint, reason);
             case "quiz" -> quizGeneratedContent(resource, context, knowledgePoint, reason, targetMinutes);
             case "link" -> templateGeneratedContent("external_link", linkContent(resource, knowledgePoint, reason));
+            case "ppt" -> templateGeneratedContent("ppt_embed", "{}");
             case "image" -> templateGeneratedContent("markdown", imageGuideContent(resource, knowledgePoint, reason));
             case "video" -> templateGeneratedContent("markdown", videoScriptContent(resource, knowledgePoint, reason));
+            case "animation_video" -> templateGeneratedContent("external_link", animationVideoContent(resource, knowledgePoint, reason));
             default -> docGeneratedContent(resource, context, knowledgePoint, reason, targetMinutes);
         };
+    }
+
+    private String animationVideoContent(Resource resource, String knowledgePoint, String reason) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "animation_video");
+        payload.put("title", resource.getTitle());
+        payload.put("knowledgePoint", knowledgePoint);
+        payload.put("url", resource.getUrl() == null || resource.getUrl().isBlank()
+                ? GENERATED_ANIMATION_VIDEO_URL
+                : resource.getUrl());
+        payload.put("reason", reason);
+        return toJson(payload);
     }
 
     private GeneratedContent docGeneratedContent(

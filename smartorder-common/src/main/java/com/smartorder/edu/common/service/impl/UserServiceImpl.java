@@ -7,11 +7,15 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 
 import com.smartorder.edu.common.model.dto.UserDTO;
 import com.smartorder.edu.common.model.entity.User;
+import com.smartorder.edu.common.model.entity.UserAuthIdentity;
+import com.smartorder.edu.common.model.vo.AuthIdentityVO;
 import com.smartorder.edu.common.model.vo.UserVO;
 import com.smartorder.edu.common.exception.BusinessException;
 import com.smartorder.edu.common.mapper.UserMapper;
+import com.smartorder.edu.common.service.IUserAuthIdentityService;
 import com.smartorder.edu.common.service.IUserService;
 import com.smartorder.edu.common.util.AliOSSUtils;
+import com.smartorder.edu.common.util.EmailVerificationCodeUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.util.validation.ValidationException;
@@ -44,8 +48,10 @@ public class UserServiceImpl implements IUserService {
 
     private final UserMapper userMapper;
     private final AliOSSUtils aliOSSUtils;
+    private final IUserAuthIdentityService userAuthIdentityService;
     private final String DEFAULT_AVATAR_URL = "https://xueling-platform.oss-cn-hangzhou.aliyuncs.com/d915734b-a240-4350-acb6-30b6e2d3d981.jpg";
     private final RabbitTemplate rabbitTemplate;
+    private final EmailVerificationCodeUtils emailVerificationCodeUtils;
 
     @Override
     public void insertUser(User user) {
@@ -55,7 +61,7 @@ public class UserServiceImpl implements IUserService {
         if (user.getUsername() == null || user.getUsername().isBlank()) {
             long count = userMapper.selectCount(null);
             long index = count + 1;
-            user.setUsername("启慧" + index);
+            user.setUsername("知序智学" + index);
         }
         if (user.getRole() == null) {
             user.setRole(0);
@@ -77,16 +83,19 @@ public class UserServiceImpl implements IUserService {
             }
         });
 
-        rabbitTemplate.convertAndSend(MQ_YUN_PAN_EXCHANGE, MQ_ROUTING_KEY_FILE_QUOTE, userId, new MessagePostProcessor() {
-            @Override
-            public Message postProcessMessage(Message message) throws AmqpException {
-                message.getMessageProperties()
-                        .setExpiration("10000");
-                return message;
-            }
-        },cd);//开启生产者确认模式，发送消息时会等待 RabbitMQ 的确认回调
-
-        log.info("消息发送成功！");
+        try {
+            rabbitTemplate.convertAndSend(MQ_YUN_PAN_EXCHANGE, MQ_ROUTING_KEY_FILE_QUOTE, userId, new MessagePostProcessor() {
+                @Override
+                public Message postProcessMessage(Message message) throws AmqpException {
+                    message.getMessageProperties()
+                            .setExpiration("10000");
+                    return message;
+                }
+            },cd);//开启生产者确认模式，发送消息时会等待 RabbitMQ 的确认回调
+            log.info("用户注册云盘初始化消息发送成功！");
+        } catch (Exception e) {
+            log.warn("用户注册成功，但发送云盘初始化消息失败（可能本地未运行 RabbitMQ）：{}", e.getMessage());
+        }
     }
 
     @Override
@@ -181,6 +190,9 @@ public class UserServiceImpl implements IUserService {
             //将用户实体类转换为用户数据传输对象
             UserVO userVO = new UserVO();
             BeanUtils.copyProperties(user, userVO);
+            // 加载第三方绑定列表
+            List<AuthIdentityVO> authIdentities = userAuthIdentityService.listIdentities(id);
+            userVO.setAuthIdentities(authIdentities);
             return userVO;
         }
         //用户不存在异常
@@ -325,9 +337,85 @@ public class UserServiceImpl implements IUserService {
             BeanUtils.copyProperties(user, userVO);
             return userVO;
         }).collect(Collectors.toList());
-
-
     }
 
+    @Override
+    public User getUserByGithubId(String githubId) {
+        if (githubId == null || githubId.isBlank()) {
+            return null;
+        }
+        // 优先从 user_auth_identity 表查询
+        UserAuthIdentity identity = userAuthIdentityService.getByProviderSubject("github", githubId);
+        if (identity != null) {
+            return userMapper.selectById(identity.getUserId());
+        }
+        // 兼容旧数据：从 user 表字段查询
+        return userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getGithubId, githubId));
+    }
 
+    @Override
+    public User getUserByGiteeId(String giteeId) {
+        if (giteeId == null || giteeId.isBlank()) {
+            return null;
+        }
+        // 优先从 user_auth_identity 表查询
+        UserAuthIdentity identity = userAuthIdentityService.getByProviderSubject("gitee", giteeId);
+        if (identity != null) {
+            return userMapper.selectById(identity.getUserId());
+        }
+        // 兼容旧数据：从 user 表字段查询
+        return userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getGiteeId, giteeId));
+    }
+
+    @Override
+    public User getUserById(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        return userMapper.selectById(userId);
+    }
+
+    @Override
+    public void changeEmail(Long userId, String newEmail, String verificationCode) {
+        // 1. 参数校验
+        if (userId == null) {
+            throw new ValidationException("用户ID不能为空");
+        }
+        if (newEmail == null || newEmail.isBlank()) {
+            throw new ValidationException("新邮箱不能为空");
+        }
+        if (!newEmail.matches("^[a-zA-Z0-9_.-]+@[a-zA-Z0-9-]+(\\.[a-zA-Z0-9-]+)*\\.[a-zA-Z0-9]{2,6}$")) {
+            throw new ValidationException("邮箱格式不正确");
+        }
+        if (verificationCode == null || verificationCode.isBlank()) {
+            throw new ValidationException("验证码不能为空");
+        }
+
+        // 2. 检查新邮箱是否与当前邮箱相同
+        User currentUser = userMapper.selectById(userId);
+        if (currentUser == null) {
+            throw new BusinessException("用户不存在");
+        }
+        if (newEmail.equals(currentUser.getEmail())) {
+            throw new BusinessException("新邮箱不能与当前邮箱相同");
+        }
+
+        // 3. 校验验证码（verifyCode 内部会消费 Redis 中的验证码）
+        emailVerificationCodeUtils.verifyCode(newEmail, verificationCode);
+
+        // 4. 检查新邮箱是否被其他用户占用
+        User existingUser = userMapper.selectOne(
+                new LambdaQueryWrapper<User>().eq(User::getEmail, newEmail)
+        );
+        if (existingUser != null && !existingUser.getId().equals(userId)) {
+            throw new BusinessException("该邮箱已被其他用户使用");
+        }
+
+        // 5. 更新邮箱
+        UpdateWrapper<User> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", userId).set("email", newEmail);
+        userMapper.update(null, updateWrapper);
+
+        log.info("用户 {} 邮箱修改成功: {}", userId, newEmail);
+    }
 }

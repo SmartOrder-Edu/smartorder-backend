@@ -17,6 +17,9 @@ public class Task {
     private String title;
     private String description;
     private String taskType;
+    private String actionType;
+    private String targetType;
+    private Long targetId;
     private Integer priority;
     private String status;
     private LocalDate dueDate;
@@ -26,6 +29,7 @@ public class Task {
     private LocalDateTime completedAt;
     private Integer sortOrder;
     private String aiSuggestion;
+    private String agentReason;
     private String metadata;
     private Integer isDeleted;
     private LocalDateTime createTime;

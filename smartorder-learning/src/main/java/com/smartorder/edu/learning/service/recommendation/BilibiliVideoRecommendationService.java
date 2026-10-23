@@ -2,8 +2,12 @@ package com.smartorder.edu.learning.service.recommendation;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.langchain4j.web.search.WebSearchEngine;
+import dev.langchain4j.web.search.WebSearchOrganicResult;
+import dev.langchain4j.web.search.WebSearchResults;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
@@ -36,12 +40,18 @@ public class BilibiliVideoRecommendationService {
     private static final Duration FALLBACK_CACHE_TTL = Duration.ofMinutes(15);
     private static final int CACHE_LIMIT = 256;
     private static final String SOURCE_BILIBILI_SEARCH = "bilibili_search";
+    private static final String SOURCE_WEB_SEARCH_FALLBACK = "web_search_fallback";
     private static final String SOURCE_SEARCH_FALLBACK = "search_fallback";
 
+    private final ObjectProvider<WebSearchEngine> webSearchEngineProvider;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(3))
             .build();
     private final ConcurrentHashMap<String, CachedRecommendation> cache = new ConcurrentHashMap<>();
+
+    public BilibiliVideoRecommendationService(ObjectProvider<WebSearchEngine> webSearchEngineProvider) {
+        this.webSearchEngineProvider = webSearchEngineProvider;
+    }
 
     public RecommendationResult recommend(String knowledgePoint, String reason, int limit) {
         String safeKnowledgePoint = normalizeKnowledgePoint(knowledgePoint);
@@ -56,6 +66,7 @@ public class BilibiliVideoRecommendationService {
 
         RecommendationResult result = fetchFromBilibili(safeKnowledgePoint, reason, query, safeLimit)
                 .filter(r -> !r.videos().isEmpty())
+                .or(() -> fetchFromWebSearch(safeKnowledgePoint, reason, query, safeLimit))
                 .orElseGet(() -> fallback(safeKnowledgePoint, reason, query, safeLimit));
         putCache(cacheKey, result);
         return result;
@@ -209,6 +220,88 @@ public class BilibiliVideoRecommendationService {
         }
     }
 
+    private Optional<RecommendationResult> fetchFromWebSearch(
+            String knowledgePoint,
+            String reason,
+            String query,
+            int limit
+    ) {
+        WebSearchEngine searchEngine = webSearchEngineProvider == null ? null : webSearchEngineProvider.getIfAvailable();
+        if (searchEngine == null) {
+            return Optional.empty();
+        }
+        try {
+            String searchTerms = "site:bilibili.com/video " + query;
+            dev.langchain4j.web.search.WebSearchRequest request =
+                    dev.langchain4j.web.search.WebSearchRequest.builder()
+                            .searchTerms(searchTerms)
+                            .maxResults(Math.max(5, Math.min(limit * 3, 10)))
+                            .build();
+            WebSearchResults results = searchEngine.search(request);
+            if (results == null || results.results() == null || results.results().isEmpty()) {
+                return Optional.empty();
+            }
+
+            Map<String, VideoRecommendation> deduped = new LinkedHashMap<>();
+            for (WebSearchOrganicResult result : results.results()) {
+                parseWebSearchVideo(result, knowledgePoint, reason)
+                        .ifPresent(video -> deduped.putIfAbsent(video.url(), video));
+            }
+            if (deduped.isEmpty()) {
+                return Optional.empty();
+            }
+
+            List<VideoRecommendation> selected = deduped.values().stream()
+                    .sorted(Comparator.comparingInt(VideoRecommendation::matchScore).reversed())
+                    .limit(limit)
+                    .toList();
+            return Optional.of(new RecommendationResult(
+                    query,
+                    searchUrl(query),
+                    SOURCE_WEB_SEARCH_FALLBACK,
+                    false,
+                    selected
+            ));
+        } catch (Exception e) {
+            log.warn("[BilibiliRecommendation] web search fallback exception, query={}", query, e);
+            return Optional.empty();
+        }
+    }
+
+    private Optional<VideoRecommendation> parseWebSearchVideo(
+            WebSearchOrganicResult result,
+            String knowledgePoint,
+            String reason
+    ) {
+        if (result == null) {
+            return Optional.empty();
+        }
+        String url = normalizeBilibiliVideoUrl(result.url() == null ? "" : result.url().toString());
+        if (url.isBlank()) {
+            return Optional.empty();
+        }
+        String title = cleanSearchTitle(result.title());
+        if (title.isBlank()) {
+            return Optional.empty();
+        }
+        String snippet = cleanText(result.snippet());
+        int score = qualityScore(knowledgePoint, title, snippet, "", 0, 0, 0);
+        String fitStage = fitStage(score, 0);
+        return Optional.of(new VideoRecommendation(
+                title,
+                "",
+                url,
+                "B站视频",
+                0,
+                0,
+                "",
+                webSearchRecommendationReason(knowledgePoint, reason, fitStage, score),
+                fitStage,
+                score,
+                SOURCE_WEB_SEARCH_FALLBACK
+        ));
+    }
+
     private Optional<VideoRecommendation> parseVideo(JsonNode item, String knowledgePoint, String reason) {
         String title = cleanText(item.path("title").asText(""));
         String bvid = item.path("bvid").asText("");
@@ -344,6 +437,12 @@ public class BilibiliVideoRecommendationService {
                 + "评分 " + score + " 分。" + safeReason(reason);
     }
 
+    private String webSearchRecommendationReason(String knowledgePoint, String reason, String fitStage, int score) {
+        return "B站实时接口被限制时，通过网络搜索定位到公开 B站视频结果；"
+                + "标题/摘要与「" + knowledgePoint + "」相关，适合作为" + fitStage + "阶段补充材料。"
+                + "评分 " + score + " 分。" + safeReason(reason);
+    }
+
     private String safeReason(String reason) {
         if (reason == null || reason.isBlank()) {
             return "";
@@ -366,6 +465,17 @@ public class BilibiliVideoRecommendationService {
             return "";
         }
         return Jsoup.parse(text).text().replace('\u00A0', ' ').trim();
+    }
+
+    private String cleanSearchTitle(String title) {
+        String cleaned = cleanText(title);
+        if (cleaned.isBlank()) {
+            return "";
+        }
+        return cleaned
+                .replaceAll("(?i)\\s*[-_—|]*\\s*哔哩哔哩\\s*bilibili\\s*$", "")
+                .replaceAll("(?i)\\s*[-_—|]*\\s*bilibili\\s*$", "")
+                .trim();
     }
 
     private String normalizeForMatch(String value) {
@@ -436,6 +546,27 @@ public class BilibiliVideoRecommendationService {
         return "https://www.bilibili.com/video/" + bvid;
     }
 
+    private String normalizeBilibiliVideoUrl(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank()) {
+            return "";
+        }
+        try {
+            URI uri = URI.create(rawUrl.trim());
+            String host = uri.getHost();
+            String path = uri.getPath();
+            if (host == null || path == null || !host.endsWith("bilibili.com") || !path.startsWith("/video/")) {
+                return "";
+            }
+            String[] parts = path.split("/");
+            if (parts.length < 3 || parts[2].isBlank()) {
+                return "";
+            }
+            return "https://www.bilibili.com/video/" + parts[2];
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     private int parseDuration(String duration) {
         if (duration == null || duration.isBlank()) {
             return 0;
@@ -479,7 +610,7 @@ public class BilibiliVideoRecommendationService {
                 cache.keySet().stream().findFirst().ifPresent(cache::remove);
             }
         }
-        Duration ttl = SOURCE_BILIBILI_SEARCH.equals(result.sourceType()) ? CACHE_TTL : FALLBACK_CACHE_TTL;
+        Duration ttl = SOURCE_SEARCH_FALLBACK.equals(result.sourceType()) ? FALLBACK_CACHE_TTL : CACHE_TTL;
         cache.put(cacheKey, new CachedRecommendation(result, Instant.now().plus(ttl)));
     }
 

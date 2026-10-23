@@ -11,7 +11,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Uses a small JSON-capable model to extract profile update candidates from the current user message
@@ -61,6 +65,46 @@ public class LlmProfileUpdateCandidateExtractor implements ProfileUpdateCandidat
             if (request.getDimensionUpdate() == null) {
                 request.setDimensionUpdate(List.of());
             }
+            Set<String> routedDimensions = selection.getDimensions().stream()
+                    .map(ProfileDimensionDecision::getDimensionKey)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+            Set<String> extractedDimensions = request.getDimensionUpdate().stream()
+                    .map(UpdateStudentProfileRequest.DimensionUpdate::getDimensionKey)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+            List<ProfileDimensionDecision> missingDecisions = findMissingDecisions(
+                    selection.getDimensions(), request.getDimensionUpdate());
+            if (!missingDecisions.isEmpty()) {
+                List<ProfileDimensionDecision> retryDecisions = missingDecisions;
+                try {
+                    UpdateStudentProfileRequest retryRequest = JSON.parseObject(
+                            extractJson(chatModel.chat(ChatRequest.builder()
+                                    .messages(profilePromptService.buildExtractionMessages(
+                                            currentUserMessage, conversationHistory, retryDecisions))
+                                    .build()).aiMessage().text()),
+                            UpdateStudentProfileRequest.class
+                    );
+                    if (retryRequest != null && retryRequest.getDimensionUpdate() != null) {
+                        List<UpdateStudentProfileRequest.DimensionUpdate> mergedUpdates = new ArrayList<>(request.getDimensionUpdate());
+                        retryRequest.getDimensionUpdate().stream()
+                                .filter(update -> coversAnyMissingDecision(update, retryDecisions))
+                                .forEach(mergedUpdates::add);
+                        request.setDimensionUpdate(mergedUpdates);
+                        extractedDimensions = request.getDimensionUpdate().stream()
+                                .map(UpdateStudentProfileRequest.DimensionUpdate::getDimensionKey)
+                                .filter(Objects::nonNull)
+                                .collect(Collectors.toSet());
+                        missingDecisions = findMissingDecisions(selection.getDimensions(), request.getDimensionUpdate());
+                    }
+                } catch (Exception retryException) {
+                    log.warn("[ProfileUpdateExtractor] Missing-dimension retry failed, keeping initial extraction: {}",
+                            retryException.getMessage());
+                }
+            }
+            log.info("[ProfileUpdateExtractor] routedDimensions={}, extractedDimensions={}, routedFactCount={}, missingFactCount={}, missingDimensionKeys={}",
+                    routedDimensions, extractedDimensions, selection.getDimensions().size(), missingDecisions.size(),
+                    missingDecisions.stream().map(ProfileDimensionDecision::getDimensionKey).filter(Objects::nonNull).toList());
             return request;
         } catch (Exception e) {
             log.warn("[ProfileUpdateExtractor] Failed to extract profile update candidate: {}", e.getMessage());
@@ -72,6 +116,34 @@ public class LlmProfileUpdateCandidateExtractor implements ProfileUpdateCandidat
         UpdateStudentProfileRequest request = new UpdateStudentProfileRequest();
         request.setDimensionUpdate(List.of());
         return request;
+    }
+
+    private List<ProfileDimensionDecision> findMissingDecisions(
+            List<ProfileDimensionDecision> decisions,
+            List<UpdateStudentProfileRequest.DimensionUpdate> updates) {
+        if (decisions == null || decisions.isEmpty()) {
+            return List.of();
+        }
+        List<UpdateStudentProfileRequest.DimensionUpdate> safeUpdates = updates == null ? List.of() : updates;
+        return decisions.stream()
+                .filter(Objects::nonNull)
+                .filter(decision -> safeUpdates.stream().noneMatch(update -> coversDecision(update, decision)))
+                .toList();
+    }
+
+    private boolean coversAnyMissingDecision(UpdateStudentProfileRequest.DimensionUpdate update,
+                                             List<ProfileDimensionDecision> missingDecisions) {
+        return missingDecisions.stream().anyMatch(decision -> coversDecision(update, decision));
+    }
+
+    private boolean coversDecision(UpdateStudentProfileRequest.DimensionUpdate update,
+                                   ProfileDimensionDecision decision) {
+        if (update == null || decision == null || !Objects.equals(update.getDimensionKey(), decision.getDimensionKey())) {
+            return false;
+        }
+        String decisionEvidence = decision.getEvidence();
+        return decisionEvidence == null || decisionEvidence.isBlank()
+                || (update.getEvidence() != null && update.getEvidence().contains(decisionEvidence));
     }
 
     private String extractJson(String response) {

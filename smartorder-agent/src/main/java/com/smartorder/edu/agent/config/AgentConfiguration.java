@@ -17,6 +17,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static dev.langchain4j.model.chat.Capability.RESPONSE_FORMAT_JSON_SCHEMA;
+
 /**
  * Agent LLM beans and conversation memory.
  *
@@ -101,6 +103,11 @@ public class AgentConfiguration {
                 .modelName(modelName)
 //                .returnThinking(true)
 //                .sendThinking(true, "reasoning_content")
+//                新的方式
+//                .supportedCapabilities(RESPONSE_FORMAT_JSON_SCHEMA)
+//                .strictJsonSchema(true)
+//                老的方式
+//                .responseFormat("json_object")
                 .responseFormat("json_object")
                 .timeout(Duration.ofSeconds(120))
                 .build();
@@ -166,6 +173,20 @@ public class AgentConfiguration {
                 .modelName(modelName)
                 .returnThinking(true)
                 .sendThinking(true, "reasoning_content")
+                .timeout(Duration.ofSeconds(120))
+                .build();
+    }
+
+    @Bean
+    public StreamingChatModel streamingQuestionChatModel() {
+        return OpenAiStreamingChatModel.builder()
+                .httpClientBuilder(JdkLangChain4jHttpClientBuilder.withDefaults())
+                .apiKey(apiKey)
+                .baseUrl(baseUrl)
+                .modelName(modelName)
+                .responseFormat("json_object")
+                .returnThinking(false)
+                .sendThinking(false, "reasoning_content")
                 .timeout(Duration.ofSeconds(120))
                 .build();
     }

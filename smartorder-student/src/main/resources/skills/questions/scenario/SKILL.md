@@ -1,0 +1,48 @@
+---
+name: scenario
+description: 生成场景题，给出具体业务/工程/学习场景，考察综合分析与方案设计能力
+when_to_use: 当请求题型编码为 scenario 或需要生成场景题时加载
+keywords:
+  - 场景题
+  - scenario
+  - 综合
+  - 应用
+priority: 90
+auto_invoke: false
+question_type: scenario
+objective: false
+default_score: 15
+---
+
+生成场景题，type 固定为 "场景题"。
+
+约束：
+1. options 必须是空数组 []。
+2. question 给出具体业务、工程、学习或实验场景，包含背景、目标、约束和待解决问题。
+3. 不生成泛泛开放讨论题，必须围绕课程和主题测评。
+4. answer 格式：精炼的参考答案文本字符串。
+5. 多行内容必须在 JSON 字符串中使用 \n 转义。
+6. analysis.correct_reason 简述评分要点和关键评判标准。
+7. analysis.wrong_reason 为空对象 {}。
+8. score 默认 15。
+
+# 最终输出
+只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
+
+# 短示例
+{
+  "questions": [{
+    "question": "某系统需要缓存最近访问的 100 条数据，要求查找、更新和淘汰都尽量接近 O(1)。请从数据结构角度选择方案并说明原因。",
+    "type": "场景题",
+    "options": [],
+    "answer": "可使用哈希表加双向链表（LRU）。哈希表用于 O(1) 定位节点，双向链表维护访问顺序并支持 O(1) 移动和删除尾部节点。更新时将节点移到链表头，淘汰时删除链表尾节点并从哈希表移除。",
+    "score": 15,
+    "difficulty": 5,
+    "knowledge_points": ["数据结构", "缓存", "LRU"],
+    "ability_tags": ["系统设计", "数据结构选型"],
+    "analysis": {
+      "correct_reason": "该场景同时需要快速定位和顺序维护，单一结构难以满足，需组合哈希表与双向链表。",
+      "wrong_reason": {}
+    }
+  }]
+}

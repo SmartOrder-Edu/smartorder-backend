@@ -5,6 +5,7 @@ target/
 !**/src/test/**/target/
 .claude
 .agents
+docs
 
 ### 编译产物 ###
 *.class

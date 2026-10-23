@@ -8,7 +8,7 @@
 5. 同一批题目中正确题和错误题都要有；如果 {{count}} >= 4，二者数量差不超过 1。
 6. analysis.correct_reason 说明判断依据。
 7. analysis.wrong_reason 为空对象 {}。
-8. score 默认 5。
+8. score 默认 3。
 
 # 最终输出
 只输出合法 JSON，不输出 Markdown、代码块、解释性文字或思考过程。最外层结构固定为 {"questions": [...]}。
@@ -20,7 +20,7 @@
     "type": "判断题",
     "options": [],
     "answer": true,
-    "score": 5,
+    "score": 3,
     "difficulty": 2,
     "knowledge_points": ["数据结构", "队列"],
     "ability_tags": ["数据结构基础"],

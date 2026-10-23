@@ -7,6 +7,16 @@ server:
       enabled: true
 
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,threaddump,heapdump
+  endpoint:
+    health:
+      show-details: always
+
+
 spring:
   servlet:
     multipart:
@@ -235,6 +245,15 @@ python:
     service:
       base-url: http://117.72.159.146:8088/api/v1/execute
 
+docmee:
+  base-url: ${DOCMEE_BASE_URL:https://open.docmee.cn}
+  api-key: ${API_KEY_PPT:}
+  lang: ${DOCMEE_LANG:zh-CN}
+  generate-token-limit: ${DOCMEE_GENERATE_TOKEN_LIMIT:1}
+  render-token-limit: ${DOCMEE_RENDER_TOKEN_LIMIT:0}
+  connect-timeout-millis: ${DOCMEE_CONNECT_TIMEOUT_MILLIS:10000}
+  read-timeout-millis: ${DOCMEE_READ_TIMEOUT_MILLIS:120000}
+
 # =======================================================
 # LangChain4j 核心大模型配置 (用于 Agent 和 Tool Calling)
 # =======================================================
@@ -371,6 +390,30 @@ tavily:
   api:
     api-key: ${TAVILY_API_KEY}
 
+# 本地代码判题配置
+# ============================================================
+# CentOS 7.6 部署注意：
+#   1. 默认 GCC 4.8.5 不支持 C++17，需安装 devtoolset-11
+#   2. 设置 gcc-prefix 指向 devtoolset 的 GCC 路径
+#   3. 运行 devops/docker/code-runner/setup-centos7.sh 一键安装
+# ============================================================
+smartorder:
+  code-judge:
+    enabled: true
+    work-dir: ./target/code-judge-work
+    docker-image-cpp17: smartorder-code-runner:cpp17
+    docker-image-c11: smartorder-code-runner:c11
+    default-time-limit-ms: 1000
+    default-memory-limit-mb: 128
+    max-source-code-length: 65535
+    max-output-length: 8192
+    # GCC 编译器路径前缀，留空使用系统 PATH
+    # CentOS 7 + devtoolset-11 设置: /opt/rh/devtoolset-11/root/usr/bin/
+    # Windows 本地开发: C:/Users/1/Desktop/rag/smart_order/mingw64/bin/
+    gcc-prefix: C:/Users/1/Desktop/rag/smart_order/mingw64/bin/
+    # 本地开发模式：绕过 Docker 直接在宿主机编译运行（不使用容器隔离）
+    # 生产环境必须设为 false
+    native-mode: true
 
 springdoc:
   group-configs:
@@ -391,3 +434,17 @@ logging:
   charset:
     console: UTF-8
     file: UTF-8
+
+github:
+  # 支持多种小写或大写形式的系统环境变量读取，依次尝试：github_client_id -> client_id -> GITHUB_CLIENT_ID
+  client-id: ${github_client_id:${client_id:${GITHUB_CLIENT_ID:}}}
+  # 支持多种形式的密钥读取，依次尝试：github_client_secret -> client_secret -> GITHUB_CLIENT_SECRET -> 兜底空字符串
+  client-secret: ${github_client_secret:${client_secret:${GITHUB_CLIENT_SECRET:}}}
+  redirect-uri: ${github_redirect_uri:${redirect_uri:${GITHUB_REDIRECT_URI:http://117.72.222.3/oauth/callback/github}}}
+
+gitee:
+  # 支持多种形式的系统环境变量读取，依次尝试：Client_ID_gitee -> gitee_client_id -> GITEE_CLIENT_ID
+  client-id: ${Client_ID_gitee:${gitee_client_id:${GITEE_CLIENT_ID:}}}
+  # 支持多种形式的密钥读取，依次尝试：Client_Secret_gitee -> gitee_client_secret -> GITEE_CLIENT_SECRET
+  client-secret: ${Client_Secret_gitee:${gitee_client_secret:${GITEE_CLIENT_SECRET:}}}
+  redirect-uri: ${gitee_redirect_uri:${GITEE_REDIRECT_URI:http://117.72.222.3/oauth/callback/gitee}}

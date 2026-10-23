@@ -35,7 +35,7 @@ public class EvaluationQuestionGenerationTask {
     /** 知识点ID */
     private Long knowledgePointId;
     /** 课程名称 */
-    private String courseName;
+    private String learningName;
     /** 出题主题 */
     private String topic;
     /** 原始请求参数JSON（回溯用） */

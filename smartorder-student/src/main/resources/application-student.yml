@@ -10,5 +10,12 @@ quiz:
     base-url: "${QUIZ_LLM_BASE_URL:https://token-plan-cn.xiaomimimo.com/v1}"
     model-name: ${QUIZ_LLM_MODEL_NAME:mimo-v2.5-pro}
 
+# Skill 体系开关：false=走老逻辑（prompts/*.txt），true=走 Skill 体系（skills/questions/*/SKILL.md）
+smartorder:
+  question:
+    skill-enabled: false
 
-
+practice:
+  reminder:
+    stage1-delay: 60        # 第一次提醒延迟（分钟），正式改为 1440（1天）
+    stage2-delay: 1440        # 第二次提醒延迟（分钟，从开始算），正式改为 4320（3天）

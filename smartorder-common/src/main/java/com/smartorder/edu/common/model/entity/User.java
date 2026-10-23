@@ -82,4 +82,20 @@ public class User {
      * 更新时间
      */
     private LocalDateTime updateTime;
+    /**
+     * GitHub 用户唯一标识
+     */
+    private String githubId;
+    /**
+     * GitHub 用户名
+     */
+    private String githubUsername;
+    /**
+     * Gitee 用户唯一标识
+     */
+    private String giteeId;
+    /**
+     * Gitee 用户名
+     */
+    private String giteeUsername;
 }

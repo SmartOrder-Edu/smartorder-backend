@@ -11,7 +11,7 @@ import lombok.Getter;
 public enum ResultCode {
     TEST(111,"测试枚举"),
     BUSINESS_ERROR(500,"业务异常"), VALIDATION_ERROR(501,"验证异常"),
-    SYSTEM_ERROR(600,"系统异常"), DUPLICATE_KEY_ERROR(601,"数据库唯一冲突异常"), UNAUTHORIZED(401,"未登录"), EMAIL_SEND_TOO_FREQUENTLY(602,"请不要频繁发送验证码"),
+    SYSTEM_ERROR(600,"系统异常"), DUPLICATE_KEY_ERROR(601,"数据库唯一冲突异常"), UNAUTHORIZED(401,"未登录"), EMAIL_SEND_TOO_FREQUENTLY(602,"请不要频繁发送验证码"), REQUEST_TOO_FREQUENTLY(603,"请求过于频繁，请稍后再试"),
     FORBIDDEN(403,"权限不足"), NOT_FOUND(404, "资源未找到"),
 
 
@@ -28,7 +28,18 @@ public enum ResultCode {
     // ========== 新增分片上传相关错误码 ==========
     UPLOAD_TASK_NOT_FOUND(800, "上传任务不存在"),
     UPDATE_CHUNK_ERROR(801, "更新分片信息失败"),
-    MERGE_CHUNK_ERROR(802, "合并分片失败");
+    MERGE_CHUNK_ERROR(802, "合并分片失败"),
+
+    // ========== 文件夹导出相关错误码 ==========
+    EXPORT_TASK_EXISTS(803, "已有打包任务进行中，请等待完成"),
+    FOLDER_EMPTY(804, "文件夹为空，无法打包"),
+    EXPORT_TASK_NOT_FOUND(805, "导出任务不存在"),
+
+    // ========== 资源广场相关错误码 ==========
+    RESOURCE_SQUARE_FILE_NOT_BELONG(900, "文件不属于当前用户"),
+    RESOURCE_SQUARE_NOT_FOUND(901, "广场资源不存在"),
+    RESOURCE_SQUARE_ALREADY_PUBLISHED(902, "该文件已发布到广场"),
+    RESOURCE_SQUARE_ALREADY_DOWNLOADED(903, "您已转存过该资源");
 
 
 

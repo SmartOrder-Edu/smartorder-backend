@@ -43,7 +43,7 @@ public class StudentProfile {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private LearningGoalsDTO learningGoals;
 
-    /** 综合能力：概念理解、问题分析、算法设计、代码实现、调试及知识迁移能力 */
+    /** 综合能力：知识理解、问题分析、方案设计、实践应用、纠错反思及迁移创新能力 */
     @TableField(typeHandler = JacksonTypeHandler.class)
     private AbilityProfileDTO abilityProfile;
 
@@ -74,8 +74,9 @@ public class StudentProfile {
     /** 根据结构化画像生成的自然语言摘要，仅作为大模型上下文缓存 */
     private String profileSummary;
 
-    /** 整份学生画像完整度，范围0到100 */
-    private BigDecimal profileCompleteness;
+    /** 画像完整度（实时计算，不持久化，提供给前端使用） */
+    @TableField(exist = false)
+    private Integer profileCompleteness;
 
     /** 整份学生画像可信度，范围0到100 */
     private BigDecimal profileConfidenceScore;

@@ -17,14 +17,17 @@ import com.smartorder.edu.student.domain.dto.student.LearningPreferenceDTO;
 import com.smartorder.edu.student.domain.dto.student.MetacognitiveProfileDTO;
 import com.smartorder.edu.student.domain.dto.student.dto.SubjectProfilesDTO;
 import com.smartorder.edu.student.domain.entity.StudentProfile;
+import com.smartorder.edu.student.domain.support.AbilityProfileMigration;
 import com.smartorder.edu.student.mapper.StudentProfileMapper;
 import com.smartorder.edu.student.service.IStudentProfileService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,7 +47,6 @@ import java.util.StringJoiner;
 public class StudentProfileServiceImpl implements IStudentProfileService {
 
     private static final BigDecimal INITIAL_CONFIDENCE = new BigDecimal("30.00");
-    private static final int PROFILE_DIMENSION_COUNT = 7;
     private static final int MAX_REASON_LENGTH = 500;
     private static final String DEFAULT_UPDATE_REASON = "更新学生画像";
     private static final Set<String> SUPPORTED_DIMENSIONS = Set.of(
@@ -69,13 +71,45 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
                 .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
     }
 
-    /** 根据用户ID查询画像，不存在则返回 null */
+    /** 根据用户ID查询画像，不存在则自动初始化并保存，再返回 */
     @Override
     public StudentProfile getByUserId(Long userId) {
         validateUserId(userId);
         LambdaQueryWrapper<StudentProfile> query = new LambdaQueryWrapper<>();
         query.eq(StudentProfile::getUserId, userId);
-        return studentProfileMapper.selectOne(query);
+        StudentProfile profile = studentProfileMapper.selectOne(query);
+        if (profile == null) {
+            profile = new StudentProfile();
+            profile.setUserId(userId);
+            profile.setProfileVersion(0);
+            profile.setProfileConfidenceScore(new BigDecimal("0.00"));
+            profile.setLastUpdateReason("查询画像时自动初始化");
+            profile.setCreatedAt(LocalDateTime.now());
+            profile.setUpdatedAt(LocalDateTime.now());
+            fillDisplayableInitialProfile(profile);
+            prepareForPersistence(profile);
+            persist(profile);
+            log.info("未查询到画像，已自动为用户 {} 创建并保存初始空学生画像", userId);
+        } else {
+            boolean needPersistence = false;
+            if (AbilityProfileMigration.requiresMigration(profile.getAbilityProfile())) {
+                profile.setAbilityProfile(AbilityProfileMigration.migrate(profile.getAbilityProfile()));
+                needPersistence = true;
+                log.info("已将用户 {} 的综合能力画像迁移为六维模型", userId);
+            }
+            if (ensureDisplayableProfile(profile)) {
+                profile.setLastUpdateReason("查询画像时补齐可展示骨架");
+                profile.setUpdatedAt(LocalDateTime.now());
+                needPersistence = true;
+                log.info("已为用户 {} 的稀疏画像补齐前端展示骨架", userId);
+            }
+            if (needPersistence) {
+                prepareForPersistence(profile);
+                persist(profile);
+            }
+        }
+        profile.setProfileCompleteness(calculateCompleteness(profile));
+        return profile;
     }
 
     /** 保存或更新画像，已存在则跳过重复创建 */
@@ -185,11 +219,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
             throw new BusinessException("画像初始化内容不能全部为空");
         }
 
-        StudentProfile profile = new StudentProfile();
-        profile.setUserId(userId);
-        profile.setProfileVersion(0);
-        profile.setProfileCompleteness(new BigDecimal("0.00"));
-        profile.setProfileConfidenceScore(new BigDecimal("0.00"));
+        StudentProfile profile = getOrCreateProfile(userId);
 
         if (background != null) {
             profile.setLearningBackground(mergeTyped(
@@ -351,6 +381,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         profile.setProfileVersion(currentVersion(profile) + 1);
         profile.setLastUpdateReason(limitReason(reason));
         profile.setProfileSummary(null);
+        profile.setUpdatedAt(LocalDateTime.now());
 
         if (minimumConfidence != null && (profile.getProfileConfidenceScore() == null
                 || profile.getProfileConfidenceScore().compareTo(minimumConfidence) < 0)) {
@@ -359,6 +390,7 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
 
         prepareForPersistence(profile);
         persist(profile);
+        profile.setProfileCompleteness(calculateCompleteness(profile));
         return profile;
     }
 
@@ -372,9 +404,208 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         StudentProfile created = new StudentProfile();
         created.setUserId(userId);
         created.setProfileVersion(0);
-        created.setProfileCompleteness(new BigDecimal("0.00"));
         created.setProfileConfidenceScore(new BigDecimal("0.00"));
         return created;
+    }
+
+    /** 补齐首次进入画像页所需的展示骨架，只初始化结构，不伪造学习证据或真实成绩。 */
+    private void fillDisplayableInitialProfile(StudentProfile profile) {
+        profile.setLearningBackground(buildBootstrapLearningBackground());
+        profile.setLearningGoals(buildBootstrapLearningGoals());
+        profile.setAbilityProfile(buildBootstrapAbilityProfile());
+        profile.setCommonMisconceptions(buildBootstrapMisconceptions());
+        profile.setLearningPreference(buildBootstrapLearningPreference());
+        profile.setMetacognitiveProfile(buildBootstrapMetacognitiveProfile());
+        profile.setSubjectProfiles(new SubjectProfilesDTO());
+        profile.setLastUpdateReason("查询画像时自动初始化可展示骨架");
+    }
+
+    /** 补齐已有稀疏画像的空结构，保留已经沉淀的真实画像字段，便于前端直接用后端数据渲染。 */
+    private boolean ensureDisplayableProfile(StudentProfile profile) {
+        boolean changed = false;
+        if (profile.getLearningBackground() == null) {
+            profile.setLearningBackground(buildBootstrapLearningBackground());
+            changed = true;
+        }
+        if (profile.getLearningGoals() == null || isEmpty(profile.getLearningGoals().getGoals())) {
+            profile.setLearningGoals(buildBootstrapLearningGoals());
+            changed = true;
+        }
+        if (profile.getAbilityProfile() == null || isEmpty(profile.getAbilityProfile().getAbilities())) {
+            profile.setAbilityProfile(buildBootstrapAbilityProfile());
+            changed = true;
+        }
+        if (profile.getCommonMisconceptions() == null) {
+            profile.setCommonMisconceptions(buildBootstrapMisconceptions());
+            changed = true;
+        } else if (profile.getCommonMisconceptions().getPatterns() == null) {
+            profile.getCommonMisconceptions().setPatterns(new LinkedHashMap<>());
+            changed = true;
+        }
+        if (profile.getLearningPreference() == null
+                || isEmpty(profile.getLearningPreference().getResourcePreferences())) {
+            profile.setLearningPreference(buildBootstrapLearningPreference());
+            changed = true;
+        }
+        if (profile.getMetacognitiveProfile() == null
+                || isEmpty(profile.getMetacognitiveProfile().getDimensions())) {
+            profile.setMetacognitiveProfile(buildBootstrapMetacognitiveProfile());
+            changed = true;
+        }
+        if (profile.getSubjectProfiles() == null) {
+            profile.setSubjectProfiles(new SubjectProfilesDTO());
+            changed = true;
+        }
+        return changed;
+    }
+
+    /** 初始化学习背景空骨架，等待引导页、测评和学习行为补充真实信息。 */
+    private LearningBackgroundDTO buildBootstrapLearningBackground() {
+        LearningBackgroundDTO background = new LearningBackgroundDTO();
+        background.setCurrentLevelDetail("待评估");
+        background.setSelfDescription("系统已创建画像，等待引导页、测评或学习行为补充真实信息。");
+
+        LearningBackgroundDTO.LearningConstraintsDTO constraints =
+                new LearningBackgroundDTO.LearningConstraintsDTO();
+        constraints.setWeeklyAvailableMinutes(0);
+        constraints.setPreferredStudyPeriods(List.of());
+        constraints.setDeviceTypes(List.of());
+        constraints.setAccessibilityNeeds(List.of());
+        background.setLearningConstraints(constraints);
+        return background;
+    }
+
+    /** 初始化一个真实待完成目标，引导用户通过有效学习行为完善画像。 */
+    private LearningGoalsDTO buildBootstrapLearningGoals() {
+        String goalId = "PROFILE_BOOTSTRAP";
+        LearningGoalsDTO.GoalDTO goal = new LearningGoalsDTO.GoalDTO();
+        goal.setGoalId(goalId);
+        goal.setScope("GLOBAL");
+        goal.setTitle("完善学习画像");
+        goal.setDescription("完成引导问卷、一次测评或一次学习任务后，系统会逐步更新真实能力、偏好和薄弱点。");
+        goal.setGoalType("PROFILE_BOOTSTRAP");
+        goal.setPriority("MEDIUM");
+        goal.setStatus("IN_PROGRESS");
+
+        LearningGoalsDTO.ProgressDTO progress = new LearningGoalsDTO.ProgressDTO();
+        progress.setProgressPercent(0.0);
+        progress.setCompletedCriteriaCount(0);
+        progress.setTotalCriteriaCount(3);
+        progress.setCalculationMethod("SYSTEM_DERIVED");
+        goal.setProgress(progress);
+
+        Map<String, LearningGoalsDTO.GoalDTO> goals = new LinkedHashMap<>();
+        goals.put(goalId, goal);
+
+        LearningGoalsDTO result = new LearningGoalsDTO();
+        result.setPrimaryGoalId(goalId);
+        result.setGoals(goals);
+        return result;
+    }
+
+    /** 初始化六维能力雷达骨架，0 分表示尚未评估，不代表真实能力水平。 */
+    private AbilityProfileDTO buildBootstrapAbilityProfile() {
+        AbilityProfileDTO profile = new AbilityProfileDTO();
+        profile.setOverallScore(0.0);
+        profile.setOverallLevel("BEGINNER");
+
+        Map<String, AbilityProfileDTO.AbilityItemDTO> abilities = new LinkedHashMap<>();
+        addBootstrapAbility(abilities, "KNOWLEDGE_UNDERSTANDING", "知识理解");
+        addBootstrapAbility(abilities, "PROBLEM_ANALYSIS", "问题分析");
+        addBootstrapAbility(abilities, "SOLUTION_DESIGN", "方案设计");
+        addBootstrapAbility(abilities, "PRACTICAL_APPLICATION", "实践应用");
+        addBootstrapAbility(abilities, "ERROR_REFLECTION", "纠错反思");
+        addBootstrapAbility(abilities, "TRANSFER_INNOVATION", "迁移创新");
+        profile.setAbilities(abilities);
+        profile.setStrengthAbilityCodes(List.of());
+        profile.setDevelopmentPriorityCodes(List.of());
+        return profile;
+    }
+
+    /** 添加一项待评估能力，保留能力代码和展示名称，避免前端继续依赖 mock 维度。 */
+    private void addBootstrapAbility(
+            Map<String, AbilityProfileDTO.AbilityItemDTO> abilities,
+            String code,
+            String name
+    ) {
+        AbilityProfileDTO.AbilityItemDTO item = new AbilityProfileDTO.AbilityItemDTO();
+        item.setAbilityCode(code);
+        item.setAbilityName(name);
+        item.setScore(0);
+        item.setLevel("BEGINNER");
+        item.setTrend("STABLE");
+        item.setConfidence(0.0);
+        item.setEvidenceIds(List.of());
+        abilities.put(code, item);
+    }
+
+    /** 初始化易错模式集合为空，后续由测评和练习链路写入真实错因。 */
+    private CommonMisconceptionsDTO buildBootstrapMisconceptions() {
+        CommonMisconceptionsDTO misconceptions = new CommonMisconceptionsDTO();
+        misconceptions.setPatterns(new LinkedHashMap<>());
+        return misconceptions;
+    }
+
+    /** 初始化资源偏好候选项，选择率和有效性为 0，表示尚无行为证据。 */
+    private LearningPreferenceDTO buildBootstrapLearningPreference() {
+        LearningPreferenceDTO preference = new LearningPreferenceDTO();
+        Map<String, LearningPreferenceDTO.ResourcePreferenceDTO> resources = new LinkedHashMap<>();
+        addBootstrapResourcePreference(resources, "VIDEO");
+        addBootstrapResourcePreference(resources, "CODE_EXAMPLE");
+        addBootstrapResourcePreference(resources, "TEXT");
+        addBootstrapResourcePreference(resources, "QUIZ");
+        preference.setResourcePreferences(resources);
+        return preference;
+    }
+
+    /** 添加一种待观察资源偏好，前端可识别类型，但不会显示伪造占比。 */
+    private void addBootstrapResourcePreference(
+            Map<String, LearningPreferenceDTO.ResourcePreferenceDTO> resources,
+            String type
+    ) {
+        LearningPreferenceDTO.ResourcePreferenceDTO item = new LearningPreferenceDTO.ResourcePreferenceDTO();
+        item.setResourceType(type);
+        item.setDeclaredPreference("UNKNOWN");
+        item.setObservedEffectivenessScore(0);
+        item.setSelectionRate(0.0);
+        item.setCompletionRate(0.0);
+        item.setPostLearningAccuracyRate(0.0);
+        item.setConfidence(0.0);
+        item.setEvidenceIds(List.of());
+        resources.put(type, item);
+    }
+
+    /** 初始化元认知画像骨架，所有维度保持待评估状态。 */
+    private MetacognitiveProfileDTO buildBootstrapMetacognitiveProfile() {
+        MetacognitiveProfileDTO profile = new MetacognitiveProfileDTO();
+        profile.setOverallScore(0.0);
+        profile.setOverallLevel("BEGINNER");
+
+        Map<String, MetacognitiveProfileDTO.MetaDimensionDTO> dimensions = new LinkedHashMap<>();
+        addBootstrapMetaDimension(dimensions, "PLANNING", "规划能力");
+        addBootstrapMetaDimension(dimensions, "MONITORING", "过程监控");
+        addBootstrapMetaDimension(dimensions, "REFLECTION", "复盘反思");
+        addBootstrapMetaDimension(dimensions, "HELP_SEEKING", "主动求助");
+        profile.setDimensions(dimensions);
+        return profile;
+    }
+
+    /** 添加一个待评估的元认知维度，后续由学习过程事件覆盖真实分数。 */
+    private void addBootstrapMetaDimension(
+            Map<String, MetacognitiveProfileDTO.MetaDimensionDTO> dimensions,
+            String code,
+            String name
+    ) {
+        MetacognitiveProfileDTO.MetaDimensionDTO item = new MetacognitiveProfileDTO.MetaDimensionDTO();
+        item.setDimensionCode(code);
+        item.setDimensionName(name);
+        item.setScore(0);
+        item.setLevel("BEGINNER");
+        item.setTrend("STABLE");
+        item.setDescription("尚未形成足够学习证据。");
+        item.setConfidence(0.0);
+        item.setEvidenceIds(List.of());
+        dimensions.put(code, item);
     }
 
     /** 从引导页DTO构建学习背景，无有效数据则返回 null */
@@ -541,8 +772,9 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
         });
     }
 
-    /** 持久化前的预处理：初始化默认值，精度处理，重算完整度 */
+    /** 持久化前的预处理：初始化默认值，精度处理 */
     private void prepareForPersistence(StudentProfile profile) {
+        profile.setAbilityProfile(AbilityProfileMigration.migrate(profile.getAbilityProfile()));
         if (profile.getProfileConfidenceScore() == null) {
             profile.setProfileConfidenceScore(new BigDecimal("0.00"));
         } else {
@@ -550,59 +782,6 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
                     profile.getProfileConfidenceScore().setScale(2, RoundingMode.HALF_UP)
             );
         }
-        recalculateCompleteness(profile);
-    }
-
-    /** 重新计算画像完整度，7个维度中已填写的数量占比 */
-    private void recalculateCompleteness(StudentProfile profile) {
-        int completed = 0;
-        completed += isMeaningful(profile.getLearningBackground()) ? 1 : 0;
-        completed += isMeaningful(profile.getLearningGoals()) ? 1 : 0;
-        completed += isMeaningful(profile.getAbilityProfile()) ? 1 : 0;
-        completed += isMeaningful(profile.getCommonMisconceptions()) ? 1 : 0;
-        completed += isMeaningful(profile.getLearningPreference()) ? 1 : 0;
-        completed += isMeaningful(profile.getMetacognitiveProfile()) ? 1 : 0;
-        completed += isMeaningful(profile.getSubjectProfiles()) ? 1 : 0;
-
-        BigDecimal completeness = BigDecimal.valueOf(completed)
-                .multiply(BigDecimal.valueOf(100))
-                .divide(BigDecimal.valueOf(PROFILE_DIMENSION_COUNT), 2, RoundingMode.HALF_UP);
-        profile.setProfileCompleteness(completeness);
-    }
-
-    /** 判断对象是否包含有意义的数据（非null且非空） */
-    private boolean isMeaningful(Object value) {
-        if (value == null) {
-            return false;
-        }
-        return hasMeaningfulValue(objectMapper.valueToTree(value));
-    }
-
-    /** 递归判断JSON节点是否包含有意义的值 */
-    private boolean hasMeaningfulValue(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return false;
-        }
-        if (node.isValueNode()) {
-            return !node.isTextual() || !node.textValue().isBlank();
-        }
-        if (node.isArray()) {
-            for (JsonNode child : node) {
-                if (hasMeaningfulValue(child)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        if (node.isObject()) {
-            var fieldNames = node.fieldNames();
-            while (fieldNames.hasNext()) {
-                if (hasMeaningfulValue(node.get(fieldNames.next()))) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     /** 执行数据库持久化，新增或更新 */
@@ -646,6 +825,11 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
     /** 判断字符串是否有有效内容 */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    /** 判断画像集合字段是否为空，避免空 Map 让前端继续退回 mock 数据。 */
+    private boolean isEmpty(Map<?, ?> value) {
+        return value == null || value.isEmpty();
     }
 
     /** trim后返回，空白字符串返回null */
@@ -707,5 +891,35 @@ public class StudentProfileServiceImpl implements IStudentProfileService {
             case "gt3" -> 1470;
             default -> null;
         };
+    }
+
+    /** 计算画像完整度 */
+    private Integer calculateCompleteness(StudentProfile profile) {
+        if (profile == null) {
+            return 0;
+        }
+        int total = 0;
+        if (profile.getLearningBackground() != null) {
+            total += 15;
+        }
+        if (profile.getLearningGoals() != null) {
+            total += 15;
+        }
+        if (profile.getAbilityProfile() != null) {
+            total += 15;
+        }
+        if (profile.getCommonMisconceptions() != null) {
+            total += 15;
+        }
+        if (profile.getLearningPreference() != null) {
+            total += 15;
+        }
+        if (profile.getMetacognitiveProfile() != null) {
+            total += 15;
+        }
+        if (profile.getSubjectProfiles() != null) {
+            total += 10;
+        }
+        return total;
     }
 }

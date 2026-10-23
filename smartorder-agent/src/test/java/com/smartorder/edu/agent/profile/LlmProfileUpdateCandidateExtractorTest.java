@@ -92,6 +92,62 @@ class LlmProfileUpdateCandidateExtractorTest {
         assertTrue(prompt.contains("你好！有什么可以帮你的？"));
     }
 
+    @Test
+    void shouldRetryOnceForRoutedDimensionMissingFromInitialExtraction() {
+        RecordingChatModel chatModel = new RecordingChatModel(
+                """
+                {"dimensions":[
+                  {"dimensionKey":"learning_goals","evidence":"我想两个月内补数据结构","confidence":0.95,"reason":"明确学习目标"},
+                  {"dimensionKey":"learning_preference","evidence":"我喜欢先看代码示例","confidence":0.95,"reason":"明确稳定偏好"}
+                ]}
+                """,
+                """
+                {"dimensionUpdate":[{"dimensionKey":"learning_goals","delta":{"goals":{"GOAL-DATA_STRUCTURES-A1B2C3D4":{"title":"两个月内补数据结构"}}},"evidence":"我想两个月内补数据结构","confidence":0.95,"reason":"明确学习目标"}]}
+                """,
+                """
+                {"dimensionUpdate":[{"dimensionKey":"learning_preference","delta":{"explanation_preferences":{"preferred_sequence":"EXAMPLE_THEN_PRINCIPLE"}},"evidence":"我喜欢先看代码示例","confidence":0.95,"reason":"明确稳定偏好"}]}
+                """
+        );
+        LlmProfileUpdateCandidateExtractor extractor = new LlmProfileUpdateCandidateExtractor(chatModel, promptService());
+
+        UpdateStudentProfileRequest request = extractor.extract(
+                "我想两个月内补数据结构，我喜欢先看代码示例", null);
+
+        assertEquals(3, chatModel.prompts.size());
+        assertEquals(2, request.getDimensionUpdate().size());
+        assertTrue(request.getDimensionUpdate().stream()
+                .anyMatch(update -> "learning_goals".equals(update.getDimensionKey())));
+        assertTrue(request.getDimensionUpdate().stream()
+                .anyMatch(update -> "learning_preference".equals(update.getDimensionKey())));
+        assertTrue(chatModel.prompts.get(2).contains("learning_preference"));
+        assertFalse(chatModel.prompts.get(2).contains("维度：learning_goals"));
+    }
+
+    @Test
+    void shouldRetryWhenAnotherFactInTheSameDimensionIsMissing() {
+        RecordingChatModel chatModel = new RecordingChatModel(
+                """
+                {"dimensions":[
+                  {"dimensionKey":"learning_goals","evidence":"我要考研","confidence":0.95,"reason":"明确考试目标"},
+                  {"dimensionKey":"learning_goals","evidence":"每周投入10小时","confidence":0.95,"reason":"明确目标时间预算"}
+                ]}
+                """,
+                """
+                {"dimensionUpdate":[{"dimensionKey":"learning_goals","delta":{"goals":{"GOAL-GRADUATE-EXAM-A1B2C3D4":{"title":"考研"}}},"evidence":"我要考研","confidence":0.95,"reason":"明确考试目标"}]}
+                """,
+                """
+                {"dimensionUpdate":[{"dimensionKey":"learning_goals","delta":{"weekly_time_budget_hours":10},"evidence":"每周投入10小时","confidence":0.95,"reason":"明确目标时间预算"}]}
+                """
+        );
+        LlmProfileUpdateCandidateExtractor extractor = new LlmProfileUpdateCandidateExtractor(chatModel, promptService());
+
+        UpdateStudentProfileRequest request = extractor.extract("我要考研，每周投入10小时", null);
+
+        assertEquals(3, chatModel.prompts.size());
+        assertEquals(2, request.getDimensionUpdate().size());
+        assertTrue(chatModel.prompts.get(2).contains("每周投入10小时"));
+    }
+
     private ProfilePromptService promptService() {
         PromptLoader promptLoader = mock(PromptLoader.class);
         when(promptLoader.getProfileDimensionRouterPrompt())
@@ -102,6 +158,8 @@ class LlmProfileUpdateCandidateExtractorTest {
                 .thenReturn("维度：learning_goals");
         when(promptLoader.getProfileDimensionPrompt("learning_background"))
                 .thenReturn("维度：learning_background");
+        when(promptLoader.getProfileDimensionPrompt("learning_preference"))
+                .thenReturn("维度：learning_preference");
         return new ProfilePromptService(promptLoader);
     }
 
