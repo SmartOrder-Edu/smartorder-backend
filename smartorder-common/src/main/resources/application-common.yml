@@ -196,8 +196,14 @@ email:
 milvus:
   host: 117.72.222.3
   port: 19530
-  collection-name: rag_chunks  # 集合名称
-  dimension: 1024                           # text-embedding-v3 模型的维度
+  database: smart_order_db                 # 目标数据库名
+  collection-name: rag_chunks              # 集合名称
+  dimension: 1024                          # text-embedding-v3 模型的维度
+  connect-timeout-ms: 10000                # gRPC channel 建连超时
+  rpc-deadline-ms: 10000                   # 单次 RPC 超时（0 表示不限制）
+  connect-retry-times: 3                   # 建连重试次数（SDK 内部 connect RPC deadline 硬编码为 1s，首连常超时，必须重试）
+  connect-retry-interval-ms: 500           # 建连重试间隔
+  retry-cooldown-ms: 30000                 # 连续失败后的冷却时间，期间向量能力降级不阻塞业务
 
 # RAG 文本解析专用配置（关闭思考模式）
 rag:
