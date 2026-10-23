@@ -312,9 +312,11 @@ public class ResourceSquareServiceImpl implements IResourceSquareService {
 
         fileResourceMapper.insert(newFile);
 
-        // 更新用户已用空间
+        // 更新用户已用空间（与 insert 同一事务，超限则抛异常回滚，避免"转存成功但容量没扣"）
         if (originalFile.getFileSize() != null && originalFile.getFileSize() > 0) {
-            userFileQuotaService.addUserSpace(userId, originalFile.getFileSize());
+            if (!userFileQuotaService.addUserSpace(userId, originalFile.getFileSize())) {
+                throw new com.smartorder.edu.common.exception.BusinessException("存储空间不足，无法转存该资源");
+            }
         }
 
         // 自增下载次数

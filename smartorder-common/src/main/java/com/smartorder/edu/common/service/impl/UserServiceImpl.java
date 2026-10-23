@@ -19,9 +19,6 @@ import com.smartorder.edu.common.util.EmailVerificationCodeUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.util.validation.ValidationException;
-import org.springframework.amqp.AmqpException;
-import org.springframework.amqp.core.Message;
-import org.springframework.amqp.core.MessagePostProcessor;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.BeanUtils;
@@ -71,30 +68,42 @@ public class UserServiceImpl implements IUserService {
         }
         userMapper.insert(user);
 
-        // 1.创建CorrelationData
-        CorrelationData cd = new CorrelationData();
+        // 异步初始化个人网盘配额（失败不影响注册，getQuota 有懒初始化兜底）
+        sendQuotaInitMessage(userId);
+    }
 
-        // 2.设置ConfirmCallback（替代原来的Future回调）--生产者确认机制
-        rabbitTemplate.setConfirmCallback((correlationData, ack, cause) -> {
-            if (ack) {
-                log.debug("发送消息成功，收到 ack!");
-            } else {
-                log.error("发送消息失败，收到 nack, reason : {}", cause);
-            }
-        });
-
+    /**
+     * 发送"初始化个人网盘配额"消息（user_space = 0）。
+     * <p>
+     * 三个要点，对应之前实现里的问题：
+     * <ol>
+     *   <li><b>不设置消息 TTL</b>。之前用 {@code setExpiration("10000")} 给初始化消息加了 10 秒过期，
+     *       消费者稍慢（应用重启、队列积压、student 模块未部署）消息就会被 Broker 直接丢弃，
+     *       而该队列没有死信交换机，丢了完全无感知。初始化额度本身没有实时性要求，不需要 TTL。</li>
+     *   <li><b>不在这里 setConfirmCallback</b>。{@link RabbitTemplate} 是单例 Bean，
+     *       那是修改全局状态：每注册一个用户就覆盖一次，并发注册时多线程同时写同一字段。
+     *       全局回调统一在 {@code RabbitTemplateConfig} 里初始化一次。</li>
+     *   <li><b>单条消息的投递结果用 {@link CorrelationData} 的 Future</b>，它是 per-message 的，
+     *       与全局 confirmCallback 互不影响；id 传 userId，出问题能从日志直接定位到人。</li>
+     * </ol>
+     */
+    private void sendQuotaInitMessage(long userId) {
         try {
-            rabbitTemplate.convertAndSend(MQ_YUN_PAN_EXCHANGE, MQ_ROUTING_KEY_FILE_QUOTE, userId, new MessagePostProcessor() {
-                @Override
-                public Message postProcessMessage(Message message) throws AmqpException {
-                    message.getMessageProperties()
-                            .setExpiration("10000");
-                    return message;
+            CorrelationData correlationData = new CorrelationData(String.valueOf(userId));
+            correlationData.getFuture().whenComplete((confirm, ex) -> {
+                if (ex != null) {
+                    log.error("云盘配额初始化消息发送异常, userId: {}", userId, ex);
+                } else if (confirm != null && !confirm.isAck()) {
+                    log.error("云盘配额初始化消息未抵达 Broker, userId: {}, reason: {}", userId, confirm.getReason());
                 }
-            },cd);//开启生产者确认模式，发送消息时会等待 RabbitMQ 的确认回调
-            log.info("用户注册云盘初始化消息发送成功！");
+            });
+
+            rabbitTemplate.convertAndSend(MQ_YUN_PAN_EXCHANGE, MQ_ROUTING_KEY_FILE_QUOTE, userId, correlationData);
+            log.info("用户注册云盘初始化消息已发送, userId: {}", userId);
         } catch (Exception e) {
-            log.warn("用户注册成功，但发送云盘初始化消息失败（可能本地未运行 RabbitMQ）：{}", e.getMessage());
+            // 注册不能因为 MQ 不可用而失败；配额行会在用户首次访问网盘时由 getQuota 懒创建
+            log.warn("用户注册成功，但发送云盘初始化消息失败（RabbitMQ 可能未运行）, userId: {}: {}",
+                    userId, e.getMessage());
         }
     }
 

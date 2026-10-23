@@ -7,8 +7,8 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.aliyun.oss.OSSException;
 import com.smartorder.edu.common.exception.BusinessException;
+import com.smartorder.edu.common.model.dto.FileSaveMessage;
 import com.smartorder.edu.common.util.AliOSSUtils;
 import com.smartorder.edu.student.domain.dto.InitFileUploadDTO;
 import com.smartorder.edu.student.domain.entity.FileResource;
@@ -21,15 +21,17 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
-import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -145,12 +147,15 @@ public class FileResourceServiceImpl implements IFileResourceService {
         Long fileSize = dto.getFileSize();
         String fileHash = dto.getFileHash();
         Long targetFolderId = dto.getTargetFolderId();
-        Long fileId = IdUtil.getSnowflakeNextId();
+        String fileId = IdUtil.getSnowflakeNextIdStr();
 
-        String objectKey = "yun/resource/" + userId + "/" + targetFolderId + '/' + fileId.toString() + fileName.substring(fileName.lastIndexOf('.'));
+        int dotIndex = fileName.lastIndexOf('.');
+        String baseName = dotIndex > 0 ? fileName.substring(0, dotIndex) : fileName;
+
+        String objectKey = "yun/" + baseName + fileId + fileName.substring(fileName.lastIndexOf('.'));
         // 检查该用户是否有已有的上传任务
-        String uploadKey = "yun:resources:upload:task:" + userId + ":" + fileHash;
-        String uploadTaskJson = (String) redisTemplate.opsForValue().get(uploadKey);
+        String uploadKey = "yun:upload:task:" + fileHash;
+        String uploadTaskJson = redisTemplate.opsForValue().get(uploadKey);
         UploadTask uploadTask = uploadTaskJson != null ? fromJson(uploadTaskJson, UploadTask.class) : null;
         if(uploadTask!=null){
             log.info("发现已有的上传任务，继续使用该任务进行上传，objectKey:{}",objectKey);
@@ -169,12 +174,14 @@ public class FileResourceServiceImpl implements IFileResourceService {
         );
         if(fileResource!=null){
             sendAsyncSaveData(dto,fileResource,fileId,userId);
-            return Map.of(
-                    "uploadId", null,
-                    "uploadedChunksParts", null,
-                    "fileId", fileId.toString(),
-                    "isFinished", true
-            );
+            // Map.of 的 value 不允许为 null，秒传分支（uploadId/分片列表均为空）必须用 HashMap，
+            // 否则这里会在消息发出之后抛 NPE，接口 100% 500 而消息已经投递出去
+            Map<String, Object> finished = new HashMap<>(4);
+            finished.put("uploadId", null);
+            finished.put("uploadedChunksParts", null);
+            finished.put("fileId", fileId);
+            finished.put("isFinished", true);
+            return finished;
         }
         // 分片上传唯一标识(凭证)
         String uploadId = aliOSSUtils.initiateMultipartUpload(objectKey);
@@ -188,7 +195,7 @@ public class FileResourceServiceImpl implements IFileResourceService {
 
         // 存储文件元信息，等待分片上传完成后更新URL和状态
         FileResource file = new FileResource();
-        file.setId(fileId);
+        file.setId(Long.valueOf(fileId));
         file.setFolderId(targetFolderId);
         file.setUserId(userId);
         file.setFileName(fileName);
@@ -212,19 +219,91 @@ public class FileResourceServiceImpl implements IFileResourceService {
         return result;
     }
 
-    private void sendAsyncSaveData(InitFileUploadDTO dto, FileResource fileResource, Long fileId, Long userId) {
-        log.info("发送异步消息，保存文件数据到数据库，fileId: {}, fileHash: {}", fileId, dto.getFileHash());
-        rabbitTemplate.convertAndSend(MQ_YUN_PAN_EXCHANGE, MQ_ROUTING_KEY_FILE_SAVE, Map.of(
-                "initFileUploadDTO", dto,
-                "fileResource", fileResource,
-                "fileId", fileId,
-                "userId", userId
-        ));
+    /**
+     * 秒传分支：发送"异步落库"消息。
+     * <p>
+     * 消息体使用强类型 {@link FileSaveMessage} 而非 Map：
+     * Map 的 key 在编译期无约束，且 {@code Map.of} 不接受 null 值；
+     * 同时不把 {@code FileResource} 整行实体塞进消息（其中 summaryContent 可能是几千字的 AI 摘要），
+     * 消费端真正需要的只有被复用文件的 objectKey。
+     * <p>
+     * 挂 {@link CorrelationData} 是为了拿到 Broker 的发布确认：
+     * exchange 不存在 / 队列不可路由时，confirm 返回 nack，避免"用户看到秒传成功但消息已丢"。
+     */
+    private void sendAsyncSaveData(InitFileUploadDTO dto, FileResource src, String fileId, Long userId) {
+        FileSaveMessage msg = new FileSaveMessage(
+                fileId,
+                userId,
+                dto.getTargetFolderId() == null ? 0L : dto.getTargetFolderId(), // null 归一化为根目录
+                dto.getFileName(),
+                src.getFileSize(),   // 以库中真实大小为准，不信任前端入参
+                src.getFileHash(),
+                src.getFileUrl());   // 秒传记录与被复用文件共享同一份 OSS 对象
+
+        log.info("发送秒传入库消息，fileId: {}, fileHash: {}, objectKey: {}",
+                fileId, msg.getFileHash(), msg.getObjectKey());
+
+        CorrelationData correlationData = new CorrelationData(fileId);
+        correlationData.getFuture().whenComplete((confirm, ex) -> {
+            if (ex != null) {
+                log.error("秒传入库消息发送异常，fileId: {}", fileId, ex);
+            } else if (confirm != null && !confirm.isAck()) {
+                log.error("秒传入库消息未能抵达 Broker，fileId: {}, reason: {}", fileId, confirm.getReason());
+            }
+        });
+
+        rabbitTemplate.convertAndSend(MQ_YUN_PAN_EXCHANGE, MQ_ROUTING_KEY_FILE_SAVE, msg, correlationData);
+    }
+
+    /**
+     * 秒传文件入库（MQ 消费者调用）。
+     * <p>
+     * 幂等与事务：文件记录 insert 与用户空间累加在同一事务内，任一失败整体回滚；
+     * 重复投递时因主键（fileId 由生产者生成，重投不变）冲突而回滚，
+     * 天然保证容量不会被重复扣减。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void saveQuickUploadFile(FileSaveMessage msg) {
+        Long fileId = Long.parseLong(msg.getFileId());
+
+        if (fileResourceMapper.selectById(fileId) != null) {
+            log.info("秒传文件记录已存在，幂等跳过，fileId: {}", fileId);
+            return;
+        }
+        // 没有 objectKey 的秒传记录无法预览/下载，宁可失败重试也不要写入脏数据
+        if (!StringUtils.hasText(msg.getObjectKey())) {
+            throw new BusinessException("秒传源文件缺少 objectKey，fileId=" + fileId);
+        }
+
+        FileResource file = new FileResource();
+        file.setId(fileId);
+        file.setFolderId(msg.getTargetFolderId() == null ? 0L : msg.getTargetFolderId());
+        file.setUserId(msg.getUserId());
+        file.setFileName(msg.getFileName());
+        file.setOriginalFileName(msg.getFileName());
+        file.setFileUrl(msg.getObjectKey());
+        file.setFileHash(msg.getFileHash());
+        file.setFileType(StringUtils.getFilenameExtension(msg.getFileName()));
+        file.setFileSize(msg.getFileSize());
+        file.setSource(1);
+        file.setUploadStatus(1);
+        file.setParseStatus(0);
+        LocalDateTime now = LocalDateTime.now();
+        file.setCreateTime(now);
+        file.setUpdateTime(now);
+        fileResourceMapper.insert(file);
+
+        // 与上面的 insert 同一事务：空间不足时回滚记录，避免"文件已入库但容量没扣"
+        if (!userFileQuotaService.addUserSpace(msg.getUserId(), msg.getFileSize())) {
+            throw new BusinessException("存储空间不足，秒传文件保存失败，userId=" + msg.getUserId());
+        }
+        log.info("秒传文件入库成功，fileId: {}, userId: {}, fileSize: {}", fileId, msg.getUserId(), msg.getFileSize());
     }
 
     @Override
     public String getMultipartUploadSignUrl(String fileHash, int partNumber, Long userId) {
-        String uploadKey = "yun:resources:upload:task:" + userId + ":" + fileHash;
+        String uploadKey = "yun:upload:task:" + fileHash;
         String taskJson = redisTemplate.opsForValue().get(uploadKey);
         if(taskJson==null){
             throw new RuntimeException("上传的任务不存在");
@@ -250,7 +329,7 @@ public class FileResourceServiceImpl implements IFileResourceService {
      */
     @Override
     public void notifyChunkUploadDone(String fileHash, int chunkNumber, String eTag, Long userId) {
-        String uploadKey = "yun:resources:upload:task:" + userId + ":" + fileHash;
+        String uploadKey = "yun:upload:task:" + fileHash;
         String taskJson = redisTemplate.opsForValue().get(uploadKey);
         if(taskJson==null){
             throw new RuntimeException("上传的任务不存在");
@@ -271,7 +350,7 @@ public class FileResourceServiceImpl implements IFileResourceService {
     @Override
     @Transactional
     public Map<String, Object> mergeChunks(String fileHash, Long fileId, Long userId) {
-        String uploadKey = "yun:resources:upload:task:" + userId + ":" + fileHash;
+        String uploadKey = "yun:upload:task:" + fileHash;
         String taskJson = redisTemplate.opsForValue().get(uploadKey);
         if(taskJson==null){
             throw new RuntimeException("上传的任务不存在");
@@ -290,7 +369,10 @@ public class FileResourceServiceImpl implements IFileResourceService {
             // 查询文件大小，更新用户已用空间
             FileResource file = fileResourceMapper.selectById(fileId);
             if (file != null && file.getFileSize() != null) {
-                userFileQuotaService.addUserSpace(userId, file.getFileSize());
+                // addUserSpace 改用原子 UPDATE，超限时返回 false 而非抛异常，这里必须显式判断
+                if (!userFileQuotaService.addUserSpace(userId, file.getFileSize())) {
+                    throw new BusinessException("存储空间不足，无法完成上传");
+                }
             }
 
             LambdaUpdateWrapper<FileResource> wrapper = new LambdaUpdateWrapper<>();
@@ -309,7 +391,7 @@ public class FileResourceServiceImpl implements IFileResourceService {
 
     @Override
     public String cancelUpload(String fileHash, Long userId) {
-        String uploadKey = "yun:resources:upload:task:" + userId + ":" + fileHash;
+        String uploadKey = "yun:upload:task:" + fileHash;
         String taskJson = redisTemplate.opsForValue().get(uploadKey);
         if(taskJson==null){
             throw new RuntimeException("上传的任务不存在");
@@ -388,24 +470,17 @@ public class FileResourceServiceImpl implements IFileResourceService {
     }
 
     @Override
-    public FileDownloadResult downloadFile(Long id, Long userId) {
+    public String getFileAccessUrl(Long id, Long userId) {
         LambdaQueryWrapper<FileResource> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(FileResource::getId, id)
                 .eq(FileResource::getUserId, userId);
         FileResource file = fileResourceMapper.selectOne(wrapper);
         if (file == null) {
-            throw new BusinessException("文件不存在或无权下载该文件");
+            throw new BusinessException("文件不存在或无权访问该文件");
         }
         if (file.getFileUrl() == null || file.getFileUrl().isEmpty()) {
             throw new BusinessException("文件路径不存在");
         }
-        InputStream inputStream;
-        try {
-            inputStream = aliOSSUtils.downloadFile(file.getFileUrl());
-        } catch (OSSException e) {
-            log.error("OSS文件下载失败, fileId={}, fileUrl={}, errorCode={}", id, file.getFileUrl(), e.getErrorCode(), e);
-            throw new BusinessException("文件在云存储中不存在，可能已被删除");
-        }
-        return new FileDownloadResult(file.getFileName(), file.getFileType(), file.getFileSize(), inputStream);
+        return aliOSSUtils.getPublicUrl(file.getFileUrl());
     }
 }

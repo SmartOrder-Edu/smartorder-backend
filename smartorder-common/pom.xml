@@ -45,6 +45,16 @@
             <artifactId>jackson-datatype-jsr310</artifactId>
         </dependency>
 
+        <!--
+            Spring Retry：@RabbitListener 消费者重试（application-common.yml 中
+            spring.rabbitmq.listener.simple.retry.*）需要 classpath 存在 RetryTemplate。
+            spring-boot-starter-amqp 不传递该依赖，缺失时 retry 配置会被静默忽略。
+        -->
+        <dependency>
+            <groupId>org.springframework.retry</groupId>
+            <artifactId>spring-retry</artifactId>
+        </dependency>
+
         <!-- Actuator 监控端点 + Prometheus 指标导出（压测必备） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
