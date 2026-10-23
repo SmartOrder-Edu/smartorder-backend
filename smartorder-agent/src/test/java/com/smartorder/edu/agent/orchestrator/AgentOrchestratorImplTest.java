@@ -1,6 +1,7 @@
 package com.smartorder.edu.agent.orchestrator;
 
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
+import com.smartorder.edu.agent.memory.ConversationTitleService;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.profile.ProfileUpdateCoordinator;
 import com.smartorder.edu.agent.route.AgentRunMode;
@@ -37,6 +38,7 @@ class AgentOrchestratorImplTest {
         AgentConversationAttachmentService attachmentService = mock(AgentConversationAttachmentService.class);
         ProfileUpdateCoordinator profileUpdateCoordinator = mock(ProfileUpdateCoordinator.class);
         ConversationTurnService turnService = mock(ConversationTurnService.class);
+        ConversationTitleService titleService = mock(ConversationTitleService.class);
         AgentRunSupervisor runSupervisor = mock(AgentRunSupervisor.class);
         AgentOrchestratorImpl orchestrator = new AgentOrchestratorImpl(
                 routeService,
@@ -47,6 +49,7 @@ class AgentOrchestratorImplTest {
                 attachmentService,
                 profileUpdateCoordinator,
                 turnService,
+                titleService,
                 runSupervisor
         );
         IntentRouteResult routeResult = IntentRouteResult.builder()
@@ -91,5 +94,9 @@ class AgentOrchestratorImplTest {
                 eq("我准备考研，但是大二的时候没有怎么学会数据结构"), any(), any());
         order.verify(routeService).route(any(RouteContext.class));
         verify(reActEngine).execute(eq(request), eq(routeResult), any(), eq(emitter));
+
+        // 首条消息（userSequenceNo=1）应触发异步标题生成
+        verify(titleService).generateAsync(eq("conversation-1"),
+                eq("我准备考研，但是大二的时候没有怎么学会数据结构"), eq(emitter), any());
     }
 }

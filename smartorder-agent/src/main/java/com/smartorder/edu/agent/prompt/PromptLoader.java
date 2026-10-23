@@ -116,6 +116,13 @@ public class PromptLoader {
         return cache.get("system/summarizer.md");
     }
 
+    /**
+     * 会话标题生成提示词——把用户首条消息压缩成短标题
+     */
+    public String getTitleGeneratorPrompt() {
+        return cache.get("system/title-generator.md");
+    }
+
     public String getProfileDimensionRouterPrompt() {
         return cache.get("profile/dimension-router.md");
     }
@@ -258,6 +265,7 @@ public class PromptLoader {
         load("system/planner-create.md");
         load("system/planner-replan.md");
         load("system/summarizer.md");
+        load("system/title-generator.md");
         load("profile/dimension-router.md");
         load("profile/extraction-shell.md");
         load("profile/dimensions/learning-background.md");
