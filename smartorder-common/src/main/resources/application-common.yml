@@ -281,6 +281,16 @@ agent:
   llm:
     thinking-mode: ${AGENT_THINKING_MODE:disabled}
     reasoning-effort: ${AGENT_REASONING_EFFORT:high}
+    # 标题模型是否显式下发 thinking.type=disabled
+    # DeepSeek v4 默认思考，思考 token 与 max_tokens 共用预算，
+    # 不关会出现 content 为空、标题生成失败（输入越绕越容易触发）。
+    # 换成不支持该参数的服务商（如 MIMO）时设为 false。
+    title-disable-thinking: ${AGENT_TITLE_DISABLE_THINKING:true}
+    # 标题模型：可与主模型分开。标题只输出十几个字，用轻量模型更快更省。
+    # 注意 api.deepseek.com 只接受 deepseek-flash / deepseek-v4-pro，
+    # 传 deepseek-v4.1-flash 会直接报 invalid_request_error。
+    # deepseek-flash 即 V4.1 Flash（deepseek-v4-flash 是它的旧别名）。
+    title-model-name: ${AGENT_TITLE_MODEL:deepseek-flash}
   rag:
     enabled: true
     default-top-k: 10
