@@ -11,6 +11,7 @@ import com.smartorder.edu.agent.route.RouteContext;
 import com.smartorder.edu.agent.route.RoutingSource;
 import com.smartorder.edu.agent.service.AgentConversationAttachmentService;
 import com.smartorder.edu.agent.service.AttachmentNotReadyException;
+import com.smartorder.edu.agent.service.ConversationTurnService;
 import com.smartorder.edu.agent.trace.AgentEventType;
 import com.smartorder.edu.agent.trace.AgentRuntimeContext;
 import com.smartorder.edu.agent.trace.TraceEventDispatcher;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -43,16 +45,17 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
     private final ConversationMemoryService memoryService;
     private final AgentConversationAttachmentService attachmentService;
     private final ProfileUpdateCoordinator profileUpdateCoordinator;
+    private final ConversationTurnService conversationTurnService;
 
     private final AgentRunSupervisor runSupervisor;
 
     @Override
     public void handle(AgentChatRequest request, SseEmitter emitter) {
-        String conversationId = resolveConversationId(request);
+        String traceId = UUID.randomUUID().toString();
 
         AgentRuntimeContext context = AgentRuntimeContext.builder()
-                .traceId(UUID.randomUUID().toString())
-                .conversationId(conversationId)
+                .traceId(traceId)
+                .conversationId(request.getConversationId())
                 .userId(request.getUserId())
                 .message(request.getMessage())
                 .knowledgeBaseIds(request.getKnowledgeBaseIds())
@@ -62,11 +65,45 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         // 初始化执行预算（默认 ReAct 预算，路由后按模式调整）
         context.setBudget(ExecutionBudget.reactDefault());
 
+        // ===== 事务 A：先落库（用户消息 + assistant 占位行），再生成 =====
+        ConversationTurnService.TurnState turn;
         try {
-            // 0. 统一保存用户消息（所有模式都落库，含附件关联）
-            memoryService.saveUserMessage(conversationId, request.getUserId(), request.getMessage(),
-                    request.getFileIds());
-            request.setConversationId(conversationId);
+            turn = conversationTurnService.openTurn(request.getConversationId(), request.getUserId(),
+                    request.getMessage(), request.getFileIds(), traceId);
+        } catch (Exception e) {
+            // 会话已删除 / 无权访问 / 数据库异常：不写库，直接以错误事件收敛
+            log.warn("[AgentOrchestrator] 开轮失败: traceId={}, cid={}, reason={}",
+                    traceId, request.getConversationId(), e.getMessage());
+            context.setConversationId(request.getConversationId());
+            dispatcher.error(emitter, context,
+                    new IllegalStateException(e.getMessage() != null ? e.getMessage() : "会话不可用"));
+            return;
+        }
+
+        String conversationId = turn.getConversationId();
+        request.setConversationId(conversationId);
+        context.setConversationId(conversationId);
+        context.setConversationPk(turn.getConversationPk());
+        context.setTurnId(traceId);
+        context.setAssistantMessageId(turn.getAssistantMessageId());
+        context.setAssistantSequenceNo(turn.getAssistantSequenceNo());
+
+        try {
+            // 0. 通知前端：会话与占位消息已创建
+            if (turn.isCreated()) {
+                Map<String, Object> createdPayload = new LinkedHashMap<>();
+                createdPayload.put("conversationId", conversationId);
+                createdPayload.put("title", turn.getTitle() != null ? turn.getTitle() : "");
+                dispatcher.emit(emitter, context, AgentEventType.CONVERSATION_CREATED, createdPayload);
+            }
+
+            Map<String, Object> messageCreatedPayload = new LinkedHashMap<>();
+            messageCreatedPayload.put("messageId", turn.getAssistantMessageId());
+            messageCreatedPayload.put("parentId", turn.getUserMessageId());
+            messageCreatedPayload.put("role", "assistant");
+            messageCreatedPayload.put("sequenceNo", turn.getAssistantSequenceNo());
+            messageCreatedPayload.put("status", "RUNNING");
+            dispatcher.emit(emitter, context, AgentEventType.MESSAGE_CREATED, messageCreatedPayload);
 
             if (request.getFileIds() != null && !request.getFileIds().isEmpty()) {
                 try {
@@ -204,13 +241,6 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
     }
 
     // ============ Private Methods ============
-
-    private String resolveConversationId(AgentChatRequest request) {
-        if (request.getConversationId() != null && !request.getConversationId().isBlank()) {
-            return request.getConversationId();
-        }
-        return UUID.randomUUID().toString();
-    }
 
     private void addAttachmentSearchToolIfNeeded(IntentRouteResult routeResult, AgentRuntimeContext context) {
         if (routeResult.getRunMode() != AgentRunMode.REACT) {

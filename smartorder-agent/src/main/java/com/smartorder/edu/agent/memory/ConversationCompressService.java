@@ -95,14 +95,17 @@ public class ConversationCompressService {
             }
 
             // 6. 标记旧消息为已压缩（保留最近 30 条不压缩）
+            //    改用 sequence_no：消息表 id 不再保证与时间严格单调（占位行先建、内容后填）
             List<ConversationMessage> recentMessages =
                     messageMapper.selectRecentMessages(conversationId, 30);
-            // recentMessages 按 create_time DESC 排序，最后一条是最近 30 条中最旧的
+            // recentMessages 按 sequence_no DESC 排序，最后一条是最近 30 条中最旧的
             if (recentMessages != null && recentMessages.size() >= 30) {
-                Long oldestRecentId = recentMessages.get(recentMessages.size() - 1).getId();
-                // 标记 ID < oldestRecentId 的消息为已压缩
-                messageMapper.markCompressed(conversationId, oldestRecentId);
-                log.info("[Compress] 标记 {} 之前的消息为已压缩: conversationId={}", oldestRecentId, conversationId);
+                Integer oldestRecentSeq = recentMessages.get(recentMessages.size() - 1).getSequenceNo();
+                if (oldestRecentSeq != null && oldestRecentSeq > 0) {
+                    messageMapper.markCompressed(conversationId, oldestRecentSeq);
+                    log.info("[Compress] 标记 sequence_no <= {} 的消息为已压缩: conversationId={}",
+                            oldestRecentSeq, conversationId);
+                }
             }
 
             log.info("[Compress] 压缩完成: conversationId={}, summaryLength={}", conversationId, summaryText.length());

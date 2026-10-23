@@ -5,6 +5,8 @@ import com.smartorder.edu.agent.model.entity.ConversationSummary;
 import com.smartorder.edu.agent.mapper.AgentTraceEventMapper;
 import com.smartorder.edu.agent.mapper.ConversationMessageMapper;
 import com.smartorder.edu.agent.mapper.ConversationSummaryMapper;
+import com.smartorder.edu.agent.service.ConversationService;
+import com.smartorder.edu.agent.service.ConversationTurnService;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
@@ -35,6 +37,8 @@ public class ConversationMemoryService {
     private final ConversationSummaryMapper summaryMapper;
     private final AgentTraceEventMapper traceEventMapper;
     private final PromptLoader promptLoader;
+    private final ConversationTurnService turnService;
+    private final ConversationService conversationService;
 
     private static final int MAX_RECENT_MESSAGES = 30;
 
@@ -86,27 +90,37 @@ public class ConversationMemoryService {
     }
 
     /**
-     * 保存用户消息
+     * 保存用户消息。
+     * <p>
+     * 首条消息不再走这里——它由 {@link ConversationTurnService#openTurn} 在事务 A 里
+     * 与 assistant 占位行一起落库。这里服务于"一轮内追加的用户消息"
+     * （如计划澄清回答、计划确认文本）。
      */
     public void saveUserMessage(String conversationId, Long userId, String content, List<Long> attachmentFileIds) {
-        String fileIdsJson = (attachmentFileIds != null && !attachmentFileIds.isEmpty())
-                ? com.alibaba.fastjson.JSON.toJSONString(attachmentFileIds) : null;
-        save(conversationId, userId, "user", content, null, null, null, null, fileIdsJson);
+        turnService.appendUserMessage(conversationId, userId, content, attachmentFileIds);
     }
 
     /**
-     * 保存助手消息（含 reasoning_content，thinking mode 必须回传给 API）
+     * 保存助手消息。
+     * <p>
+     * 语义保持"一次调用 = 一条气泡"，但写入方式变了：
+     * 1) 命中本轮占位行 → UPDATE 收尾（RUNNING → COMPLETED），15 处调用点无需改动；
+     * 2) 未命中（同一轮第二次调用 / 计划执行等非 openTurn 路径）→ INSERT 一条新消息，
+     *    序号由会话行锁分配，不会与占位行冲突。
      */
     public void saveAssistantMessage(String conversationId, Long userId, String content,
-                                      String reasoningContent, String traceId, String metadataJson) {
-        save(conversationId, userId, "assistant", content, null, reasoningContent, traceId, metadataJson, null);
+                                     String reasoningContent, String traceId, String metadataJson) {
+        if (turnService.finalizeTurn(traceId, content, reasoningContent, metadataJson)) {
+            return;
+        }
+        turnService.appendAssistantMessage(conversationId, userId, content, reasoningContent, traceId, metadataJson);
     }
 
     /**
-     * 保存工具消息
+     * 保存工具消息（is_visible=0，占序号但不计入可见消息数、不进模型上下文）
      */
     public void saveToolMessage(String conversationId, Long userId, String toolName, String content) {
-        save(conversationId, userId, "tool", content, toolName, null, null, null, null);
+        turnService.appendToolMessage(conversationId, userId, toolName, content);
     }
 
     /**
@@ -117,10 +131,15 @@ public class ConversationMemoryService {
     }
 
     /**
-     * 删除对话（软删除消息和摘要，硬删除追踪事件）
+     * 删除对话（软删会话 + 软删消息和摘要，硬删除追踪事件）
+     * <p>
+     * 先软删会话主表：这样后续任何按 conversation_id 的写入都会被
+     * {@link ConversationTurnService} 的会话状态校验挡住。
      */
     @Transactional
     public void deleteConversation(String conversationId, Long userId) {
+        conversationService.softDelete(conversationId, userId);
+
         int msgCount = messageMapper.softDeleteByConversationId(conversationId, userId);
         log.info("[MemoryService] 软删除消息: conversationId={}, count={}", conversationId, msgCount);
 
@@ -143,24 +162,6 @@ public class ConversationMemoryService {
     }
 
     // ============ Private ============
-
-    private void save(String conversationId, Long userId, String role, String content,
-                       String toolName, String reasoningContent, String traceId, String metadataJson,
-                       String attachmentFileIds) {
-        ConversationMessage entity = new ConversationMessage();
-        entity.setConversationId(conversationId);
-        entity.setUserId(userId);
-        entity.setRole(role);
-        entity.setContent(content);
-        entity.setToolName(toolName);
-        entity.setReasoningContent(reasoningContent);
-        entity.setTraceId(traceId);
-        entity.setMetadataJson(metadataJson);
-        entity.setAttachmentFileIds(attachmentFileIds);
-        entity.setIsCompressed(0);
-        entity.setIsDeleted(0);
-        messageMapper.insert(entity);
-    }
 
     private ChatMessage toChatMessage(ConversationMessage msg) {
         if (msg.getContent() == null) return null;
