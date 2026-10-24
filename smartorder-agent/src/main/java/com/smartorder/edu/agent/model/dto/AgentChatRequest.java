@@ -15,6 +15,10 @@ import java.util.Map;
 @AllArgsConstructor
 public class AgentChatRequest {
     private Long userId;
+    /** 客户端一次发送固定不变的幂等键。 */
+    private String requestId;
+    /** 服务端任务标识；只由创建任务接口填写，不信任客户端输入。 */
+    private String taskId;
     private String message;
     private String conversationId;
     private List<Long> fileIds;

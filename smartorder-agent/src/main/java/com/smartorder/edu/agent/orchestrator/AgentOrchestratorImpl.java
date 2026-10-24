@@ -60,10 +60,12 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
 
     @Override
     public void handle(AgentChatRequest request, SseEmitter emitter) {
-        String traceId = UUID.randomUUID().toString();
+        // 新任务沿用 taskId 作为轮次 traceId，方便从现有消息表找回本轮结果。
+        String traceId = request.getTaskId() != null ? request.getTaskId() : UUID.randomUUID().toString();
 
         AgentRuntimeContext context = AgentRuntimeContext.builder()
                 .traceId(traceId)
+                .taskId(request.getTaskId())
                 .conversationId(request.getConversationId())
                 .userId(request.getUserId())
                 .message(request.getMessage())

@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.regex.Matcher;
@@ -27,6 +28,12 @@ import java.util.regex.Pattern;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    /** SSE 客户端断开时响应已不可写，交由容器回收，不能再返回 JSON Result。 */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleAsyncRequestNotUsable(AsyncRequestNotUsableException error) {
+        log.debug("SSE 客户端连接已关闭: {}", error.getMessage());
+    }
 
     /**
      * 处理资源未找到异常

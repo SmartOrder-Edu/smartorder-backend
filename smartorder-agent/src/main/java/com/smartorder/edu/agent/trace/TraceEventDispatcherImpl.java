@@ -1,6 +1,7 @@
 package com.smartorder.edu.agent.trace;
 
 import com.alibaba.fastjson.JSON;
+import com.smartorder.edu.agent.stream.AgentEventLog;
 import com.smartorder.edu.agent.route.AgentRunMode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 追踪事件分发器实现
@@ -23,11 +25,18 @@ import java.util.Map;
 public class TraceEventDispatcherImpl implements TraceEventDispatcher {
 
     private final TraceEventAsyncPersister asyncPersister;
+    private final AgentEventLog eventLog;
 
     @Override
     public void emit(SseEmitter emitter, AgentRuntimeContext context, AgentEventType eventType, Object payload) {
         AgentTraceEventDTO event = AgentTraceEventDTO.builder()
                 .traceId(context.getTraceId())
+                .taskId(context.getTaskId())
+                .streamVersion(context.getTaskId() == null ? null : "v1-" + context.getTaskId())
+                .messageId(context.getAssistantMessageId() == null ? null : String.valueOf(context.getAssistantMessageId()))
+                .chunkId(eventType == AgentEventType.TEXT_DELTA ? UUID.randomUUID().toString() : null)
+                .content(eventType == AgentEventType.TEXT_DELTA && payload instanceof Map<?, ?> map
+                        ? String.valueOf(map.get("text")) : null)
                 .conversationId(context.getConversationId())
                 .userId(context.getUserId())
                 .mode(context.getMode() != null ? context.getMode().getCode() : null)
@@ -36,6 +45,11 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
                 .timestamp(System.currentTimeMillis())
                 .payload(payload)
                 .build();
+
+        // 先写任务流再尝试推送旧版 SSE；连接失败不能丢失恢复事件。
+        if (context.getTaskId() != null) {
+            eventLog.append(context.getTaskId(), eventType.getEventName(), event);
+        }
 
         // 1. SSE 推送
         if (emitter != null) {

@@ -293,7 +293,10 @@ public class PlanAndExecuteEngine {
         // 构建子上下文（继承父级关键字段，保持 traceId 连续性）
         AgentRuntimeContext context = AgentRuntimeContext.builder()
                 .traceId(parentContext.getTraceId())
+                .taskId(parentContext.getTaskId())
                 .conversationId(parentContext.getConversationId())
+                .assistantMessageId(parentContext.getAssistantMessageId())
+                .assistantSequenceNo(parentContext.getAssistantSequenceNo())
                 .userId(parentContext.getUserId())
                 .mode(AgentRunMode.PLAN_AND_EXECUTE)
                 .attachmentContext(parentContext.getAttachmentContext())
@@ -346,11 +349,7 @@ public class PlanAndExecuteEngine {
                 throw new BudgetExceededException("Plan 执行超出预算: traceId=" + context.getTraceId());
             }
 
-            // 客户端断连检查
-            if (context.isClientDisconnected()) {
-                log.warn("[PlanAndExecute] 客户端已断开，提前退出: traceId={}", context.getTraceId());
-                break;
-            }
+            // SSE 断连只影响连接，不中止已接管的计划任务。
 
             ExecutionStep task = sortedSteps.get(stepIndex);
 

@@ -21,6 +21,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class AgentRuntimeContext {
 
     private String traceId;
+    /** 可恢复任务 ID；旧版直接 SSE 调用为空。 */
+    private String taskId;
 
     private String conversationId;
 
