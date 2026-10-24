@@ -296,6 +296,7 @@ public class PlanAndExecuteEngine {
                 .taskId(parentContext.getTaskId())
                 .conversationId(parentContext.getConversationId())
                 .assistantMessageId(parentContext.getAssistantMessageId())
+                .assistantMessagePublicId(parentContext.getAssistantMessagePublicId())
                 .assistantSequenceNo(parentContext.getAssistantSequenceNo())
                 .userId(parentContext.getUserId())
                 .mode(AgentRunMode.PLAN_AND_EXECUTE)

@@ -88,9 +88,16 @@ public class ConversationTurnService {
      * @param conversationId 前端传入的会话ID，为空则新建
      * @return 本轮状态（含 conversationId / 占位行ID / 序号）
      */
+    /** 兼容旧版直接 SSE 调用，消息 ID 由原有开轮逻辑生成。 */
     @Transactional(rollbackFor = Exception.class)
     public TurnState openTurn(String conversationId, Long userId, String content,
                               List<Long> attachmentFileIds, String traceId) {
+        return openTurn(conversationId, userId, content, attachmentFileIds, traceId, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public TurnState openTurn(String conversationId, Long userId, String content,
+                              List<Long> attachmentFileIds, String traceId, String assistantPublicId) {
         pruneStaleStates();
 
         String publicId = (conversationId == null || conversationId.isBlank())
@@ -128,6 +135,13 @@ public class ConversationTurnService {
                 toFileIdsJson(attachmentFileIds), now, null);
         ConversationMessage assistantMessage = newMessage(publicId, userId, ROLE_ASSISTANT, "", assistantSeq,
                 ConversationMessage.STATUS_RUNNING, userMessage.getId(), 1, traceId, null, null, null, now, null);
+        // 预分配的消息 ID 必须写入实际占位行，使确认响应、事件和历史指向同一消息。
+        if (assistantPublicId != null && !assistantPublicId.isBlank()) {
+            assistantMessage.setPublicId(assistantPublicId);
+            if (messageMapper.updateById(assistantMessage) != 1) {
+                throw new IllegalStateException("助手消息 ID 写入失败");
+            }
+        }
 
         conversationMapper.incrMessageCount(publicId, 2);
         conversationMapper.touchLastMessage(publicId, now, normalize(content, PREVIEW_MAX));

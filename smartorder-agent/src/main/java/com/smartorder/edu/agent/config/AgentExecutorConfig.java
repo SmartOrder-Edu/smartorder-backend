@@ -51,6 +51,16 @@ public class AgentExecutorConfig {
         );
     }
 
+    /** 新任务提交专用线程池：满载时拒绝请求，避免 Agent 在 HTTP 线程同步执行。 */
+    @Bean("agentTaskExecutor")
+    public ExecutorService agentTaskExecutor() {
+        return new ThreadPoolExecutor(
+                4, 16, 60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(100),
+                r -> { Thread t = new Thread(r, "agent-task-" + System.nanoTime()); t.setDaemon(true); return t; },
+                new ThreadPoolExecutor.AbortPolicy());
+    }
+
     /** SSE 读取使用独立有界线程池，避免长连接占满 Agent 执行线程。 */
     @Bean("agentStreamExecutor")
     public ExecutorService agentStreamExecutor() {

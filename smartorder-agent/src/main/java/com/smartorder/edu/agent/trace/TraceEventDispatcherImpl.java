@@ -33,7 +33,8 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
                 .traceId(context.getTraceId())
                 .taskId(context.getTaskId())
                 .streamVersion(context.getTaskId() == null ? null : "v1-" + context.getTaskId())
-                .messageId(context.getAssistantMessageId() == null ? null : String.valueOf(context.getAssistantMessageId()))
+                .messageId(context.getAssistantMessagePublicId() != null ? context.getAssistantMessagePublicId()
+                        : context.getAssistantMessageId() == null ? null : String.valueOf(context.getAssistantMessageId()))
                 .chunkId(eventType == AgentEventType.TEXT_DELTA ? UUID.randomUUID().toString() : null)
                 .content(eventType == AgentEventType.TEXT_DELTA && payload instanceof Map<?, ?> map
                         ? String.valueOf(map.get("text")) : null)

@@ -15,6 +15,15 @@ import static org.mockito.Mockito.*;
 
 /** 回归验证客户端断开后不二次刷新 SSE，也不把异常转为 JSON 响应。 */
 class AgentTaskControllerDisconnectTest {
+    /** 断点请求携带的消息 ID 必须与任务绑定，不能跨消息读取同一任务事件。 */
+    @Test
+    void rejectsMismatchedMessageId() {
+        AgentTaskController controller = new AgentTaskController(mock(AgentChatTaskService.class),
+                mock(AgentEventLog.class), Runnable::run);
+        assertThrows(IllegalArgumentException.class, () -> ReflectionTestUtils.invokeMethod(
+                controller, "validateMessageId", Map.of("message_id", "message-1"), "message-2"));
+    }
+
     @Test
     void disconnectDoesNotCompleteBrokenEmitter() throws IOException {
         AgentChatTaskService tasks = mock(AgentChatTaskService.class);

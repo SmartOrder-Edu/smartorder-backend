@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 
 /** 任务元数据与 Agent 执行生命周期；读取快照和 SSE 订阅绝不调用本服务的 create。 */
 @Slf4j
@@ -32,7 +33,7 @@ public class AgentChatTaskService {
     private final ExecutorService executor;
 
     public AgentChatTaskService(JdbcTemplate jdbc, AgentOrchestrator orchestrator, AgentEventLog eventLog,
-                                @Qualifier("agentChatExecutor") ExecutorService executor) {
+                                @Qualifier("agentTaskExecutor") ExecutorService executor) {
         this.jdbc = jdbc;
         this.orchestrator = orchestrator;
         this.eventLog = eventLog;
@@ -48,16 +49,18 @@ public class AgentChatTaskService {
         }
         request.setUserId(userId);
         request.setTaskId(null);
+        request.setMessageId(null);
         String originalConversationId = request.getConversationId();
         String hash = digest(JSON.toJSONString(request));
         String taskId = UUID.randomUUID().toString();
+        String messageId = UUID.randomUUID().toString();
         String conversationId = originalConversationId == null || originalConversationId.isBlank()
                 ? UUID.randomUUID().toString() : originalConversationId;
         String version = "v1-" + taskId;
         try {
-            jdbc.update("INSERT INTO agent_chat_task(task_id,conversation_id,user_id,tenant_id,request_id,request_hash,status,stream_version) "
-                            + "VALUES(?,?,?,?,?,?,'QUEUED',?)",
-                    taskId, conversationId, userId, tenantId, request.getRequestId(), hash, version);
+            jdbc.update("INSERT INTO agent_chat_task(task_id,message_id,conversation_id,user_id,tenant_id,request_id,request_hash,status,stream_version) "
+                            + "VALUES(?,?,?,?,?,?,?,'QUEUED',?)",
+                    taskId, messageId, conversationId, userId, tenantId, request.getRequestId(), hash, version);
         } catch (DuplicateKeyException duplicate) {
             List<Map<String, Object>> rows = jdbc.queryForList(
                     "SELECT * FROM agent_chat_task WHERE tenant_id=? AND user_id=? AND request_id=?",
@@ -69,14 +72,28 @@ public class AgentChatTaskService {
         }
         request.setConversationId(conversationId);
         request.setTaskId(taskId);
+        request.setMessageId(messageId);
+        Map<String, Object> receipt = Map.of("taskId", taskId, "conversationId", conversationId,
+                "messageId", messageId, "status", "QUEUED", "streamVersion", version);
         try {
+            // 先缓存确认标识，再调度后台 Agent；HTTP 响应无需等待首个模型事件。
+            eventLog.cacheReceipt(taskId, receipt);
             executor.execute(() -> runTask(request));
         } catch (RuntimeException failure) {
             jdbc.update("UPDATE agent_chat_task SET status='FAILED', finished_at=NOW(3) WHERE task_id=?", taskId);
+            // 调度失败时覆盖排队确认缓存，避免客户端读取到永远不会执行的任务。
+            try {
+                eventLog.cacheReceipt(taskId, Map.of("taskId", taskId, "conversationId", conversationId,
+                        "messageId", messageId, "status", "FAILED", "streamVersion", version));
+            } catch (RuntimeException cacheFailure) {
+                log.warn("[AgentTask] 失败确认缓存不可用: taskId={}", taskId, cacheFailure);
+            }
+            if (failure instanceof RejectedExecutionException) {
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Agent 任务队列已满", failure);
+            }
             throw failure;
         }
-        return Map.of("taskId", taskId, "conversationId", conversationId,
-                "messageId", taskId, "status", "QUEUED", "streamVersion", version);
+        return receipt;
     }
 
     /** 复用现有 Agent 编排器；没有绑定浏览器连接，网络中断不会取消任务。 */
@@ -128,7 +145,7 @@ public class AgentChatTaskService {
         List<Map<String, Object>> messages = jdbc.queryForList(
                 "SELECT id, sequence_no, role, content, status FROM conversation_message WHERE trace_id=? AND user_id=? "
                         + "AND role='assistant' AND is_deleted=0 ORDER BY id", taskId, userId);
-        String messageId = messages.isEmpty() ? taskId : String.valueOf(messages.get(messages.size() - 1).get("id"));
+        String messageId = String.valueOf(task.get("message_id"));
         String saved = messages.isEmpty() || messages.get(messages.size() - 1).get("content") == null
                 ? "" : String.valueOf(messages.get(messages.size() - 1).get("content"));
         String content = terminal && !saved.isBlank()
@@ -191,7 +208,7 @@ public class AgentChatTaskService {
 
     private Map<String, Object> describe(Map<String, Object> row) {
         return Map.of("taskId", row.get("task_id"), "conversationId", row.get("conversation_id"),
-                "messageId", row.get("task_id"), "status", row.get("status"),
+                "messageId", row.get("message_id"), "status", row.get("status"),
                 "streamVersion", row.get("stream_version"));
     }
 

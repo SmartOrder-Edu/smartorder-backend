@@ -19,6 +19,8 @@ public class AgentChatRequest {
     private String requestId;
     /** 服务端任务标识；只由创建任务接口填写，不信任客户端输入。 */
     private String taskId;
+    /** 服务端预分配的助手消息对外 ID，不接受客户端指定。 */
+    private String messageId;
     private String message;
     private String conversationId;
     private List<Long> fileIds;

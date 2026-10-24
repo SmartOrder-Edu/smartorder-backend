@@ -2,9 +2,12 @@ package com.smartorder.edu.agent.stream;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
+import java.time.Duration;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -12,6 +15,21 @@ import static org.mockito.Mockito.*;
 
 /** 已确认存在历史事件后，Redis 丢失不能以相同世代偷偷创建新流。 */
 class AgentEventLogTest {
+    /** 确认响应写入独立 Redis 键并设置有限 TTL，支持网络结果不明时查证。 */
+    @Test
+    void cachesTaskReceiptWithStableIds() {
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> values = mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(values);
+        AgentEventLog log = new AgentEventLog(redis, mock(JdbcTemplate.class),
+                mock(PlatformTransactionManager.class));
+
+        log.cacheReceipt("task-1", Map.of("taskId", "task-1", "messageId", "message-1"));
+
+        verify(values).set(eq("agent:task:receipt:task-1"),
+                contains("\"messageId\":\"message-1\""), eq(Duration.ofHours(48)));
+    }
     @Test
     void rejectsMissingStreamWithoutPublishingNewEvent() {
         StringRedisTemplate redis = mock(StringRedisTemplate.class);

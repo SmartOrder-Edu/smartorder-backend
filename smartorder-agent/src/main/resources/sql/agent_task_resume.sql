@@ -1,6 +1,7 @@
 -- 一次用户提交对应一条任务；唯一幂等键阻止重复提交重跑 Agent。
 CREATE TABLE IF NOT EXISTS agent_chat_task (
   task_id VARCHAR(36) PRIMARY KEY COMMENT '任务及本轮 trace ID',
+  message_id VARCHAR(36) NOT NULL COMMENT '本轮助手消息对外 ID，在确认时预分配',
   conversation_id VARCHAR(36) NOT NULL COMMENT '现有会话 public_id',
   user_id BIGINT NOT NULL COMMENT '任务所有者',
   tenant_id VARCHAR(64) NOT NULL DEFAULT 'default' COMMENT '身份令牌存在租户时的租户标识',

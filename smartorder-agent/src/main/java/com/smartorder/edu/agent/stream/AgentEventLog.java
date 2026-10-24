@@ -114,6 +114,12 @@ public class AgentEventLog {
         redis.expire(key(taskId), Duration.ofHours(24));
     }
 
+    /** 缓存首次确认的稳定标识；MySQL 任务行仍是重连鉴权与恢复的权威来源。 */
+    public void cacheReceipt(String taskId, Map<String, Object> receipt) {
+        redis.opsForValue().set("agent:task:receipt:" + taskId,
+                JSON.toJSONString(receipt), Duration.ofHours(48));
+    }
+
     /** 补齐 JSON eventId；持久化记录保持重放时稳定不变。 */
     public JSONObject envelope(MapRecord<String, Object, Object> record) {
         JSONObject data = JSON.parseObject(String.valueOf(record.getValue().get("data")));

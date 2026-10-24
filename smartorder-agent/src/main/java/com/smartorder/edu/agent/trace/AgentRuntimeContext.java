@@ -40,6 +40,8 @@ public class AgentRuntimeContext {
      * 本轮 assistant 占位行ID（conversation_message.id），done 事件会带回前端
      */
     private Long assistantMessageId;
+    /** 本轮助手消息对外 ID，任务确认与事件流共用。 */
+    private String assistantMessagePublicId;
 
     /**
      * 本轮 assistant 占位行序号（conversation_message.sequence_no）

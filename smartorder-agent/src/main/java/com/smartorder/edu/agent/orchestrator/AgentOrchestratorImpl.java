@@ -66,6 +66,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         AgentRuntimeContext context = AgentRuntimeContext.builder()
                 .traceId(traceId)
                 .taskId(request.getTaskId())
+                .assistantMessagePublicId(request.getMessageId())
                 .conversationId(request.getConversationId())
                 .userId(request.getUserId())
                 .message(request.getMessage())
@@ -80,8 +81,11 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         // ===== 事务 A：先落库（用户消息 + assistant 占位行），再生成 =====
         ConversationTurnService.TurnState turn;
         try {
-            turn = conversationTurnService.openTurn(request.getConversationId(), request.getUserId(),
-                    request.getMessage(), request.getFileIds(), traceId);
+            turn = request.getTaskId() == null
+                    ? conversationTurnService.openTurn(request.getConversationId(), request.getUserId(),
+                    request.getMessage(), request.getFileIds(), traceId)
+                    : conversationTurnService.openTurn(request.getConversationId(), request.getUserId(),
+                    request.getMessage(), request.getFileIds(), traceId, request.getMessageId());
         } catch (Exception e) {
             // 会话已删除 / 无权访问 / 数据库异常：不写库，直接以错误事件收敛
             log.warn("[AgentOrchestrator] 开轮失败: traceId={}, cid={}, reason={}",
@@ -124,7 +128,9 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
             }
 
             Map<String, Object> messageCreatedPayload = new LinkedHashMap<>();
-            messageCreatedPayload.put("messageId", turn.getAssistantMessageId());
+            // 可恢复任务使用确认时分配的对外 ID，旧版 SSE 仍沿用数据库主键。
+            messageCreatedPayload.put("messageId", request.getMessageId() != null
+                    ? request.getMessageId() : turn.getAssistantMessageId());
             messageCreatedPayload.put("parentId", turn.getUserMessageId());
             messageCreatedPayload.put("role", "assistant");
             messageCreatedPayload.put("sequenceNo", turn.getAssistantSequenceNo());
