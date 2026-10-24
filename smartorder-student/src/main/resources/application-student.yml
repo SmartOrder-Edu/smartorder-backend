@@ -12,6 +12,9 @@ quiz:
 
 # Skill 体系开关：false=走老逻辑（prompts/*.txt），true=走 Skill 体系（skills/questions/*/SKILL.md）
 smartorder:
+  # 数字人展示开关：默认关闭，可通过环境变量开启。
+  avatar:
+    enabled: ${SMARTORDER_AVATAR_ENABLED:false}
   question:
     skill-enabled: false
 

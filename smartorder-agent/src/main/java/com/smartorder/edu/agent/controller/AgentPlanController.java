@@ -103,7 +103,7 @@ public class AgentPlanController {
         executor.execute(() -> {
             try {
             // 会话可用性校验：已删除/已归档的会话不允许再确认计划
-            assertConversationUsable(request.getConversationId());
+            assertConversationUsable(request.getConversationId(), userId);
 
             // 先按草稿类型路由（保持 EXECUTION_PLAN 链路不变）
             AgentPlanDraft draft = planDraftService.getByDraftId(draftId);
@@ -216,7 +216,7 @@ public class AgentPlanController {
 
         executor.execute(() -> {
             try {
-                assertConversationUsable(request.getConversationId());
+                assertConversationUsable(request.getConversationId(), userId);
                 planAndExecuteEngine.resumeAfterClarification(
                         draftId, clarificationId, request.getAnswer(), request.getDisplayAnswer(),
                         userId, request.getConversationId(), emitter, traceId);
@@ -256,7 +256,7 @@ public class AgentPlanController {
 
         executor.execute(() -> {
             try {
-                assertConversationUsable(conversationId);
+                assertConversationUsable(conversationId, userId);
                 planAndExecuteEngine.resumeAfterConfirmation(
                         draftId, userId, conversationId, emitter, traceId);
             } catch (Exception e) {
@@ -803,11 +803,12 @@ public class AgentPlanController {
      * 会话可用性校验——防止已删除/已归档的会话还能继续确认计划、提交澄清。
      * conversationId 为空时跳过（部分入口允许不带会话）。
      */
-    private void assertConversationUsable(String conversationId) {
+    private void assertConversationUsable(String conversationId, Long userId) {
         if (conversationId == null || conversationId.isBlank()) {
             return;
         }
-        conversationService.assertActive(conversationId, getCurrentUserId());
+        // 异步工作线程没有请求线程的 JWT 上下文，使用入口处已认证的用户 ID 校验会话归属。
+        conversationService.assertActive(conversationId, userId);
     }
 
     /**
