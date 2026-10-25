@@ -10,7 +10,13 @@ import java.util.*;
 /**
  * 向量索引适配器
  * 桥接现有的知识块处理流程和混合搜索服务
+ *
+ * @deprecated 本适配器已无调用方（全仓无任何注入点），其下游 {@link HybridSearchService}
+ * 也已停用。现行向量写入与检索统一走 {@link com.smartorder.edu.common.rag.VectorIndexService}
+ * （集合 {@code rag_chunks}），由它自行完成稠密 + 稀疏向量与 RRF 融合。新代码不要再用本类，
+ * 可在确认后连同 {@link HybridSearchService} 一起删除。
  */
+@Deprecated(since = "2.0", forRemoval = false)
 @Slf4j
 @Service
 @RequiredArgsConstructor

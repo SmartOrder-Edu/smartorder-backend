@@ -4,7 +4,13 @@ import lombok.Data;
 
 /**
  * python解析回调DTO类，表示解析完成后的回调数据结构
+ *
+ * @deprecated 全仓无任何引用，对应的 HTTP 回调接口也已不存在。文件解析链路已改为
+ * RabbitMQ 驱动：{@code KnowledgeFileProcessMessage} 投递 → {@code KnowledgeFileProcessListener}
+ * 消费 → 写回 {@code KnowledgeChunk} 并更新文件状态。新代码请沿用 MQ 消息模型，
+ * 本类可在确认后删除。
  */
+@Deprecated(since = "2.0", forRemoval = false)
 @Data
 public class ParseCallbackDTO {
     /**

@@ -5,6 +5,15 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+/**
+ * 旧版测评作答轮次实体。
+ *
+ * @deprecated 全仓无任何引用，{@code AssessmentAttemptMapper} 也没有调用方。
+ * 作答轮次已由 {@code smartorder-student} 的 {@code EvaluationSession} 承载，
+ * 评分与报告由 {@code EvaluationAnswerRecord}、{@code EvaluationLearningReport} 负责。
+ * 本类可在确认后连同 Mapper 一起删除。
+ */
+@Deprecated(since = "2.0", forRemoval = false)
 @Data
 @NoArgsConstructor
 public class AssessmentAttempt {

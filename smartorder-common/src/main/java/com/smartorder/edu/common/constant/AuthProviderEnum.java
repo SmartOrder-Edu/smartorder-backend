@@ -4,9 +4,16 @@ import lombok.Getter;
 
 /**
  * 第三方登录平台枚举
+ *
+ * @deprecated 全仓无任何引用。第三方登录改造为 {@code user_auth_identity} 表后，
+ * provider 统一以字符串常量（{@code "github"} / {@code "gitee"}）写入
+ * {@code UserAuthIdentity.provider}，由 {@code AuthServiceImpl} 直接传值，
+ * 不再经过枚举转换。本类可在确认后删除。
+ *
  * @author Ma Qiang
  * @since 2026/7/14
  */
+@Deprecated(since = "2.0", forRemoval = false)
 @Getter
 public enum AuthProviderEnum {
 

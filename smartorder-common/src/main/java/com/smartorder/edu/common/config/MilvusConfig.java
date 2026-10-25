@@ -14,7 +14,13 @@ package com.smartorder.edu.common.config;
  * 使用方通过 {@code milvusClientProvider.get()} 获取客户端，
  * 返回 {@code null} 时按"向量能力不可用"降级处理。相关配置项见
  * {@code application-common.yml} 中的 {@code milvus.*}。</p>
+ *
+ * @deprecated 本类已无任何配置职责：{@code MilvusClientV2} 不再由 {@code @Bean} 创建，
+ * 连接管理全部下沉到 {@link MilvusClientProvider}。类中仅剩私有构造器，
+ * 保留它只是为了不改动历史引用点。新代码请直接注入 {@link MilvusClientProvider}，
+ * 本类可在确认无外部引用后删除。
  */
+@Deprecated(since = "2.0", forRemoval = false)
 public class MilvusConfig {
 
     private MilvusConfig() {

@@ -10,7 +10,13 @@ import lombok.Data;
 
 /**
  * rag_query_logs 实体类
+ *
+ * @deprecated 遗留实体：全仓没有读写 {@code rag_query_logs} 的代码，
+ * {@link com.smartorder.edu.common.mapper.RagQueryLogMapper} 也没有任何调用方，
+ * 表名仅在本类注解中出现。RAG 检索过程目前通过日志与 trace 事件观测。
+ * 本类可在确认后连同 Mapper 一起删除。
  */
+@Deprecated(since = "2.0", forRemoval = false)
 @Data
 @TableName("rag_query_logs")
 public class RagQueryLog {

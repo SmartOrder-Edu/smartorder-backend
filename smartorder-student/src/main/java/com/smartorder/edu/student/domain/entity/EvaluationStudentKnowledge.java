@@ -12,9 +12,15 @@ import java.time.LocalDateTime;
 /**
  * 测评学生知识点评估实体
  *
+ * @deprecated 遗留实体：全仓没有对应的 Mapper，表 {@code evaluation_student_knowledge}
+ * 只出现在初始化脚本 {@code sql/test-question/agent_evaluation.sql} 中，运行期无任何读写。
+ * 现行知识点掌握度由 {@code EvaluationAnswerRecord}、{@code EvaluationQuestionKnowledgeNode}
+ * 与 {@code StudentProfile} 聚合得出。本类可在确认后删除。
+ *
  * @author 马强
  * @since 2026-05-27
  */
+@Deprecated(since = "2.0", forRemoval = false)
 @Data
 @NoArgsConstructor
 @TableName("evaluation_student_knowledge")

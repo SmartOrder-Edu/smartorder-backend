@@ -4,6 +4,15 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+/**
+ * 旧版返回码枚举。
+ *
+ * @deprecated 从外部抽奖项目复制而来的遗留枚举（含 {@code STRATEGY_RULE_WEIGHT_IS_NULL}
+ * 等与本项目无关的抽奖策略错误码），全仓无任何引用。项目统一用
+ * {@link com.smartorder.edu.common.model.vo.Result} 的 code/message 表达返回结果，
+ * 不再维护独立返回码枚举。本类可在确认后删除。
+ */
+@Deprecated(since = "2.0", forRemoval = false)
 @AllArgsConstructor
 @NoArgsConstructor
 @Getter

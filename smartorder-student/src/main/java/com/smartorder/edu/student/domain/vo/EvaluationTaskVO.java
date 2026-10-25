@@ -8,7 +8,13 @@ import java.time.LocalDateTime;
 
 /**
  * 测评题库列表展示 VO
+ *
+ * @deprecated 全仓无任何引用。题库列表接口
+ * {@code GET /evaluation/questions/task} 已改为直接返回
+ * {@link com.smartorder.edu.student.domain.entity.EvaluationSession} 列表，
+ * 前端按 session 维度渲染。新代码请复用该实体，本类可在确认后删除。
  */
+@Deprecated(since = "2.0", forRemoval = false)
 @Data
 @NoArgsConstructor
 public class EvaluationTaskVO {

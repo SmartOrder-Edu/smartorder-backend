@@ -12,9 +12,14 @@ import java.time.LocalDateTime;
 /**
  * 测评学生错因分析实体
  *
+ * @deprecated 遗留实体：全仓没有对应的 Mapper，表 {@code evaluation_student_error_analysis}
+ * 只出现在初始化脚本 {@code sql/test-question/agent_evaluation.sql} 中，运行期无任何读写。
+ * 现行错因与学情结论由 {@code EvaluationLearningReport}（测评报告）承载。本类可在确认后删除。
+ *
  * @author 马强
  * @since 2026-05-27
  */
+@Deprecated(since = "2.0", forRemoval = false)
 @Data
 @NoArgsConstructor
 @TableName("evaluation_student_error_analysis")

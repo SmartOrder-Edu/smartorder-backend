@@ -19,7 +19,14 @@ import java.util.concurrent.ExecutorService;
  *
  * 主聊天已重构为 AgentTaskController 的任务创建、快照和只读事件订阅。
  * 站内页面已迁移；此入口暂为旧客户端保留兼容行为。
+ *
+ * @deprecated 整个控制器只剩 {@code POST /agent/chat/stream} 一个兼容入口，站内页面已全部迁移。
+ * 新调用方请使用 {@link AgentTaskController}：{@code POST /agent/tasks} 创建任务、
+ * {@code GET /agent/tasks/{taskId}/snapshot} 对齐快照、
+ * {@code GET /agent/tasks/{taskId}/events} 按 Last-Event-ID 续传。
+ * 待旧客户端全部下线后可整体删除本控制器。
  */
+@Deprecated(since = "2.0", forRemoval = false)
 @Slf4j
 @RestController
 @RequestMapping("/agent")

@@ -11,9 +11,16 @@ import java.util.List;
  * <p>事件驱动的增量更新协议，采用类 JSON Patch 操作对画像的指定维度/路径进行局部更新，
  * 避免全量覆盖导致并发冲突和数据丢失</p>
  *
+ * @deprecated 该协议未落地：全仓无任何引用，注释中引用的
+ * {@code sencond/part_profile_update_protocol.json} 也不在仓库内。画像更新现行入口是
+ * {@code StudentProfileUpdateDTO} / {@code StudentProfileDimensionUpdateDTO}
+ * （经 {@code UpdateStudentProfileTool} 与 {@code StudentProfileServiceImpl} 落库）。
+ * 本类可在确认后删除。
+ *
  * @author 马强
  * @since 2026-06-15
  */
+@Deprecated(since = "2.0", forRemoval = false)
 @Data
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class PartProfileUpdateProtocolDTO {

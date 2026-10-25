@@ -23,7 +23,13 @@ import java.util.stream.Collectors;
 /**
  * 混合搜索服务
  * 结合 EmbeddingModel 密集向量和 TF-IDF 稀疏向量进行混合搜索
+ *
+ * @deprecated 旧版混合检索实现，读写集合 {@code hybrid_chunks}。当前全仓唯一的调用方
+ * {@link VectorIndexAdapter} 本身已无注入点，因此本服务在生产链路上不会被触发。
+ * 现行实现是 {@link com.smartorder.edu.common.rag.VectorIndexService}（集合 {@code rag_chunks}，
+ * 内置稠密/稀疏召回与 RRF 融合）。新代码请使用后者，本类可在确认后删除。
  */
+@Deprecated(since = "2.0", forRemoval = false)
 @Slf4j
 @Service
 public class HybridSearchService {

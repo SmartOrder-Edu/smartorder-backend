@@ -3,6 +3,16 @@ package com.smartorder.edu.common.exception;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+/**
+ * 旧版应用异常。
+ *
+ * @deprecated 本类是从外部脚手架复制进来的遗留实现（{@link #toString()} 里仍残留
+ * {@code cn.bugstack.types.exception} 包名），全仓已无任何抛出或捕获点。
+ * 项目统一异常体系为 {@link BusinessException}（业务失败）/ {@link SystemException}
+ * （系统故障）/ {@link ValidationException}（参数校验），由 {@link GlobalExceptionHandler}
+ * 统一转成 {@code Result}。新代码请使用上述异常，本类可在确认后删除。
+ */
+@Deprecated(since = "2.0", forRemoval = false)
 @EqualsAndHashCode(callSuper = true)
 @Data
 public class AppException extends RuntimeException {

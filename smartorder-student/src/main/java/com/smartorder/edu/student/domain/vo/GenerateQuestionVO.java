@@ -11,6 +11,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 旧版「一次性出题结果」聚合 VO。
+ *
+ * @deprecated 全仓无任何引用。出题接口已改为 SSE 流式（{@code POST /evaluation/questions/generate}
+ * 返回 {@code text/event-stream}），题目列表由 {@code GET /evaluation/questions} 返回
+ * {@link EvaluationQuestionVO}，不再需要「请求 + 题目列表」聚合成单个 VO。
+ * 新代码请使用 {@link EvaluationQuestionVO}，本类可在确认后删除。
+ */
+@Deprecated(since = "2.0", forRemoval = false)
 @Data
 public class GenerateQuestionVO {
 
