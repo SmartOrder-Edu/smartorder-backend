@@ -324,9 +324,9 @@ public class SelfManagedReActEngine {
                 throw new BudgetExceededException("ReAct 执行超出预算: traceId=" + runtimeContext.getTraceId());
             }
 
-            // 客户端断连检查：如果 SSE 连接已断开，提前退出
-            if (runtimeContext.isClientDisconnected()) {
-                log.warn("[ReAct] 客户端已断开，提前退出: traceId={}", runtimeContext.getTraceId());
+            // 取消检查：生成任务模式下断连不再中止执行，只有显式取消才提前退出
+            if (runtimeContext.shouldStop()) {
+                log.warn("[ReAct] 已取消，提前退出: traceId={}", runtimeContext.getTraceId());
                 return null;
             }
 

@@ -49,4 +49,11 @@ public class AgentChatRequest {
      * 前端提交结构化澄清答案时设置此字段。
      */
     private String clarificationAnswerJson;
+
+    /**
+     * 客户端幂等键（可选，建议必传）。
+     * <p>同一用户 + 同一 clientRequestId 只会创建一次生成：响应丢失后重试、
+     * 或断线后重新创建，都会复用原来的生成任务，不会重复执行模型调用。</p>
+     */
+    private String clientRequestId;
 }

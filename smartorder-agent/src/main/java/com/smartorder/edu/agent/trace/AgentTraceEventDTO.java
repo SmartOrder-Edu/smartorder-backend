@@ -14,6 +14,12 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class AgentTraceEventDTO {
 
+    /**
+     * 所属生成任务 ID。生成事件由 AgentGeneration 分配 seq 并写入回放日志；
+     * 非生成入口（如计划确认）该字段为空。
+     */
+    private String generationId;
+
     private String traceId;
 
     private String conversationId;

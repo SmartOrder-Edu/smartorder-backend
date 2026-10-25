@@ -22,6 +22,14 @@ public class AgentRuntimeContext {
 
     private String traceId;
 
+    /**
+     * 本次运行所属的生成任务 ID。
+     * <p>非空表示事件走“生成日志 + 订阅回放”链路：连接断开不会终止生成，
+     * 客户端可以用 seq 游标重连补发。为空表示旧入口（计划确认等），
+     * 事件直接写给当前 SSE 连接。</p>
+     */
+    private String generationId;
+
     private String conversationId;
 
     /**
@@ -92,10 +100,18 @@ public class AgentRuntimeContext {
     private ExecutionBudget budget;
 
     /**
-     * 客户端是否已断开 SSE 连接
+     * 客户端是否已断开 SSE 连接。
+     * <p>只对旧入口（{@link #generationId} 为空）具有“停止执行”的语义；
+     * 生成任务模式下断连只代表订阅中断，任务会继续跑到预算/时限或用户显式取消。</p>
      */
     @Builder.Default
     private volatile boolean clientDisconnected = false;
+
+    /**
+     * 用户是否已请求取消本次生成（协作式取消）。
+     */
+    @Builder.Default
+    private volatile boolean cancelRequested = false;
 
     /**
      * 助手消息是否已保存（防止 AgentRunSupervisor 重复保存）
@@ -148,5 +164,18 @@ public class AgentRuntimeContext {
      */
     public int currentSeq() {
         return sequence.get();
+    }
+
+    /**
+     * 引擎循环是否应该提前退出。
+     *
+     * <p>生成任务模式下只有“用户取消”会停止执行；连接断开不再等同于取消——
+     * 否则用户网络抖动 10 秒，一次已经跑了 40 秒的回答就白费了。</p>
+     */
+    public boolean shouldStop() {
+        if (cancelRequested) {
+            return true;
+        }
+        return generationId == null && clientDisconnected;
     }
 }

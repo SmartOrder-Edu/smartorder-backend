@@ -346,9 +346,9 @@ public class PlanAndExecuteEngine {
                 throw new BudgetExceededException("Plan 执行超出预算: traceId=" + context.getTraceId());
             }
 
-            // 客户端断连检查
-            if (context.isClientDisconnected()) {
-                log.warn("[PlanAndExecute] 客户端已断开，提前退出: traceId={}", context.getTraceId());
+            // 取消检查：生成任务模式下断连不再中止执行，只有显式取消才提前退出
+            if (context.shouldStop()) {
+                log.warn("[PlanAndExecute] 已取消，提前退出: traceId={}", context.getTraceId());
                 break;
             }
 

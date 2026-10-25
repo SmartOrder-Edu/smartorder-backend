@@ -52,6 +52,26 @@ public class AgentExecutorConfig {
     }
 
     /**
+     * Agent 生成任务执行线程池
+     * <p>
+     * 生成与连接已解耦：一次生成的整个生命周期都在这个线程池里跑，
+     * 不占用 servlet 线程，也不随 SSE 连接断开而结束。
+     * 使用 AbortPolicy 快速失败——创建接口需要立刻返回 JSON，
+     * 不能被 CallerRunsPolicy 拖成同步执行。
+     */
+    @Bean("agentGenerationExecutor")
+    public ExecutorService agentGenerationExecutor() {
+        return new ThreadPoolExecutor(
+                4,     // corePoolSize
+                16,    // maxPoolSize
+                60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(100),
+                r -> { Thread t = new Thread(r, "agent-generation-" + System.nanoTime()); t.setDaemon(true); return t; },
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+    }
+
+    /**
      * Agent Plan 确认执行线程池
      * <p>
      * Plan 确认请求并发度低于 Chat，配置更保守。

@@ -2,6 +2,7 @@ package com.smartorder.edu.agent.orchestrator;
 
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.memory.ConversationTitleService;
+import com.smartorder.edu.agent.generation.AgentGenerationManager;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.profile.ProfileUpdateCoordinator;
 import com.smartorder.edu.agent.route.AgentRunMode;
@@ -40,6 +41,7 @@ class AgentOrchestratorImplTest {
         ConversationTurnService turnService = mock(ConversationTurnService.class);
         ConversationTitleService titleService = mock(ConversationTitleService.class);
         AgentRunSupervisor runSupervisor = mock(AgentRunSupervisor.class);
+        AgentGenerationManager generationManager = mock(AgentGenerationManager.class);
         AgentOrchestratorImpl orchestrator = new AgentOrchestratorImpl(
                 routeService,
                 reActEngine,
@@ -50,7 +52,8 @@ class AgentOrchestratorImplTest {
                 profileUpdateCoordinator,
                 turnService,
                 titleService,
-                runSupervisor
+                runSupervisor,
+                generationManager
         );
         IntentRouteResult routeResult = IntentRouteResult.builder()
                 .intentType("知识问答")

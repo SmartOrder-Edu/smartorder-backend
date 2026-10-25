@@ -2,6 +2,8 @@ package com.smartorder.edu.agent.orchestrator;
 
 import com.smartorder.edu.agent.memory.ConversationMemoryService;
 import com.smartorder.edu.agent.memory.ConversationTitleService;
+import com.smartorder.edu.agent.generation.AgentGenerationManager;
+import com.smartorder.edu.agent.generation.AgentTurnContext;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.model.entity.Conversation;
 import com.smartorder.edu.agent.profile.ProfileUpdateCoordinator;
@@ -58,13 +60,20 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
 
     private final AgentRunSupervisor runSupervisor;
 
+    private final AgentGenerationManager generationManager;
+
     @Override
-    public void handle(AgentChatRequest request, SseEmitter emitter) {
-        String traceId = UUID.randomUUID().toString();
+    public void handle(AgentChatRequest request, SseEmitter emitter, String generationId,
+                       AgentTurnContext turn) {
+        // 生成任务由发送接口预先分配 traceId；旧入口在这里现生成
+        String traceId = turn != null && turn.getTraceId() != null
+                ? turn.getTraceId()
+                : UUID.randomUUID().toString();
 
         AgentRuntimeContext context = AgentRuntimeContext.builder()
+                .generationId(generationId)
                 .traceId(traceId)
-                .conversationId(request.getConversationId())
+                .conversationId(turn != null ? turn.getConversationId() : request.getConversationId())
                 .userId(request.getUserId())
                 .message(request.getMessage())
                 .knowledgeBaseIds(request.getKnowledgeBaseIds())
@@ -72,22 +81,37 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 .studyContext(request.getStudyContext())
                 .build();
 
+        // 生成任务模式：把上下文绑定到生成对象（取消标记、seq 分配都以它为准），
+        // 并立刻下发首包，客户端据此确认“这条流是我要续的那次生成”。
+        if (generationId != null) {
+            generationManager.bindContext(generationId, context);
+            dispatcher.emit(emitter, context, AgentEventType.GENERATION_STARTED, Map.of(
+                    "generationId", generationId,
+                    "status", "RUNNING"
+            ));
+        }
+
         // 初始化执行预算（默认 ReAct 预算，路由后按模式调整）
         context.setBudget(ExecutionBudget.reactDefault());
 
         // ===== 事务 A：先落库（用户消息 + assistant 占位行），再生成 =====
-        ConversationTurnService.TurnState turn;
-        try {
-            turn = conversationTurnService.openTurn(request.getConversationId(), request.getUserId(),
-                    request.getMessage(), request.getFileIds(), traceId);
-        } catch (Exception e) {
-            // 会话已删除 / 无权访问 / 数据库异常：不写库，直接以错误事件收敛
-            log.warn("[AgentOrchestrator] 开轮失败: traceId={}, cid={}, reason={}",
-                    traceId, request.getConversationId(), e.getMessage());
-            context.setConversationId(request.getConversationId());
-            dispatcher.error(emitter, context,
-                    new IllegalStateException(e.getMessage() != null ? e.getMessage() : "会话不可用"));
-            return;
+        // 新链路的 openTurn 已在发送接口里同步完成（响应要直接带 conversationId/messageId），
+        // 只有旧入口（turn == null）才在这里补开轮次。
+        if (turn == null) {
+            try {
+                ConversationTurnService.TurnState state = conversationTurnService.openTurn(
+                        request.getConversationId(), request.getUserId(),
+                        request.getMessage(), request.getFileIds(), traceId);
+                turn = AgentTurnContext.from(state, traceId);
+            } catch (Exception e) {
+                // 会话已删除 / 无权访问 / 数据库异常：不写库，直接以错误事件收敛
+                log.warn("[AgentOrchestrator] 开轮失败: traceId={}, cid={}, reason={}",
+                        traceId, request.getConversationId(), e.getMessage());
+                context.setConversationId(request.getConversationId());
+                dispatcher.error(emitter, context,
+                        new IllegalStateException(e.getMessage() != null ? e.getMessage() : "会话不可用"));
+                return;
+            }
         }
 
         String conversationId = turn.getConversationId();
@@ -97,6 +121,8 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         context.setTurnId(traceId);
         context.setAssistantMessageId(turn.getAssistantMessageId());
         context.setAssistantSequenceNo(turn.getAssistantSequenceNo());
+        // 会话 ID 到这一步才确定：绑定后刷新页面才能找回这次生成
+        generationManager.bindConversation(generationId, conversationId);
 
         try {
             // 0. 通知前端：会话与占位消息已创建

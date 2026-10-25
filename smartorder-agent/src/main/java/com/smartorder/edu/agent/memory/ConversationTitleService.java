@@ -1,12 +1,11 @@
 package com.smartorder.edu.agent.memory;
 
-import com.alibaba.fastjson.JSON;
 import com.smartorder.edu.agent.mapper.ConversationMapper;
 import com.smartorder.edu.agent.model.entity.Conversation;
 import com.smartorder.edu.agent.prompt.PromptLoader;
 import com.smartorder.edu.agent.trace.AgentEventType;
 import com.smartorder.edu.agent.trace.AgentRuntimeContext;
-import com.smartorder.edu.agent.trace.AgentTraceEventDTO;
+import com.smartorder.edu.agent.trace.TraceEventDispatcher;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.AiServices;
 import lombok.extern.slf4j.Slf4j;
@@ -15,7 +14,6 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -52,11 +50,14 @@ public class ConversationTitleService {
 
     private final ConversationMapper conversationMapper;
     private final TitleGeneratorAgent titleGeneratorAgent;
+    private final TraceEventDispatcher dispatcher;
 
     public ConversationTitleService(ConversationMapper conversationMapper,
                                     PromptLoader promptLoader,
-                                    @Qualifier("titleChatModel") ChatModel titleChatModel) {
+                                    @Qualifier("titleChatModel") ChatModel titleChatModel,
+                                    TraceEventDispatcher dispatcher) {
         this.conversationMapper = conversationMapper;
+        this.dispatcher = dispatcher;
         // systemMessageProvider 是惰性 lambda，构建时不会读提示词，运行时才取，无初始化顺序问题
         this.titleGeneratorAgent = AiServices.builder(TitleGeneratorAgent.class)
                 .chatModel(titleChatModel)
@@ -153,39 +154,21 @@ public class ConversationTitleService {
     /**
      * 推送标题事件。
      *
-     * <p><b>为什么不走 {@code TraceEventDispatcher#emit}</b>：那个实现在 SSE 发送失败时会把
-     * {@code context.setClientDisconnected(true)}，而 ReAct / PlanAndExecute 引擎会据此提前终止循环。
-     * 本方法是异步线程，若回答恰好比标题生成更快、SSE 已关闭，emit 失败就会把这个标记置上，
-     * 误杀仍在执行的主流程。因此这里直接向 emitter 发送并自行吞掉异常，不触碰主上下文状态。</p>
+     * <p><b>为什么走 emitEphemeral 而不是 emit</b>：标题是异步生成、与主流程无关的
+     * “锦上添花”，可能比回答还晚结束。若它进入回放日志，就会出现在 done 之后，
+     * 破坏“终态是最后一条事件”的续传语义；因此只发给当前在线连接，不占业务 seq。
+     * 没有在线连接时自然丢弃——标题已落库，前端下次拉列表仍能拿到。</p>
      */
     private void pushTitleEvent(SseEmitter emitter, AgentRuntimeContext context,
                                 String conversationId, String title) {
-        if (emitter == null || context == null) {
+        if (context == null) {
             return;
         }
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("conversationId", conversationId);
         payload.put("title", title);
         payload.put("titleSource", Conversation.TITLE_SOURCE_LLM);
-
-        AgentTraceEventDTO event = AgentTraceEventDTO.builder()
-                .traceId(context.getTraceId())
-                .conversationId(conversationId)
-                .userId(context.getUserId())
-                .eventType(AgentEventType.CONVERSATION_TITLE.getEventName())
-                .seq(context.nextSeq())
-                .timestamp(System.currentTimeMillis())
-                .payload(payload)
-                .build();
-
-        try {
-            emitter.send(SseEmitter.event()
-                    .name(AgentEventType.CONVERSATION_TITLE.getEventName())
-                    .data(JSON.toJSONString(event)));
-        } catch (IOException | IllegalStateException e) {
-            // 流已关闭（回答比标题生成还快）：标题已落库，前端下次拉列表自然拿到
-            log.debug("[Title] SSE 已关闭，跳过标题推送: cid={}", conversationId);
-        }
+        dispatcher.emitEphemeral(emitter, context, AgentEventType.CONVERSATION_TITLE, payload);
     }
 
     private String abbreviate(String text) {
