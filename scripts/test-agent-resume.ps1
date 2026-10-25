@@ -16,10 +16,10 @@ try {
     if (-not $agentJar) { throw '缺少 Byte Buddy 测试代理' }
     $sources = @(
         'smartorder-agent/src/test/java/com/smartorder/edu/agent/stream/AgentStreamCursorTest.java',
-        'smartorder-agent/src/test/java/com/smartorder/edu/agent/stream/AgentChatTaskServiceTest.java',
         'smartorder-agent/src/test/java/com/smartorder/edu/agent/stream/AgentEventLogTest.java',
-        'smartorder-agent/src/test/java/com/smartorder/edu/agent/stream/AgentTaskControllerDisconnectTest.java',
         'smartorder-agent/src/test/java/com/smartorder/edu/agent/stream/AgentTaskExecutorTest.java',
+        'smartorder-agent/src/test/java/com/smartorder/edu/agent/service/impl/AgentTaskServiceImplTest.java',
+        'smartorder-agent/src/test/java/com/smartorder/edu/agent/service/impl/AgentTaskStreamServiceImplTest.java',
         'smartorder-agent/src/test/java/com/smartorder/edu/agent/orchestrator/AgentOrchestratorImplTest.java',
         'smartorder-agent/src/test/java/com/smartorder/edu/agent/controller/LegacyAgentChatDeprecationTest.java'
     )
@@ -29,7 +29,7 @@ try {
     $arguments | Set-Content -LiteralPath $argumentsFile -Encoding utf8
     & javac "@$argumentsFile"
     if ($LASTEXITCODE -ne 0) { throw '定向测试编译失败' }
-    & mvn.cmd -o -pl smartorder-agent "-DargLine=-javaagent:$agentJar" '-Dtest=AgentStreamCursorTest,AgentChatTaskServiceTest,AgentEventLogTest,AgentTaskControllerDisconnectTest,AgentTaskExecutorTest,AgentOrchestratorImplTest,LegacyAgentChatDeprecationTest' surefire:test
+    & mvn.cmd -o -pl smartorder-agent "-DargLine=-javaagent:$agentJar" '-Dtest=AgentStreamCursorTest,AgentEventLogTest,AgentTaskExecutorTest,AgentTaskServiceImplTest,AgentTaskStreamServiceImplTest,AgentOrchestratorImplTest,LegacyAgentChatDeprecationTest' surefire:test
     if ($LASTEXITCODE -ne 0) { throw '定向测试执行失败' }
 } finally {
     Pop-Location

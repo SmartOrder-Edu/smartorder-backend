@@ -38,8 +38,9 @@ public class AgentChatController {
     /**
      * 兼容旧页面的单请求 SSE；新聊天应先创建任务，再读取快照和事件流。
      *
-     * @deprecated 自 2.0 起由 {@link AgentTaskController#create(AgentChatRequest)}、
-     * {@link AgentTaskController#snapshot(String)} 和任务事件订阅接口替代。
+     * @deprecated 自 2.0 起由 {@link AgentTaskController} 的
+     * {@code POST /agent/tasks}、{@code GET /agent/tasks/{taskId}/snapshot} 与
+     * {@code GET /agent/tasks/{taskId}/events} 替代。
      */
     @Deprecated(since = "2.0", forRemoval = false)
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

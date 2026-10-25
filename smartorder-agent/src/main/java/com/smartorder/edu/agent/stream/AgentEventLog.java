@@ -2,13 +2,13 @@ package com.smartorder.edu.agent.stream;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.smartorder.edu.agent.mapper.AgentChatTaskMapper;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.ReadOffset;
 import org.springframework.data.redis.connection.stream.StreamOffset;
 import org.springframework.data.redis.connection.stream.StreamReadOptions;
 import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -17,19 +17,21 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /** 每个 Agent 任务独占一条可回放 Redis Stream，多订阅者独立 XREAD。 */
 @Service
 public class AgentEventLog {
     private final StringRedisTemplate redis;
-    private final JdbcTemplate jdbc;
+    private final AgentChatTaskMapper taskMapper;
     private final TransactionTemplate transaction;
     /** 固定数量的写入锁避免跨任务全局串行和无限增长的 taskId 锁表。 */
     private final Object[] stripes = java.util.stream.IntStream.range(0, 64).mapToObj(i -> new Object()).toArray();
 
-    public AgentEventLog(StringRedisTemplate redis, JdbcTemplate jdbc, PlatformTransactionManager manager) {
+    public AgentEventLog(StringRedisTemplate redis, AgentChatTaskMapper taskMapper,
+                         PlatformTransactionManager manager) {
         this.redis = redis;
-        this.jdbc = jdbc;
+        this.taskMapper = taskMapper;
         this.transaction = new TransactionTemplate(manager);
     }
 
@@ -37,9 +39,8 @@ public class AgentEventLog {
     public String append(String taskId, String type, Object data) {
         synchronized (stripes[Math.floorMod(taskId.hashCode(), stripes.length)]) {
             // 标记在 XADD 前独立提交；首条事件 SQL 失败后也不能悄悄创建新 Stream。
-            boolean first = jdbc.update("UPDATE agent_chat_task SET stream_started=1 "
-                    + "WHERE task_id=? AND stream_started=0", taskId) == 1;
-            return java.util.Objects.requireNonNull(
+            boolean first = taskMapper.markStreamStarted(taskId) == 1;
+            return Objects.requireNonNull(
                     transaction.execute(status -> appendLocked(taskId, type, data, first)));
         }
     }
@@ -48,16 +49,14 @@ public class AgentEventLog {
     private String appendLocked(String taskId, String type, Object data, boolean first) {
             String key = key(taskId);
             // 已有事件却丢失 Stream 时禁止同世代悄悄重建，否则恢复会静默跳过缺口。
-            Long count = jdbc.queryForObject("SELECT event_count FROM agent_chat_task WHERE task_id=? FOR UPDATE",
-                    Long.class, taskId);
+            Long count = taskMapper.selectEventCountForUpdate(taskId);
             boolean exists = Boolean.TRUE.equals(redis.hasKey(key));
             if (!exists && (!first || count != null && count > 0)) {
                 throw new IllegalStateException("EVENT_LOG_UNAVAILABLE");
             }
             // 上次 XADD 成功但 SQL 失败时，按 Redis ID 顺序补齐缺失投影。
             if (exists) {
-                String cursor = jdbc.queryForObject(
-                        "SELECT snapshot_event_id FROM agent_chat_task WHERE task_id=?", String.class, taskId);
+                String cursor = taskMapper.selectSnapshotEventId(taskId);
                 projectPending(taskId, cursor == null ? "0-0" : cursor);
             }
             Map<String, String> fields = new LinkedHashMap<>();
@@ -89,10 +88,7 @@ public class AgentEventLog {
     private void project(String taskId, String type, String json, String eventId) {
         JSONObject body = JSON.parseObject(json);
         String delta = "agent.text.delta".equals(type) ? body.getString("content") : "";
-        int updated = jdbc.update("UPDATE agent_chat_task SET event_count=event_count+1, "
-                        + "snapshot_revision=snapshot_revision+1, "
-                        + "snapshot_content=CONCAT(COALESCE(snapshot_content,''),?), snapshot_event_id=? WHERE task_id=?",
-                delta == null ? "" : delta, eventId, taskId);
+        int updated = taskMapper.projectEvent(taskId, delta == null ? "" : delta, eventId);
         if (updated != 1) throw new IllegalStateException("EVENT_PROJECTION_FAILED");
     }
 

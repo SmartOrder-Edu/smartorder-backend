@@ -249,4 +249,27 @@ public interface ConversationMessageMapper extends BaseMapper<ConversationMessag
         WHERE conversation_id = #{conversationId} AND user_id = #{userId} AND is_deleted = 0
         """)
     int softDeleteByConversationId(@Param("conversationId") String conversationId, @Param("userId") Long userId);
+
+    /**
+     * 某个 Agent 任务（trace_id）产生的助手消息，按写入顺序返回。
+     * <p>
+     * 任务快照取最后一条的正文与序号；任务收尾时也用它判断本轮是否真的落库。
+     */
+    @Select("""
+        SELECT * FROM conversation_message
+        WHERE trace_id = #{traceId} AND user_id = #{userId}
+          AND role = 'assistant' AND is_deleted = 0
+        ORDER BY id ASC
+        """)
+    List<ConversationMessage> selectAssistantByTraceId(@Param("traceId") String traceId,
+                                                       @Param("userId") Long userId);
+
+    /** 任务收尾判定：最近一条助手消息的状态，无记录返回 null。 */
+    @Select("""
+        SELECT status FROM conversation_message
+        WHERE trace_id = #{traceId} AND role = 'assistant'
+        ORDER BY id DESC
+        LIMIT 1
+        """)
+    String selectLatestAssistantStatusByTraceId(@Param("traceId") String traceId);
 }
