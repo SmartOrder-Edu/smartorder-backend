@@ -104,7 +104,12 @@ public class AgentGenerationController {
             log.warn("[GenerationApi] 订阅线程池已满，拒绝接入: generationId={}", generationId);
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         }
-        return ResponseEntity.ok().contentType(MediaType.TEXT_EVENT_STREAM).body(emitter);
+        // 禁止代理压缩/缓冲：SSE 需要逐帧尽快到达浏览器，否则心跳与增量会被攒着发
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_EVENT_STREAM)
+                .header("Cache-Control", "no-cache, no-transform")
+                .header("X-Accel-Buffering", "no")
+                .body(emitter);
     }
 
     @GetMapping("/{generationId}")

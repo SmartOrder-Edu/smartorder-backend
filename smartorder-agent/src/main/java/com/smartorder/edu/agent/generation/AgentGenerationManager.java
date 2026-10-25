@@ -306,7 +306,17 @@ public class AgentGenerationManager {
         }
         AgentGenerationMeta meta = loadMetaOrThrow(generationId);
         requireOwner(meta.getUserId(), userId);
-        return toVO(meta);
+        // 运行中进程已死时，元数据里的 lastSeq 只在终态更新；以归档尾部为准，
+        // 否则前端做“游标超前”对账会拿到过期的 0。归档暂时不可读时退回元数据，
+        // 状态查询是兜底接口，不应该因为一次 Redis 抖动而整体失败。
+        long lastSeq = meta.getLastSeq();
+        try {
+            lastSeq = Math.max(lastSeq, store.lastEventSeq(generationId));
+        } catch (Exception e) {
+            log.warn("[Generation] 状态查询读取归档尾部失败，使用元数据 lastSeq: generationId={}, reason={}",
+                    generationId, e.getMessage());
+        }
+        return toVO(meta, lastSeq);
     }
 
     /**
@@ -608,7 +618,7 @@ public class AgentGenerationManager {
                 .build();
     }
 
-    private AgentGenerationVO toVO(AgentGenerationMeta meta) {
+    private AgentGenerationVO toVO(AgentGenerationMeta meta, long lastSeq) {
         return AgentGenerationVO.builder()
                 .generationId(meta.getGenerationId())
                 .conversationId(meta.getConversationId())
@@ -618,7 +628,7 @@ public class AgentGenerationManager {
                 .assistantSequenceNo(meta.getAssistantSequenceNo())
                 .title(meta.getTitle())
                 .status(meta.statusEnum().name())
-                .lastSeq(meta.getLastSeq())
+                .lastSeq(lastSeq)
                 .errorMessage(meta.getErrorMessage())
                 .replayable(meta.isReplayable())
                 .createdAt(meta.getCreatedAt())
