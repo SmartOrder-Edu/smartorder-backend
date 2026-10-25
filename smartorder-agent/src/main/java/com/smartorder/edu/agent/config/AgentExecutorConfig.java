@@ -51,6 +51,16 @@ public class AgentExecutorConfig {
         );
     }
 
+    /** SSE 读取使用独立有界线程池，避免长连接占满 Agent 执行线程。 */
+    @Bean("agentStreamExecutor")
+    public ExecutorService agentStreamExecutor() {
+        return new ThreadPoolExecutor(
+                4, 32, 60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(64),
+                r -> { Thread t = new Thread(r, "agent-stream-" + System.nanoTime()); t.setDaemon(true); return t; },
+                new ThreadPoolExecutor.AbortPolicy());
+    }
+
     /**
      * Agent 生成任务执行线程池
      * <p>
