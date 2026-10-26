@@ -3,8 +3,11 @@
 -- ============================================================
 -- 说明：
 --   0. 如果库里已有旧版 agent_chat_task（带 request_id / stream_version 等列），
---      它是已废弃的旧 /agent/tasks 实现，字段与本表不兼容；请先备份并重命名旧表，
---      不要直接复用，否则新代码查询 user_message_id 等列会失败。
+--      它是已废弃的旧 /agent/tasks 实现，字段与本表不兼容；
+--      直接执行本文件不会覆盖旧表（CREATE TABLE IF NOT EXISTS），会继续报
+--      “Unknown column 'assistant_message_id'”。
+--      请改执行：docs/后端docs/sql/db_migration_agent_chat_task_repair.sql
+--      （旧表非空时自动改名为 agent_chat_task_legacy_<时间戳> 留档，再重建本表）。
 --   1. task_id 使用 UUID；同一个任务的 user / assistant 两条 conversation_message
 --      都写入 conversation_message.task_id = agent_chat_task.task_id。
 --   2. Redis 只保存任务生成过程中的事件片段（Stream），任务状态与归属以本表为准。

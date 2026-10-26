@@ -56,6 +56,16 @@ public class AgentTaskMetaService {
      */
     @Transactional(rollbackFor = Exception.class)
     public Reservation reserve(AgentTaskMeta candidate) {
+        // 先做一次读检查：重试命中“已绑定消息 / 已终态”的任务时直接复用。
+        // 这样正常的客户端重试不会走到唯一键冲突，Druid 也不会把可预期的幂等
+        // 重试记录成 ERROR（真正的并发冲突仍由下面的 catch 兜底）。
+        if (candidate.getClientRequestId() != null && !candidate.getClientRequestId().isBlank()) {
+            AgentTaskMeta existing = findByClientRequest(candidate.getUserId(), candidate.getClientRequestId());
+            if (existing != null
+                    && (existing.getAssistantMessageId() != null || existing.statusEnum().isTerminal())) {
+                return new Reservation(existing, false);
+            }
+        }
         try {
             taskMapper.insert(toRecord(candidate));
             return new Reservation(candidate, true);
