@@ -27,6 +27,9 @@ public class AgentTaskRecord {
 
     private String conversationId;
 
+    /** 客户端草稿ID：同一 requestId 只允许绑定同一个 draftId */
+    private String draftId;
+
     private Long userId;
 
     private Long userMessageId;

@@ -77,7 +77,7 @@ public class AgentTaskRegistry {
     });
 
     /** 任务行预留结果：created=false 表示命中幂等键，调用方不应再次插入消息。 */
-    public record Reservation(String taskId, boolean created) {
+    public record Reservation(String taskId, boolean created, String draftId) {
     }
 
     @PostConstruct
@@ -106,7 +106,7 @@ public class AgentTaskRegistry {
      * 不会各自插入一对 user/assistant 消息。</p>
      */
     public Reservation reserve(Long userId, String preferredTaskId, String clientRequestId,
-                               String conversationId) {
+                               String conversationId, String draftId) {
         if (userId == null) {
             throw AgentTaskException.forbidden();
         }
@@ -114,6 +114,7 @@ public class AgentTaskRegistry {
         AgentTaskMeta candidate = AgentTaskMeta.builder()
                 .taskId(preferredTaskId)
                 .conversationId(conversationId)
+                .draftId(draftId)
                 .userId(userId)
                 .clientRequestId(clientRequestId)
                 .status(AgentTaskStatus.CREATED.name())
@@ -123,7 +124,8 @@ public class AgentTaskRegistry {
                 .replayable(true)
                 .build();
         AgentTaskMetaService.Reservation reservation = taskMetaService.reserve(candidate);
-        return new Reservation(reservation.meta().getTaskId(), reservation.created());
+        return new Reservation(reservation.meta().getTaskId(), reservation.created(),
+                reservation.meta().getDraftId());
     }
 
     /**
@@ -157,6 +159,20 @@ public class AgentTaskRegistry {
             taskMetaService.discardUnbound(taskId);
         } catch (Exception e) {
             log.warn("[Task] 清理占位任务失败: taskId={}, reason={}", taskId, e.getMessage());
+        }
+    }
+
+    /**
+     * 老任务行没有 draft_id 时补写（升级后第一次带 draft 的重试）。
+     */
+    public void bindDraftId(String taskId, String draftId) {
+        if (taskId == null || draftId == null || draftId.isBlank()) {
+            return;
+        }
+        try {
+            taskMetaService.bindDraftId(taskId, draftId);
+        } catch (Exception e) {
+            log.warn("[Task] 回写 draft_id 失败: taskId={}, reason={}", taskId, e.getMessage());
         }
     }
 

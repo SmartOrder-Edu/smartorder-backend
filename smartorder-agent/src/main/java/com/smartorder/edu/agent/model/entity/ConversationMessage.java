@@ -1,5 +1,7 @@
 package com.smartorder.edu.agent.model.entity;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -25,6 +27,11 @@ public class ConversationMessage {
     /** 用户中止 */
     public static final String STATUS_CANCELLED = "CANCELLED";
 
+    /**
+     * 消息主键：应用侧雪花 ID（前端用它替换本地临时消息 ID）。
+     * 显式声明 ASSIGN_ID，不依赖全局 mybatis-plus 配置。
+     */
+    @TableId(value = "id", type = IdType.ASSIGN_ID)
     private Long id;
     private String conversationId;
     private Long userId;

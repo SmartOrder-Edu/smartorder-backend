@@ -14,7 +14,8 @@
 
 CREATE TABLE IF NOT EXISTS `agent_chat_task` (
     `task_id`               VARCHAR(36)   NOT NULL                 COMMENT '对话任务ID（UUID）',
-    `conversation_id`       VARCHAR(36)   DEFAULT NULL             COMMENT '会话 public_id；openReply 前允许为空',
+    `conversation_id`       VARCHAR(36)   DEFAULT NULL             COMMENT '会话 conversation_uuid；openReply 前允许为空',
+    `draft_id`              VARCHAR(36)   DEFAULT NULL             COMMENT '客户端草稿ID；同一 requestId 只允许绑定同一个 draftId',
     `user_id`               BIGINT        NOT NULL                 COMMENT '任务归属用户',
     `user_message_id`       BIGINT        DEFAULT NULL             COMMENT '本轮用户消息行ID',
     `assistant_message_id`  BIGINT        DEFAULT NULL             COMMENT '本轮 assistant 占位行ID',
@@ -32,5 +33,6 @@ CREATE TABLE IF NOT EXISTS `agent_chat_task` (
     PRIMARY KEY (`task_id`),
     UNIQUE KEY `uk_agent_task_request` (`user_id`, `client_request_id`),
     KEY `idx_agent_task_conv` (`conversation_id`, `created_at`),
+    KEY `idx_agent_task_draft` (`user_id`, `draft_id`),
     KEY `idx_agent_task_status` (`status`, `updated_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='可恢复的 Agent 对话任务';

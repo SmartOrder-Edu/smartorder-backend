@@ -1,6 +1,7 @@
 package com.smartorder.edu.agent.model.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.smartorder.edu.agent.service.ConversationService;
@@ -12,7 +13,7 @@ import java.time.LocalDateTime;
 /**
  * AI 会话主表实体。
  * <p>
- * public_id 承载原有的 conversation_id（UUID 字符串），
+ * conversation_uuid 承载原有的 conversation_id（UUID 字符串），由前端在新建对话时生成，
  * conversation_message.conversation_id 与之对应，存量数据零改写。
  * 内部自增 id 只用于行锁（SELECT ... FOR UPDATE）与关联，不对外暴露。
  */
@@ -44,12 +45,14 @@ public class Conversation {
      * 与项目内 user_id / file_id 的生成方式保持一致，避免依赖数据库自增
      * （多实例、数据迁移、分库分表场景下自增会冲突）。
      * <p>
-     * 该字段只用于锁行与内部关联，不对外暴露，对外统一用 {@link #publicId}。
+     * 该字段只用于锁行与内部关联，不对外暴露，对外统一用 {@link #conversationUuid}。
      */
     @TableId(value = "id", type = IdType.INPUT)
     private Long id;
 
-    private String publicId;
+    /** 对外会话ID；draft_id 与它一对一（见 agent_conversation_draft）。 */
+    @TableField("conversation_uuid")
+    private String conversationUuid;
 
     private Long userId;
 

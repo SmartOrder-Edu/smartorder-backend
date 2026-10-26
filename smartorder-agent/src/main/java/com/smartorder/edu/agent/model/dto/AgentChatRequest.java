@@ -16,7 +16,31 @@ import java.util.Map;
 public class AgentChatRequest {
     private Long userId;
     private String message;
+
+    /**
+     * @deprecated 旧字段名，等价于 {@link #conversationUuid}。
+     * 新前端只传 conversationUuid；两者同时存在时以 conversationUuid 为准。
+     */
+    @Deprecated
     private String conversationId;
+
+    /**
+     * 前端生成的会话 UUID（新建对话时生成，重试必须复用同一个值）。
+     */
+    private String conversationUuid;
+
+    /**
+     * 前端生成的消息 UUID（写入 conversation_message.public_id）。
+     * 同一 conversationUuid + messageUuid 重试只会写入一次。
+     */
+    private String messageUuid;
+
+    /**
+     * 前端生成的新对话草稿 ID。每次“新建对话”一个，与 conversationUuid 一对一；
+     * 同一个 requestId 不允许换成另一个 draftId。
+     */
+    private String draftId;
+
     private List<Long> fileIds;
 
     /**
@@ -56,4 +80,17 @@ public class AgentChatRequest {
      * 或断线后重新创建，都会复用原来的生成任务，不会重复执行模型调用。</p>
      */
     private String clientRequestId;
+
+    /**
+     * 统一取会话 UUID：新字段优先，旧字段兜底。
+     */
+    public String resolveConversationUuid() {
+        if (conversationUuid != null && !conversationUuid.isBlank()) {
+            return conversationUuid.trim();
+        }
+        if (conversationId != null && !conversationId.isBlank()) {
+            return conversationId.trim();
+        }
+        return null;
+    }
 }

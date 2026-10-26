@@ -168,7 +168,7 @@ class AgentTaskRegistryTest {
         Fixture fixture = new Fixture();
         String taskId = java.util.UUID.randomUUID().toString();
         AgentTaskRegistry.Reservation reservation =
-                fixture.registry.reserve(7L, taskId, "key-start", "c-2");
+                fixture.registry.reserve(7L, taskId, "key-start", "c-2", null);
 
         RecordingSink sink = new RecordingSink();
         AgentTaskException error = assertThrows(AgentTaskException.class,
@@ -302,7 +302,7 @@ class AgentTaskRegistryTest {
 
         AgentTask create() {
             String taskId = java.util.UUID.randomUUID().toString();
-            AgentTaskRegistry.Reservation reservation = registry.reserve(7L, taskId, "key-1", "c-1");
+            AgentTaskRegistry.Reservation reservation = registry.reserve(7L, taskId, "key-1", "c-1", null);
             return registry.bindTurn(reservation.taskId(), 7L, "key-1", turn("c-1"));
         }
 

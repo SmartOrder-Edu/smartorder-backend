@@ -1,6 +1,7 @@
 package com.smartorder.edu.agent.service;
 
 import com.alibaba.fastjson.JSON;
+import com.smartorder.edu.agent.exception.AgentTaskException;
 import com.smartorder.edu.agent.mapper.ConversationMapper;
 import com.smartorder.edu.agent.mapper.ConversationMessageMapper;
 import com.smartorder.edu.agent.model.entity.Conversation;
@@ -8,16 +9,19 @@ import com.smartorder.edu.agent.model.entity.ConversationMessage;
 import com.smartorder.edu.agent.service.impl.AgentOrchestratorImpl;
 import com.smartorder.edu.agent.util.TitleInputExtractor;
 import com.smartorder.edu.agent.util.TitleNormalizer;
+import com.smartorder.edu.agent.util.UuidUtils;
 import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -32,7 +36,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * - 同一会话的写入先 {@code SELECT ... FOR UPDATE} 锁住 conversation 行，
  *   序号分配天然串行；不同会话互不影响。
  * - 锁持有时间 = 事务 A 的 5 条 SQL（毫秒级），不会卡住 SSE。
- * - {@code uk_conv_seq(conversation_id, sequence_no)} 是最终防线。
+ * - {@code uk_conv_seq(conversation_id, sequence_no)} 是序号唯一性的最终防线；
+ *   {@code uk_conv_message_uuid(conversation_id, public_id)} 是消息幂等的最终防线。
  */
 @Slf4j
 @Service
@@ -52,6 +57,7 @@ public class ConversationMessageService {
     private final ConversationMapper conversationMapper;
     private final ConversationMessageMapper messageMapper;
     private final ConversationService conversationService;
+    private final ConversationDraftService conversationDraftService;
 
     /** traceId → 本轮待收尾的回复；complete/fail/cancel 后移除 */
     private final Map<String, PendingReply> pendingReplies = new ConcurrentHashMap<>();
@@ -68,6 +74,8 @@ public class ConversationMessageService {
         private Long conversationPk;
         private Long userMessageId;
         private Long assistantMessageId;
+        /** assistant 占位行状态；命中幂等且任务行已丢失时用于返回真实状态 */
+        private String assistantStatus;
         private int userSequenceNo;
         private int assistantSequenceNo;
         private String title;
@@ -75,6 +83,11 @@ public class ConversationMessageService {
         private String titleSource;
         /** 本轮是否新建了会话（用于 SSE agent.conversation.created） */
         private boolean created;
+        /**
+         * true = 命中 conversation_uuid + message_uuid 消息幂等：
+         * 本次没有插入任何消息，调用方不得再启动生成，应直接返回已有任务/消息状态。
+         */
+        private boolean duplicate;
         private long openedAt;
     }
 
@@ -88,71 +101,181 @@ public class ConversationMessageService {
      * 用户刷新页面时，正在生成的回答在库里是可见的（RUNNING），
      * 服务端崩溃后也有"僵尸行"可清理——这是与旧实现最大的区别。
      *
-     * @param conversationId 前端传入的会话ID，为空则新建
+     * <p><b>幂等语义</b>：以 {@code conversation_uuid + message_uuid} 为键。
+     * 同一键重复到达时不再插入，返回已有 user/assistant 行的 ID 与
+     * {@link PendingReply#isDuplicate() duplicate=true}；内容不一致则 409。</p>
+     *
+     * @param conversationUuid 前端生成的会话 UUID；为空时兼容旧客户端，由服务端生成
+     * @param messageUuid      前端生成的消息 UUID（写入 conversation_message.public_id）；
+     *                         为空时兼容旧客户端，由服务端生成
+     * @param draftId          前端新对话草稿 ID；为空时不校验草稿绑定（旧客户端）
      * @return 待收尾的回复（含 conversationId / 占位行ID / 序号）
      */
     @Transactional(rollbackFor = Exception.class)
-    public PendingReply openReply(String conversationId, Long userId, String content,
-                              List<Long> attachmentFileIds, String traceId, String taskId) {
+    public PendingReply openReply(String conversationUuid, String messageUuid, String draftId,
+                                  Long userId, String content, List<Long> attachmentFileIds,
+                                  String traceId, String taskId) {
         pruneStaleStates();
 
-        String publicId = (conversationId == null || conversationId.isBlank())
-                ? UUID.randomUUID().toString()
-                : conversationId;
-
-        Conversation conversation = conversationMapper.selectByPublicId(publicId);
-        boolean created = false;
-        if (conversation == null) {
-            conversation = conversationService.createIfAbsent(publicId, userId, autoTitle(content));
-            created = true;
-        } else {
-            if (conversation.getUserId() != null && userId != null
-                    && !conversation.getUserId().equals(userId)) {
-                throw new IllegalStateException("会话不存在或无权访问");
-            }
-            if (!Conversation.STATUS_ACTIVE.equals(conversation.getStatus())) {
-                throw new IllegalStateException("会话已删除或已归档");
-            }
+        String requestedConversationUuid = UuidUtils.trimToNull(conversationUuid);
+        String conversationId = requestedConversationUuid;
+        String userMessageUuid = UuidUtils.trimToNull(messageUuid);
+        String draft = UuidUtils.trimToNull(draftId);
+        if (conversationId != null && !UuidUtils.isValid(conversationId)) {
+            throw AgentTaskException.badRequest("INVALID_CONVERSATION_UUID",
+                    "conversation_uuid 格式非法，必须是 36 位 UUID");
+        }
+        if (userMessageUuid != null && !UuidUtils.isValid(userMessageUuid)) {
+            throw AgentTaskException.badRequest("INVALID_MESSAGE_UUID",
+                    "message_uuid 格式非法，必须是 36 位 UUID");
+        }
+        if (draft != null && !UuidUtils.isValid(draft)) {
+            throw AgentTaskException.badRequest("INVALID_DRAFT_ID",
+                    "draftId 格式非法，必须是 36 位 UUID");
+        }
+        // 旧客户端不带 UUID：服务端生成，保持原有能力
+        if (conversationId == null) {
+            conversationId = UUID.randomUUID().toString();
+        }
+        if (userMessageUuid == null) {
+            userMessageUuid = UUID.randomUUID().toString();
         }
 
-        // 行锁：同一会话的写入串行化
-        Conversation locked = conversationMapper.selectByPublicIdForUpdate(publicId);
+        Conversation conversation = conversationMapper.selectByConversationUuid(conversationId);
+        boolean created = false;
+        if (conversation == null) {
+            // 新对话必须带 draftId；不带 draftId 的“无会话”请求只允许历史数据补建，
+            // 避免客户端把错误/过期的 conversation_uuid 悄悄变成一条新会话。
+            boolean legacyConversation = requestedConversationUuid != null
+                    && messageMapper.countByConversationId(requestedConversationUuid, userId) > 0;
+            if (requestedConversationUuid != null && draft == null && !legacyConversation) {
+                throw AgentTaskException.conversationNotFound();
+            }
+            conversation = conversationService.createIfAbsent(conversationId, userId, autoTitle(content));
+            created = true;
+        } else {
+            assertConversationWritable(conversation, userId);
+        }
+
+        // 行锁：同一会话的写入串行化。并发首条消息可能在上面 select 之后才提交，
+        // 这里必须重新取一次，拿不到再补建。
+        Conversation locked = conversationMapper.selectByConversationUuidForUpdate(conversationId);
         if (locked == null) {
-            conversationService.createIfAbsent(publicId, userId, autoTitle(content));
-            locked = conversationMapper.selectByPublicIdForUpdate(publicId);
+            conversationService.createIfAbsent(conversationId, userId, autoTitle(content));
+            locked = conversationMapper.selectByConversationUuidForUpdate(conversationId);
+            created = true;
+        }
+        if (locked == null) {
+            throw AgentTaskException.conversationNotFound();
+        }
+        assertConversationWritable(locked, userId);
+
+        // 草稿绑定必须在归属校验之后：不能让人用别人的 conversation_uuid 抢占 draft 绑定。
+        conversationDraftService.bindOrAssert(draft, conversationId, userId);
+
+        // 消息幂等：唯一键 uk_conv_message_uuid 的快速路径（此时已持有会话行锁）
+        ConversationMessage existing = messageMapper.selectByMessageUuid(conversationId, userMessageUuid);
+        if (existing != null) {
+            return duplicateReply(existing, locked, content);
         }
 
         LocalDateTime now = LocalDateTime.now();
-        int userSeq = nextSequenceNo(publicId);
+        int userSeq = nextSequenceNo(conversationId);
         int assistantSeq = userSeq + 1;
 
-        ConversationMessage userMessage = newMessage(publicId, userId, ROLE_USER, content, userSeq,
-                ConversationMessage.STATUS_COMPLETED, null, 1, traceId, taskId, null, null,
-                toFileIdsJson(attachmentFileIds), now, null);
-        ConversationMessage assistantMessage = newMessage(publicId, userId, ROLE_ASSISTANT, "", assistantSeq,
-                ConversationMessage.STATUS_RUNNING, userMessage.getId(), 1, traceId, taskId, null, null, null, now, null);
+        ConversationMessage userMessage;
+        ConversationMessage assistantMessage;
+        try {
+            userMessage = newMessage(conversationId, userId, ROLE_USER, content, userSeq,
+                    ConversationMessage.STATUS_COMPLETED, null, 1, traceId, taskId, null, null,
+                    toFileIdsJson(attachmentFileIds), now, null, userMessageUuid);
+            assistantMessage = newMessage(conversationId, userId, ROLE_ASSISTANT, "", assistantSeq,
+                    ConversationMessage.STATUS_RUNNING, userMessage.getId(), 1, traceId, taskId,
+                    null, null, null, now, null, UUID.randomUUID().toString());
+        } catch (DuplicateKeyException duplicate) {
+            // 多实例/极端并发：唯一键先于行锁生效。重新按 message_uuid 取已有行，按幂等返回。
+            ConversationMessage raced = messageMapper.selectByMessageUuid(conversationId, userMessageUuid);
+            if (raced != null) {
+                return duplicateReply(raced, locked, content);
+            }
+            throw duplicate;
+        }
 
-        conversationMapper.incrMessageCount(publicId, 2);
-        conversationMapper.touchLastMessage(publicId, now, normalize(content, PREVIEW_MAX));
+        conversationMapper.incrMessageCount(conversationId, 2);
+        conversationMapper.touchLastMessage(conversationId, now, normalize(content, PREVIEW_MAX));
 
         PendingReply state = PendingReply.builder()
                 .taskId(taskId)
-                .conversationId(publicId)
-                .conversationPk(locked != null ? locked.getId() : null)
+                .conversationId(conversationId)
+                .conversationPk(locked.getId())
                 .userMessageId(userMessage.getId())
                 .assistantMessageId(assistantMessage.getId())
+                .assistantStatus(assistantMessage.getStatus())
                 .userSequenceNo(userSeq)
                 .assistantSequenceNo(assistantSeq)
-                .title(locked != null ? locked.getTitle() : autoTitle(content))
-                .titleSource(locked != null ? locked.getTitleSource() : Conversation.TITLE_SOURCE_AUTO)
+                .title(locked.getTitle())
+                .titleSource(locked.getTitleSource())
                 .created(created)
+                .duplicate(false)
                 .openedAt(System.currentTimeMillis())
                 .build();
         pendingReplies.put(traceId, state);
 
-        log.info("[Message] 开启回复: cid={}, traceId={}, created={}, userSeq={}, assistantMsgId={}",
-                publicId, traceId, created, userSeq, assistantMessage.getId());
+        log.info("[Message] 开启回复: cid={}, traceId={}, created={}, userSeq={}, msgUuid={}, userMsgId={}, assistantMsgId={}",
+                conversationId, traceId, created, userSeq, userMessageUuid,
+                userMessage.getId(), assistantMessage.getId());
         return state;
+    }
+
+    /**
+     * 命中消息幂等：校验同一 message_uuid 的内容/角色，返回已有行。
+     */
+    private PendingReply duplicateReply(ConversationMessage existing, Conversation locked, String content) {
+        if (!ROLE_USER.equals(existing.getRole())) {
+            throw AgentTaskException.messageUuidConflict(
+                    "message_uuid 已存在且不是用户消息，请重新生成 message_uuid");
+        }
+        if (!Objects.equals(existing.getContent(), content)) {
+            throw AgentTaskException.messageContentConflict(
+                    "同一 message_uuid 的消息内容不一致，拒绝写入");
+        }
+        ConversationMessage assistant = existing.getTaskId() == null ? null
+                : messageMapper.selectAssistantByTaskId(existing.getTaskId());
+        int userSeq = existing.getSequenceNo() == null ? 0 : existing.getSequenceNo();
+        int assistantSeq = assistant != null && assistant.getSequenceNo() != null
+                ? assistant.getSequenceNo() : userSeq + 1;
+        PendingReply duplicate = PendingReply.builder()
+                .taskId(existing.getTaskId())
+                .conversationId(existing.getConversationId())
+                .conversationPk(locked.getId())
+                .userMessageId(existing.getId())
+                .assistantMessageId(assistant != null ? assistant.getId() : null)
+                .assistantStatus(assistant != null ? assistant.getStatus() : null)
+                .userSequenceNo(userSeq)
+                .assistantSequenceNo(assistantSeq)
+                .title(locked.getTitle())
+                .titleSource(locked.getTitleSource())
+                .created(false)
+                .duplicate(true)
+                .openedAt(System.currentTimeMillis())
+                .build();
+        log.info("[Message] 命中消息幂等: cid={}, messageUuid={}, userMsgId={}, assistantMsgId={}",
+                existing.getConversationId(), existing.getPublicId(),
+                existing.getId(), assistant != null ? assistant.getId() : null);
+        return duplicate;
+    }
+
+    /**
+     * 会话归属与可写状态校验（403/404，绝不输出“存在但不属于你”的细节）。
+     */
+    private void assertConversationWritable(Conversation conversation, Long userId) {
+        if (conversation.getUserId() != null && userId != null
+                && !conversation.getUserId().equals(userId)) {
+            throw AgentTaskException.forbiddenConversation();
+        }
+        if (!Conversation.STATUS_ACTIVE.equals(conversation.getStatus())) {
+            throw AgentTaskException.conversationNotFound();
+        }
     }
 
     // ============================================================
@@ -243,7 +366,7 @@ public class ConversationMessageService {
         Long parentId = messageMapper.selectLastUserMessageIdForUpdate(conversationId);
         newMessage(conversationId, userId, ROLE_ASSISTANT, content, seq,
                 ConversationMessage.STATUS_COMPLETED, parentId, 1, traceId, null,
-                reasoningContent, metadataJson, null, now, null);
+                reasoningContent, metadataJson, null, now, null, UUID.randomUUID().toString());
 
         conversationMapper.incrMessageCount(conversationId, 1);
         conversationMapper.touchLastMessage(conversationId, now, normalize(content, PREVIEW_MAX));
@@ -263,7 +386,7 @@ public class ConversationMessageService {
         int seq = nextSequenceNo(conversationId);
         newMessage(conversationId, userId, ROLE_USER, content, seq,
                 ConversationMessage.STATUS_COMPLETED, null, 1, null, null, null, null,
-                toFileIdsJson(attachmentFileIds), now, null);
+                toFileIdsJson(attachmentFileIds), now, null, UUID.randomUUID().toString());
 
         conversationMapper.incrMessageCount(conversationId, 1);
         conversationMapper.touchLastMessage(conversationId, now, normalize(content, PREVIEW_MAX));
@@ -281,7 +404,8 @@ public class ConversationMessageService {
         LocalDateTime now = LocalDateTime.now();
         int seq = nextSequenceNo(conversationId);
         newMessage(conversationId, userId, ROLE_TOOL, content, seq,
-                ConversationMessage.STATUS_COMPLETED, null, 0, null, null, null, null, null, now, toolName);
+                ConversationMessage.STATUS_COMPLETED, null, 0, null, null, null, null, null, now, toolName,
+                UUID.randomUUID().toString());
     }
 
     public boolean hasPendingReply(String traceId) {
@@ -296,7 +420,7 @@ public class ConversationMessageService {
                                            int sequenceNo, String status, Long parentMessageId, int visible,
                                            String traceId, String taskId, String reasoningContent,
                                            String metadataJson, String attachmentFileIds,
-                                           LocalDateTime now, String toolName) {
+                                           LocalDateTime now, String toolName, String publicId) {
         ConversationMessage message = new ConversationMessage();
         message.setConversationId(conversationId);
         message.setUserId(userId);
@@ -308,7 +432,7 @@ public class ConversationMessageService {
         message.setParentMessageId(parentMessageId);
         message.setAttemptNo(1);
         message.setIsVisible(visible);
-        message.setPublicId(UUID.randomUUID().toString());
+        message.setPublicId(publicId);
         message.setTraceId(traceId);
         message.setTaskId(taskId);
         message.setReasoningContent(reasoningContent);
@@ -340,10 +464,10 @@ public class ConversationMessageService {
         if (conversationId == null || conversationId.isBlank()) {
             return null;
         }
-        Conversation conversation = conversationMapper.selectByPublicIdForUpdate(conversationId);
+        Conversation conversation = conversationMapper.selectByConversationUuidForUpdate(conversationId);
         if (conversation == null) {
             conversationService.createIfAbsent(conversationId, userId, null);
-            conversation = conversationMapper.selectByPublicIdForUpdate(conversationId);
+            conversation = conversationMapper.selectByConversationUuidForUpdate(conversationId);
             if (conversation == null) {
                 log.warn("[Message] 会话主表行补建失败，丢弃消息写入: cid={}", conversationId);
                 return null;

@@ -80,6 +80,17 @@ public interface AgentTaskRecordMapper extends BaseMapper<AgentTaskRecord> {
     int markRunning(@Param("taskId") String taskId);
 
     /**
+     * 老任务行没有 draft_id 时补写（升级后第一次带 draft 的重试）。
+     * 只在 draft_id 为空时写入，绝不覆盖已有绑定。
+     */
+    @Update("""
+        UPDATE agent_chat_task
+        SET draft_id = #{draftId}, updated_at = NOW(3)
+        WHERE task_id = #{taskId} AND draft_id IS NULL
+        """)
+    int bindDraftId(@Param("taskId") String taskId, @Param("draftId") String draftId);
+
+    /**
      * 终态回写：状态、最后 seq、错误、assistant 消息 ID 与完成时间一起落库。
      * 只有终态调用，因此 finished_at 可以直接写 NOW(3)。
      */

@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class MessageVO {
-    /** 内部自增主键（保留，兼容旧前端作为列表 key） */
+    /** 消息主键（雪花 ID），前端收到后用它替换本地临时消息 ID */
     private Long id;
     private String role;
     private String content;
@@ -28,7 +28,7 @@ public class MessageVO {
     private String attachmentFileIds;
     private LocalDateTime createTime;
 
-    /** 对外消息ID（UUID），新前端只认这个 */
+    /** 对外消息 UUID（= 前端生成的 message_uuid，写入 conversation_message.public_id） */
     private String publicId;
     /** 会话内序号，从 1 开始 */
     private Integer sequenceNo;

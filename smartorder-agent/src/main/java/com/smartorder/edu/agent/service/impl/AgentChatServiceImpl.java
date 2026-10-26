@@ -10,7 +10,9 @@ import com.smartorder.edu.agent.runtime.AgentTaskRegistry;
 import com.smartorder.edu.agent.runtime.AgentTaskSubscriptionPlan;
 import com.smartorder.edu.agent.service.AgentChatService;
 import com.smartorder.edu.agent.service.AgentOrchestrator;
+import com.smartorder.edu.agent.service.ConversationDraftService;
 import com.smartorder.edu.agent.service.ConversationMessageService;
+import com.smartorder.edu.agent.util.UuidUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
@@ -44,15 +46,19 @@ public class AgentChatServiceImpl implements AgentChatService {
 
     private final ConversationMessageService conversationMessageService;
 
+    private final ConversationDraftService conversationDraftService;
+
     private final ExecutorService taskExecutor;
 
     public AgentChatServiceImpl(AgentTaskRegistry registry,
                                 AgentOrchestrator orchestrator,
                                 ConversationMessageService conversationMessageService,
+                                ConversationDraftService conversationDraftService,
                                 @Qualifier("agentTaskExecutor") ExecutorService taskExecutor) {
         this.registry = registry;
         this.orchestrator = orchestrator;
         this.conversationMessageService = conversationMessageService;
+        this.conversationDraftService = conversationDraftService;
         this.taskExecutor = taskExecutor;
     }
 
@@ -67,41 +73,75 @@ public class AgentChatServiceImpl implements AgentChatService {
         }
         // 空白串归一成 null，避免 " " 和 "" 各占一个幂等键
         String idempotencyKey = normalize(clientRequestId);
+        String conversationUuid = UuidUtils.trimToNull(request.resolveConversationUuid());
+        String messageUuid = UuidUtils.trimToNull(request.getMessageUuid());
+        String draftId = UuidUtils.trimToNull(request.getDraftId());
+        assertUuidFormat(conversationUuid, messageUuid, draftId);
 
-        // 事务 A 之前先抢 MySQL 任务行：唯一键 (user_id, client_request_id) 是幂等的最终防线。
+        // ① 同一 requestId 只允许对应一个 draftId：不一致时直接拒绝，绝不悄悄返回旧任务/旧会话。
+        conversationDraftService.assertRequestDraft(userId, idempotencyKey, draftId);
+
+        // ② 事务 A 之前先抢 MySQL 任务行：唯一键 (user_id, client_request_id) 是任务级幂等防线。
         String taskId = UUID.randomUUID().toString();
         AgentTaskRegistry.Reservation reservation = registry.reserve(
-                userId, taskId, idempotencyKey, request.getConversationId());
+                userId, taskId, idempotencyKey, conversationUuid, draftId);
         if (!reservation.created()) {
-            // 幂等命中：本次未新建任务，直接回放首次创建时的快照（created=false 告知调用方）
+            // 命中任务级幂等：先确认 draft 没有在同一个 requestId 下被换掉
+            if (draftId != null && reservation.draftId() != null
+                    && !draftId.equals(reservation.draftId())) {
+                throw AgentTaskException.requestDraftConflict(
+                        "同一个 requestId 已绑定其他草稿，拒绝复用");
+            }
+            if (draftId != null && reservation.draftId() == null) {
+                // 升级前的任务行没有 draft_id：补写一次，保持 MySQL 权威
+                registry.bindDraftId(reservation.taskId(), draftId);
+            }
+            conversationDraftService.rememberRequestDraft(userId, idempotencyKey, draftId);
+            // 本次未新建任务，直接回放首次创建时的快照（created=false 告知调用方）
             AgentTaskVO existing = registry.status(reservation.taskId(), userId);
             existing.setCreated(false);
-            log.info("[Task] 命中幂等键，复用已有任务: taskId={}, userId={}, key={}",
-                    reservation.taskId(), userId, idempotencyKey);
+            log.info("[Task] 命中幂等键，复用已有任务: taskId={}, userId={}, key={}, draftId={}",
+                    reservation.taskId(), userId, idempotencyKey, draftId);
             return existing;
         }
 
-        // 一次发送一个 traceId，串起消息行、事件与日志，便于按链路排查
+        // ③ 一次发送一个 traceId，串起消息行、事件与日志，便于按链路排查
         String traceId = UUID.randomUUID().toString();
-        AgentTurnContext turn;
+        ConversationMessageService.PendingReply state;
         try {
-            // 事务 A：校验/新建会话、写用户消息、写 assistant 占位行（同一事务）
-            ConversationMessageService.PendingReply state = conversationMessageService.openReply(
-                    request.getConversationId(), userId, request.getMessage(),
+            // 事务 A：校验/新建会话、校验 draft 绑定、写用户消息、写 assistant 占位行
+            state = conversationMessageService.openReply(
+                    conversationUuid, messageUuid, draftId, userId, request.getMessage(),
                     request.getFileIds(), traceId, reservation.taskId());
-            turn = AgentTurnContext.from(state, traceId);
         } catch (RuntimeException e) {
-            // 会话已删除 / 无权访问 / 数据库异常：删掉未绑定消息的占位任务，允许客户端重试
+            // 会话已删除 / 无权访问 / UUID 冲突 / 数据库异常：删掉未绑定消息的占位任务，允许客户端重试
             registry.discardReservation(reservation.taskId());
-            log.warn("[Task] 插入消息失败: userId={}, cid={}, reason={}",
-                    userId, request.getConversationId(), e.getMessage());
+            log.warn("[Task] 插入消息失败: userId={}, cid={}, messageUuid={}, draftId={}, reason={}",
+                    userId, conversationUuid, messageUuid, draftId, e.getMessage());
+            if (e instanceof AgentTaskException taskException) {
+                throw taskException;
+            }
             throw new AgentTaskException(HttpStatus.BAD_REQUEST, "TURN_OPEN_FAILED",
                     e.getMessage() != null ? e.getMessage() : "会话不可用");
         }
-        // 新建会话时 conversationId 由服务端生成，回填后编排层与返回结果才是同一个 id
-        request.setConversationId(turn.getConversationId());
 
-        // 绑定本轮消息：此后任务才可被 status / activeTask / 订阅找到
+        // ④ 命中 conversation_uuid + message_uuid 消息幂等：不重复插入、不重复生成。
+        if (state.isDuplicate()) {
+            registry.discardReservation(reservation.taskId());
+            conversationDraftService.rememberRequestDraft(userId, idempotencyKey, draftId);
+            log.info("[Task] 命中消息幂等: cid={}, messageUuid={}, existingTaskId={}, userMsgId={}",
+                    state.getConversationId(), messageUuid, state.getTaskId(), state.getUserMessageId());
+            return existingTurnView(state, userId);
+        }
+
+        conversationDraftService.rememberRequestDraft(userId, idempotencyKey, draftId);
+
+        // 新建会话时 conversationUuid 由前端/服务端确定；回填后编排层与返回结果才是同一个 id
+        request.setConversationUuid(state.getConversationId());
+        request.setConversationId(state.getConversationId());
+        AgentTurnContext turn = AgentTurnContext.from(state, traceId);
+
+        // ⑤ 绑定本轮消息：此后任务才可被 status / activeTask / 订阅找到
         AgentTask task = registry.bindTurn(reservation.taskId(), userId, idempotencyKey, turn);
         startAsync(task, request, turn);
 
@@ -121,6 +161,55 @@ public class AgentChatServiceImpl implements AgentChatService {
                 .replayable(true)
                 .createdAt(task.getCreatedAt())
                 .build();
+    }
+
+    /**
+     * 消息幂等命中时的返回体：
+     * - 原任务还在 → 复用它的状态快照（前端照样可以订阅回放已产生的事件）；
+     * - 任务行已被清理/从未绑定 → 返回已有消息的 ID 与状态，前端据此改为拉历史消息。
+     */
+    private AgentTaskVO existingTurnView(ConversationMessageService.PendingReply state, Long userId) {
+        if (state.getTaskId() != null) {
+            try {
+                AgentTaskVO existing = registry.status(state.getTaskId(), userId);
+                existing.setCreated(false);
+                return existing;
+            } catch (AgentTaskException e) {
+                log.warn("[Task] 消息幂等命中但原任务不可用，返回消息快照: taskId={}, reason={}",
+                        state.getTaskId(), e.getMessage());
+            }
+        }
+        return AgentTaskVO.builder()
+                .taskId(state.getTaskId())
+                .conversationId(state.getConversationId())
+                .userMessageId(state.getUserMessageId())
+                .assistantMessageId(state.getAssistantMessageId())
+                .assistantSequenceNo(state.getAssistantSequenceNo())
+                .title(state.getTitle())
+                .status(state.getAssistantStatus() != null ? state.getAssistantStatus()
+                        : "COMPLETED")
+                .created(false)
+                .lastSeq(0L)
+                .replayable(false)
+                .build();
+    }
+
+    /**
+     * 对外 UUID 的格式校验放在任务行预留之前：格式错误不占用幂等键。
+     */
+    private void assertUuidFormat(String conversationUuid, String messageUuid, String draftId) {
+        if (conversationUuid != null && !UuidUtils.isValid(conversationUuid)) {
+            throw AgentTaskException.badRequest("INVALID_CONVERSATION_UUID",
+                    "conversation_uuid 格式非法，必须是 36 位 UUID");
+        }
+        if (messageUuid != null && !UuidUtils.isValid(messageUuid)) {
+            throw AgentTaskException.badRequest("INVALID_MESSAGE_UUID",
+                    "message_uuid 格式非法，必须是 36 位 UUID");
+        }
+        if (draftId != null && !UuidUtils.isValid(draftId)) {
+            throw AgentTaskException.badRequest("INVALID_DRAFT_ID",
+                    "draftId 格式非法，必须是 36 位 UUID");
+        }
     }
 
     /**

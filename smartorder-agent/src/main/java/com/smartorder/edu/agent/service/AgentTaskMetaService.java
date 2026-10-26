@@ -125,6 +125,16 @@ public class AgentTaskMetaService {
         taskMapper.markRunning(taskId);
     }
 
+    /**
+     * 升级前创建的任务行没有 draft_id；第一次带 draft 的重试补写，不覆盖已有绑定。
+     */
+    public void bindDraftId(String taskId, String draftId) {
+        if (taskId == null || draftId == null || draftId.isBlank()) {
+            return;
+        }
+        taskMapper.bindDraftId(taskId, draftId);
+    }
+
     public void updateTerminalState(String taskId, AgentTaskStatus status, long lastSeq,
                                     String errorMessage, Long assistantMessageId, boolean replayable) {
         taskMapper.updateTerminalState(taskId, status.name(), lastSeq, errorMessage,
@@ -189,6 +199,7 @@ public class AgentTaskMetaService {
         AgentTaskRecord record = new AgentTaskRecord();
         record.setTaskId(meta.getTaskId());
         record.setConversationId(meta.getConversationId());
+        record.setDraftId(meta.getDraftId());
         record.setUserId(meta.getUserId());
         record.setUserMessageId(meta.getUserMessageId());
         record.setAssistantMessageId(meta.getAssistantMessageId());
@@ -214,6 +225,7 @@ public class AgentTaskMetaService {
         return AgentTaskMeta.builder()
                 .taskId(record.getTaskId())
                 .conversationId(record.getConversationId())
+                .draftId(record.getDraftId())
                 .userId(record.getUserId())
                 .traceId(record.getTraceId())
                 .clientRequestId(record.getClientRequestId())

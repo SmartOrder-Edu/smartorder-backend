@@ -50,4 +50,60 @@ public class AgentTaskException extends RuntimeException {
         return new AgentTaskException(HttpStatus.GONE, "CURSOR_EXPIRED",
                 "游标之前的事件已过期或被裁剪，无法保证完整回放: after=" + after);
     }
+
+    public static AgentTaskException badRequest(String code, String message) {
+        return new AgentTaskException(HttpStatus.BAD_REQUEST, code, message);
+    }
+
+    public static AgentTaskException forbiddenConversation() {
+        return new AgentTaskException(HttpStatus.FORBIDDEN, "CONVERSATION_FORBIDDEN",
+                "会话不存在或无权访问");
+    }
+
+    public static AgentTaskException conversationNotFound() {
+        return new AgentTaskException(HttpStatus.NOT_FOUND, "CONVERSATION_NOT_FOUND",
+                "会话不存在或已删除");
+    }
+
+    /**
+     * 同一 conversation_uuid 被新的 draft 复用（明确要新建对话，却复用了旧 UUID）。
+     */
+    public static AgentTaskException conversationDraftConflict(String message) {
+        return new AgentTaskException(HttpStatus.CONFLICT, "CONVERSATION_DRAFT_CONFLICT", message);
+    }
+
+    /**
+     * 同一 draft_id 被绑定到不同的 conversation_uuid（draft ↔ conversation 必须一对一）。
+     */
+    public static AgentTaskException draftConversationConflict(String message) {
+        return new AgentTaskException(HttpStatus.CONFLICT, "DRAFT_CONVERSATION_CONFLICT", message);
+    }
+
+    /**
+     * 同一 requestId 携带了不同的 draftId：拒绝，而不是悄悄返回旧会话/旧任务。
+     */
+    public static AgentTaskException requestDraftConflict(String message) {
+        return new AgentTaskException(HttpStatus.CONFLICT, "REQUEST_DRAFT_CONFLICT", message);
+    }
+
+    /**
+     * 同一 conversation_uuid + message_uuid 重复，但消息内容不一致。
+     */
+    public static AgentTaskException messageContentConflict(String message) {
+        return new AgentTaskException(HttpStatus.CONFLICT, "MESSAGE_CONTENT_CONFLICT", message);
+    }
+
+    /**
+     * 同一 message_uuid 已存在但不是用户消息（例如撞上了 assistant 消息的 UUID）。
+     */
+    public static AgentTaskException messageUuidConflict(String message) {
+        return new AgentTaskException(HttpStatus.CONFLICT, "MESSAGE_UUID_CONFLICT", message);
+    }
+
+    /**
+     * 草稿绑定在并发窗口内无法判定（唯一键冲突后仍读不到对方行），让客户端重试一次。
+     */
+    public static AgentTaskException draftBindingConflict(String message) {
+        return new AgentTaskException(HttpStatus.CONFLICT, "DRAFT_BINDING_CONFLICT", message);
+    }
 }

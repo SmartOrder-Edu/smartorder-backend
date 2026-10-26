@@ -42,6 +42,31 @@ public interface ConversationMessageMapper extends BaseMapper<ConversationMessag
         """)
     List<ConversationMessage> selectByTaskId(@Param("taskId") String taskId);
 
+    /**
+     * 消息幂等查询：conversation_uuid + message_uuid（= conversation_message.public_id）。
+     * <p>唯一键 {@code uk_conv_message_uuid} 是并发重试的最终防线，这里是快速路径。</p>
+     */
+    @Select("""
+        SELECT * FROM conversation_message
+        WHERE conversation_id = #{conversationUuid}
+          AND public_id = #{messageUuid}
+          AND is_deleted = 0
+        LIMIT 1
+        """)
+    ConversationMessage selectByMessageUuid(@Param("conversationUuid") String conversationUuid,
+                                            @Param("messageUuid") String messageUuid);
+
+    /**
+     * 同一任务的 assistant 占位/回复行（重试时回填已有的 assistant 消息 ID）。
+     */
+    @Select("""
+        SELECT * FROM conversation_message
+        WHERE task_id = #{taskId} AND role = 'assistant' AND is_deleted = 0
+        ORDER BY sequence_no ASC
+        LIMIT 1
+        """)
+    ConversationMessage selectAssistantByTaskId(@Param("taskId") String taskId);
+
     @Select("""
         SELECT COUNT(*) FROM conversation_message
         WHERE task_id = #{taskId}
@@ -86,6 +111,7 @@ public interface ConversationMessageMapper extends BaseMapper<ConversationMessag
     @Select("""
         SELECT
             cm.conversation_id AS conversationId,
+            cm.conversation_id AS conversationUuid,
             COALESCE(
                 cs.title,
                 LEFT((SELECT m.content FROM conversation_message m WHERE m.conversation_id = cm.conversation_id AND m.role = 'user' AND m.is_deleted = 0 ORDER BY m.create_time ASC LIMIT 1), 50)

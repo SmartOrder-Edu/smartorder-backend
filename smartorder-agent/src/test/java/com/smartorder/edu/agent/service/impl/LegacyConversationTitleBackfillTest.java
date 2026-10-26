@@ -190,14 +190,14 @@ class LegacyConversationTitleBackfillTest {
             try (Statement st = conn.createStatement()) {
                 // 备份只做一次：重复执行时保留第一次的原始值，别把备份覆盖成"已改过的值"
                 st.executeUpdate("CREATE TABLE IF NOT EXISTS `" + backupTable + "` AS "
-                        + "SELECT public_id, title, title_source, NOW() AS backup_at FROM conversation");
+                        + "SELECT conversation_uuid, title, title_source, NOW() AS backup_at FROM conversation");
                 System.out.printf(Locale.ROOT, "[Backfill] 备份表: %s%n", backupTable);
             }
 
             int updated = 0;
             try (PreparedStatement ps = conn.prepareStatement(
                     "UPDATE conversation SET title = ?, title_source = ? "
-                            + "WHERE public_id = ? AND title_source IN ('AUTO','LLM')")) {
+                            + "WHERE conversation_uuid = ? AND title_source IN ('AUTO','LLM')")) {
                 for (Result r : changes) {
                     ps.setString(1, r.newTitle());
                     // 兜底标题不是模型产物，来源仍记 AUTO，语义上才不会被误当成"模型总结"
@@ -219,7 +219,7 @@ class LegacyConversationTitleBackfillTest {
                 }
             }
             System.out.printf(Locale.ROOT,
-                    "[Backfill] 回滚（如需）: UPDATE conversation c JOIN `%s` b ON b.public_id = c.public_id "
+                    "[Backfill] 回滚（如需）: UPDATE conversation c JOIN `%s` b ON b.conversation_uuid = c.conversation_uuid "
                             + "SET c.title = b.title, c.title_source = b.title_source;%n", backupTable);
         }
     }
@@ -232,7 +232,7 @@ class LegacyConversationTitleBackfillTest {
         List<Plan> list = new ArrayList<>();
 
         String sql = """
-                SELECT public_id, title, title_source
+                SELECT conversation_uuid, title, title_source
                 FROM conversation
                 WHERE status = 'ACTIVE' AND title_source IN ('AUTO', 'LLM')
                 ORDER BY id
@@ -506,7 +506,7 @@ class LegacyConversationTitleBackfillTest {
         sb.append("2. 想直接写库：重跑并加 `-Dsmartorder.backfill.apply=true`（会自动建备份表）；\n");
         sb.append("3. 想手工执行：`update-conversation-title.sql` 里是等价的 UPDATE 语句，")
                 .append("只覆盖 `title_source IN ('AUTO','LLM')`；\n");
-        sb.append("4. 回滚：从 `conversation_title_bak_yyyyMMdd` 备份表按 `public_id` 恢复。\n");
+        sb.append("4. 回滚：从 `conversation_title_bak_yyyyMMdd` 备份表按 `conversation_uuid` 恢复。\n");
         return sb.toString();
     }
 
@@ -543,7 +543,7 @@ class LegacyConversationTitleBackfillTest {
             sb.append("-- 旧: ").append(oneLine(r.oldTitle())).append('\n');
             sb.append("UPDATE `conversation` SET `title` = '").append(sql(r.newTitle()))
                     .append("', `title_source` = '").append(source).append('\'')
-                    .append(" WHERE `public_id` = '").append(sql(r.publicId())).append('\'')
+                    .append(" WHERE `conversation_uuid` = '").append(sql(r.publicId())).append('\'')
                     .append(" AND `title_source` IN ('AUTO','LLM');\n\n");
         }
         return sb.toString();

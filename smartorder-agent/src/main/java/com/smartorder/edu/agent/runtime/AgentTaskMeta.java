@@ -23,8 +23,11 @@ public class AgentTaskMeta {
 
     private String taskId;
 
-    /** 会话 public_id；新会话在 openReply 之后才能确定，因此允许为空 */
+    /** 会话 conversation_uuid；新会话在 openReply 之后才能确定，因此允许为空 */
     private String conversationId;
+
+    /** 客户端草稿ID；同一 requestId 只允许绑定同一个 draftId */
+    private String draftId;
 
     /** 归属用户——订阅/查询/取消都必须校验，不能把 taskId 当授权凭证 */
     private Long userId;

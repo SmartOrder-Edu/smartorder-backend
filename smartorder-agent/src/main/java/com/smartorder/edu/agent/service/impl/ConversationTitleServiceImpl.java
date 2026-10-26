@@ -75,7 +75,7 @@ public class ConversationTitleServiceImpl implements ConversationTitleService {
      *
      * <p>调用方无需处理异常，本方法内部吞掉所有异常并保留兜底标题。</p>
      *
-     * @param conversationId 会话 public_id
+     * @param conversationId 会话 conversation_uuid
      * @param userMessage    用户首条消息原文（内部会清洗注入块）
      * @param emitter        当前 SSE 连接，可为 null（非流式入口）
      * @param context        本轮运行上下文，仅用于读取 traceId/userId 与分配事件序号

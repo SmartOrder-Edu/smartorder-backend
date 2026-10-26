@@ -15,8 +15,10 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ConversationVO {
-    /** 对外会话ID（= conversation.public_id = 原 conversation_id） */
+    /** 对外会话ID（兼容旧前端的字段名，值等于 conversation_uuid） */
     private String conversationId;
+    /** 对外会话ID（= conversation.conversation_uuid） */
+    private String conversationUuid;
     private String title;
     /** 最后一条消息摘要（列表副标题） */
     private String lastMessage;

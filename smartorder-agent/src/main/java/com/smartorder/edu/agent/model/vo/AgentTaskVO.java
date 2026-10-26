@@ -45,7 +45,7 @@ public class AgentTaskVO {
     /** 见 {@link AgentTaskStatus} */
     private String status;
 
-    /** 创建接口：true 表示本次新建；false 表示命中幂等键、复用已有任务 */
+    /** 创建接口：true 表示本次新建；false 表示命中 requestId 或 (conversationUuid, messageUuid) 幂等 */
     private boolean created;
 
     /** 已产生事件的最大 seq，客户端断线重连时用它作为 after 游标 */
@@ -57,6 +57,14 @@ public class AgentTaskVO {
     private boolean replayable;
 
     private long createdAt;
+
+    /**
+     * 对外会话 UUID 的语义化别名，值等于 {@link #conversationId}。
+     * 新前端优先读 conversationUuid；旧前端继续读 conversationId。
+     */
+    public String getConversationUuid() {
+        return conversationId;
+    }
 
     /**
      * 兼容旧客户端的只读别名（旧路径 /agent/generations 仍可读取）。

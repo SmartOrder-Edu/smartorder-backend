@@ -19,6 +19,7 @@ import com.smartorder.edu.agent.runtime.store.AgentTaskEventStore;
 import com.smartorder.edu.agent.runtime.store.InMemoryAgentTaskEventStore;
 import com.smartorder.edu.agent.service.AgentChatService;
 import com.smartorder.edu.agent.service.AgentOrchestrator;
+import com.smartorder.edu.agent.service.ConversationDraftService;
 import com.smartorder.edu.agent.service.ConversationMessageService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,8 @@ import static org.mockito.Mockito.when;
  */
 class AgentChatServiceImplTest {
 
+    private static final String CID = "11111111-1111-4111-8111-111111111111";
+
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     @AfterEach
@@ -62,14 +65,17 @@ class AgentChatServiceImplTest {
         AgentTaskRegistry manager = newManager(store);
         AgentOrchestrator orchestrator = mock(AgentOrchestrator.class);
         ConversationMessageService messageService = mock(ConversationMessageService.class);
-        when(messageService.openReply(any(), any(), any(), any(), any(), any())).thenReturn(turnState());
-        AgentChatService service = new AgentChatServiceImpl(manager, orchestrator, messageService, executor);
+        when(messageService.openReply(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(turnState());
+        ConversationDraftService draftService = mock(ConversationDraftService.class);
+        AgentChatService service = new AgentChatServiceImpl(
+                manager, orchestrator, messageService, draftService, executor);
 
         AgentTaskVO vo = service.sendMessage(request("你好"), 7L, "key-0");
 
         // 发送响应里必须已经带齐会话与消息 ID，SSE 只负责后续增量
         assertTrue(vo.isCreated());
-        assertEquals("c-1", vo.getConversationId());
+        assertEquals(CID, vo.getConversationId());
         assertNotNull(vo.getTraceId());
         assertEquals(11L, vo.getUserMessageId());
         assertEquals(12L, vo.getAssistantMessageId());
@@ -80,7 +86,8 @@ class AgentChatServiceImplTest {
         // 编排线程拿到的是同一轮（不会在异步阶段再开一次轮次）
         verify(orchestrator, timeout(2000))
                 .handle(any(), isNull(), eq(vo.getTaskId()), any(AgentTurnContext.class));
-        verify(messageService, timeout(2000)).openReply(any(), eq(7L), eq("你好"), any(), anyString(), anyString());
+        verify(messageService, timeout(2000)).openReply(
+                eq(CID), any(), any(), eq(7L), eq("你好"), any(), anyString(), anyString());
     }
 
     @Test
@@ -89,8 +96,11 @@ class AgentChatServiceImplTest {
         AgentTaskRegistry manager = newManager(store);
         AgentOrchestrator orchestrator = mock(AgentOrchestrator.class);
         ConversationMessageService messageService = mock(ConversationMessageService.class);
-        when(messageService.openReply(any(), any(), any(), any(), any(), any())).thenReturn(turnState());
-        AgentChatService service = new AgentChatServiceImpl(manager, orchestrator, messageService, executor);
+        when(messageService.openReply(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(turnState());
+        ConversationDraftService draftService = mock(ConversationDraftService.class);
+        AgentChatService service = new AgentChatServiceImpl(
+                manager, orchestrator, messageService, draftService, executor);
 
         AgentTaskVO first = service.sendMessage(request("你好"), 7L, "key-1");
         AgentTaskVO second = service.sendMessage(request("你好"), 7L, "key-1");
@@ -98,13 +108,14 @@ class AgentChatServiceImplTest {
         assertTrue(first.isCreated());
         assertFalse(second.isCreated());
         assertEquals(first.getTaskId(), second.getTaskId());
-        assertEquals("c-1", second.getConversationId());
+        assertEquals(CID, second.getConversationId());
         assertEquals(12L, second.getAssistantMessageId());
 
         // 响应丢失后重试：不重复开轮、不重复执行业务
         verify(orchestrator, timeout(2000).times(1))
                 .handle(any(), isNull(), eq(first.getTaskId()), any(AgentTurnContext.class));
-        verify(messageService, timeout(2000).times(1)).openReply(any(), any(), any(), any(), any(), any());
+        verify(messageService, timeout(2000).times(1)).openReply(
+                any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -113,9 +124,11 @@ class AgentChatServiceImplTest {
         AgentTaskRegistry manager = newManager(store);
         AgentOrchestrator orchestrator = mock(AgentOrchestrator.class);
         ConversationMessageService messageService = mock(ConversationMessageService.class);
-        when(messageService.openReply(any(), any(), any(), any(), any(), any()))
+        when(messageService.openReply(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenThrow(new IllegalStateException("会话已删除或已归档"));
-        AgentChatService service = new AgentChatServiceImpl(manager, orchestrator, messageService, executor);
+        ConversationDraftService draftService = mock(ConversationDraftService.class);
+        AgentChatService service = new AgentChatServiceImpl(
+                manager, orchestrator, messageService, draftService, executor);
 
         AgentTaskException error = assertThrows(AgentTaskException.class,
                 () -> service.sendMessage(request("你好"), 7L, "key-3"));
@@ -131,10 +144,12 @@ class AgentChatServiceImplTest {
         AgentTaskRegistry manager = newManager(store);
         AgentOrchestrator orchestrator = mock(AgentOrchestrator.class);
         ConversationMessageService messageService = mock(ConversationMessageService.class);
-        when(messageService.openReply(any(), any(), any(), any(), any(), any())).thenReturn(turnState());
+        when(messageService.openReply(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(turnState());
         doThrow(new IllegalStateException("编排炸了")).when(orchestrator)
                 .handle(any(), isNull(), anyString(), any());
-        AgentChatService service = new AgentChatServiceImpl(manager, orchestrator, messageService, executor);
+        AgentChatService service = new AgentChatServiceImpl(
+                manager, orchestrator, messageService, mock(ConversationDraftService.class), executor);
 
         AgentTaskVO vo = service.sendMessage(request("你好"), 7L, "key-2");
 
@@ -165,7 +180,8 @@ class AgentChatServiceImplTest {
 
         ExecutorService deferredExecutor = mock(ExecutorService.class);
         AgentChatService service = new AgentChatServiceImpl(
-                manager, mock(AgentOrchestrator.class), mock(ConversationMessageService.class), deferredExecutor);
+                manager, mock(AgentOrchestrator.class), mock(ConversationMessageService.class),
+                mock(ConversationDraftService.class), deferredExecutor);
 
         RecordingSink sink = new RecordingSink();
         AgentTaskSubscriptionPlan plan = service.validateSubscription(
@@ -184,7 +200,7 @@ class AgentChatServiceImplTest {
 
     private AgentTask createTask(AgentTaskRegistry manager, String key) {
         String taskId = java.util.UUID.randomUUID().toString();
-        AgentTaskRegistry.Reservation reservation = manager.reserve(7L, taskId, key, "c-1");
+        AgentTaskRegistry.Reservation reservation = manager.reserve(7L, taskId, key, CID, null);
         return manager.bindTurn(reservation.taskId(), 7L, key,
                 AgentTurnContext.from(turnState(), "t-1"));
     }
@@ -204,10 +220,11 @@ class AgentChatServiceImplTest {
     private ConversationMessageService.PendingReply turnState() {
         return ConversationMessageService.PendingReply.builder()
                 .taskId("task-test")
-                .conversationId("c-1")
+                .conversationId(CID)
                 .conversationPk(1L)
                 .userMessageId(11L)
                 .assistantMessageId(12L)
+                .assistantStatus("RUNNING")
                 .userSequenceNo(1)
                 .assistantSequenceNo(2)
                 .title("测试会话")
@@ -220,7 +237,7 @@ class AgentChatServiceImplTest {
         AgentChatRequest request = new AgentChatRequest();
         request.setUserId(7L);
         request.setMessage(message);
-        request.setConversationId("c-1");
+        request.setConversationUuid(CID);
         return request;
     }
 

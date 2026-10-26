@@ -76,7 +76,8 @@ class AgentOrchestratorImplTest {
                 .title("我准备考研")
                 .created(false)
                 .build();
-        when(messageService.openReply(any(), any(), any(), any(), any(), any())).thenReturn(turnState);
+        when(messageService.openReply(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(turnState);
         when(routeService.route(any(RouteContext.class))).thenReturn(routeResult);
         when(contextService.getRecentChatMessages("conversation-1", 30)).thenReturn(List.of());
         doAnswer(invocation -> {
@@ -94,7 +95,7 @@ class AgentOrchestratorImplTest {
 
         // 事务 A（openReply 落用户消息 + 占位行）必须先于意图路由
         InOrder order = inOrder(messageService, routeService);
-        order.verify(messageService).openReply(eq("conversation-1"), eq(7L),
+        order.verify(messageService).openReply(eq("conversation-1"), any(), any(), eq(7L),
                 eq("我准备考研，但是大二的时候没有怎么学会数据结构"), any(), any(), any());
         order.verify(routeService).route(any(RouteContext.class));
         verify(reActEngine).execute(eq(request), eq(routeResult), any(), eq(emitter));

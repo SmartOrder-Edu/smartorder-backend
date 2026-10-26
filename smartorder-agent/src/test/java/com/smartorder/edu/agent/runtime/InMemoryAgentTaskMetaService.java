@@ -111,6 +111,15 @@ public class InMemoryAgentTaskMetaService extends AgentTaskMetaService {
     }
 
     @Override
+    public synchronized void bindDraftId(String taskId, String draftId) {
+        AgentTaskMeta meta = tasks.get(taskId);
+        if (meta != null && meta.getDraftId() == null) {
+            meta.setDraftId(draftId);
+            meta.setUpdatedAt(System.currentTimeMillis());
+        }
+    }
+
+    @Override
     public synchronized void updateTerminalState(String taskId, AgentTaskStatus status, long lastSeq,
                                                  String errorMessage, Long assistantMessageId,
                                                  boolean replayable) {
@@ -175,6 +184,7 @@ public class InMemoryAgentTaskMetaService extends AgentTaskMetaService {
         return AgentTaskMeta.builder()
                 .taskId(source.getTaskId())
                 .conversationId(source.getConversationId())
+                .draftId(source.getDraftId())
                 .userId(source.getUserId())
                 .traceId(source.getTraceId())
                 .clientRequestId(source.getClientRequestId())

@@ -183,20 +183,18 @@ class ConversationTitleCompressTest {
 
     @Test
     @Order(3)
-    @DisplayName("只有 TitleNormalizer 判为不可用的超长消息才走回退截断")
+    @DisplayName("只有 TitleNormalizer 判为不可用的消息才走回退截断")
     void shouldFallbackOnlyForRejectedMessage() {
         for (TitleResult r : results) {
             String message = r.firstMessage();
-            // 与 TitleNormalizer 内部口径一致：先折叠空白，再判长度
-            String collapsed = message.replaceAll("\\s+", " ").trim();
-            boolean rejected = collapsed.length() > TitleNormalizer.MAX_RAW_OUTPUT_LENGTH
-                    || collapsed.length() < TitleNormalizer.MIN_TITLE_LENGTH;
+            // 与压缩逻辑同口径：normalize 返回 null 才回退（超长、招呼语、解释型输出都会被判废）
+            boolean rejected = TitleNormalizer.normalize(message) == null;
             if (r.compressed().strategy() == Strategy.TRUNCATED) {
                 assertTrue(rejected, "会话 " + r.conversationId()
                         + " 被回退，但 TitleNormalizer 其实可用：" + r.compressed().title());
             } else {
                 assertFalse(rejected, "会话 " + r.conversationId()
-                        + " 未回退，但消息长度 " + message.length() + " 超出 TitleNormalizer 输入上限");
+                        + " 未回退，但 TitleNormalizer 返回了 null：" + message);
             }
         }
 

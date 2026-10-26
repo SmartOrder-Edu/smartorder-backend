@@ -6,7 +6,7 @@
 -- ============================================================
 
 ALTER TABLE `conversation_message`
-  ADD COLUMN `public_id`         VARCHAR(36)  DEFAULT NULL COMMENT '对外消息ID（UUID），前端只认这个' AFTER `trace_id`,
+  ADD COLUMN `public_id`         VARCHAR(36)  DEFAULT NULL COMMENT '对外消息ID（= 前端 message_uuid），幂等键' AFTER `trace_id`,
   ADD COLUMN `sequence_no`       INT          NOT NULL DEFAULT 0 COMMENT '会话内序号，从1开始，由会话行锁分配' AFTER `public_id`,
   ADD COLUMN `status`            VARCHAR(16)  NOT NULL DEFAULT 'COMPLETED' COMMENT 'RUNNING=生成中, COMPLETED=完成, FAILED=失败, CANCELLED=用户中止' AFTER `sequence_no`,
   ADD COLUMN `parent_message_id` BIGINT       DEFAULT NULL COMMENT '父消息：assistant 消息指向触发它的 user 消息' AFTER `status`,
@@ -23,6 +23,8 @@ ALTER TABLE `conversation_message`
 -- 会话内序号唯一：保证 LIMIT/OFFSET 分页稳定，也是并发写入的最终防线
 ALTER TABLE `conversation_message`
   ADD UNIQUE KEY `uk_conv_seq` (`conversation_id`, `sequence_no`),
+  -- 同一会话内 message_uuid 唯一：并发重试的最终防线
+  ADD UNIQUE KEY `uk_conv_message_uuid` (`conversation_id`, `public_id`),
   ADD KEY `idx_conv_status` (`conversation_id`, `status`, `is_visible`),
   ADD KEY `idx_parent` (`parent_message_id`),
   ADD KEY `idx_status_started` (`status`, `started_at`);
