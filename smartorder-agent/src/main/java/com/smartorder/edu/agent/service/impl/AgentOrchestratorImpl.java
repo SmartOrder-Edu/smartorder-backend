@@ -55,7 +55,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
     private final IntentRouteService intentRouteService;
     private final SelfManagedReActEngine reActEngine;
     private final PlanAndExecuteEngine planAndExecuteEngine;
-    private final TraceEventDispatcher dispatcher;
+    private final TraceEventDispatcher dispatcher;// 推送
     private final ConversationContextService contextService;
     private final AgentConversationAttachmentService attachmentService;
     private final ProfileUpdateCoordinator profileUpdateCoordinator;

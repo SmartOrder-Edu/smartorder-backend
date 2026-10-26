@@ -61,6 +61,7 @@ public class AgentChatServiceImpl implements AgentChatService {
     public AgentGenerationVO sendMessage(AgentChatRequest request, Long userId, String clientRequestId) {
         String idempotencyKey = normalize(clientRequestId);
 
+        // 这是用来判断任务是否重复生成，保持幂等性的
         String existingId = manager.findGenerationIdByClientRequest(userId, idempotencyKey);
         if (existingId != null) {
             try {
@@ -158,6 +159,12 @@ public class AgentChatServiceImpl implements AgentChatService {
         );
     }
 
+    /** “发送接口与生成执行”之间的解耦点：Agent 端自动响应消息存储到 Redis
+     *
+     * @param generation 本次生成
+     * @param request    原始请求
+     * @param turn       已落库的本轮消息
+     */
     private void startAsync(AgentGeneration generation, AgentChatRequest request, AgentTurnContext turn) {
         try {
             generationExecutor.execute(() -> {
