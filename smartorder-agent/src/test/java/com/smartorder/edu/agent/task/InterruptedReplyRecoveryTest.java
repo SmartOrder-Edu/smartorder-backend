@@ -3,8 +3,8 @@ package com.smartorder.edu.agent.task;
 import com.alibaba.fastjson.JSON;
 import com.smartorder.edu.agent.mapper.ConversationMessageMapper;
 import com.smartorder.edu.agent.model.entity.ConversationMessage;
-import com.smartorder.edu.agent.repository.AgentTaskEventStore;
-import com.smartorder.edu.agent.repository.AgentTaskRepository;
+import com.smartorder.edu.agent.runtime.store.AgentTaskEventStore;
+import com.smartorder.edu.agent.service.AgentTaskMetaService;
 import com.smartorder.edu.agent.runtime.AgentTask;
 import com.smartorder.edu.agent.runtime.AgentTaskEvent;
 import com.smartorder.edu.agent.runtime.AgentTaskMeta;
@@ -31,20 +31,20 @@ class InterruptedReplyRecoveryTest {
 
     private final ConversationMessageMapper messageMapper = mock(ConversationMessageMapper.class);
 
-    private final AgentTaskRepository taskRepository = mock(AgentTaskRepository.class);
+    private final AgentTaskMetaService taskMetaService = mock(AgentTaskMetaService.class);
 
     private final AgentTaskEventStore eventStore = mock(AgentTaskEventStore.class);
 
     private final AgentTaskRegistry registry = mock(AgentTaskRegistry.class);
 
     private final InterruptedReplyRecovery recovery =
-            new InterruptedReplyRecovery(messageMapper, taskRepository, eventStore, registry);
+            new InterruptedReplyRecovery(messageMapper, taskMetaService, eventStore, registry);
 
     @Test
     void shouldRebuildPartialContentFromArchive() {
         ConversationMessage row = runningRow(1L, "c-1");
         when(messageMapper.selectRunningAssistantMessages()).thenReturn(List.of(row));
-        when(taskRepository.find("task-1")).thenReturn(meta("task-1", 1L, "RUNNING"));
+        when(taskMetaService.find("task-1")).thenReturn(meta("task-1", 1L, "RUNNING"));
         when(eventStore.readAfter("task-1", 0L)).thenReturn(List.of(
                 textEvent(1, "你好"),
                 textEvent(2, "，这是"),
@@ -62,7 +62,7 @@ class InterruptedReplyRecoveryTest {
     void shouldSkipTaskStillRunningInThisJvm() {
         ConversationMessage row = runningRow(1L, "c-1");
         when(messageMapper.selectRunningAssistantMessages()).thenReturn(List.of(row));
-        when(taskRepository.find("task-1")).thenReturn(meta("task-1", 1L, "RUNNING"));
+        when(taskMetaService.find("task-1")).thenReturn(meta("task-1", 1L, "RUNNING"));
         when(registry.getLive("task-1")).thenReturn(mock(AgentTask.class));
 
         recovery.recoverOnStartup();
@@ -85,7 +85,7 @@ class InterruptedReplyRecoveryTest {
     void shouldNotWriteForeignContentWhenTaskPointsToAnotherMessage() {
         ConversationMessage row = runningRow(1L, "c-1");
         when(messageMapper.selectRunningAssistantMessages()).thenReturn(List.of(row));
-        when(taskRepository.find("task-1")).thenReturn(meta("task-1", 2L, "RUNNING"));
+        when(taskMetaService.find("task-1")).thenReturn(meta("task-1", 2L, "RUNNING"));
 
         recovery.recoverOnStartup();
 
@@ -97,7 +97,7 @@ class InterruptedReplyRecoveryTest {
     void shouldCompleteRowWhenTaskAlreadyTerminal() {
         ConversationMessage row = runningRow(1L, "c-1");
         when(messageMapper.selectRunningAssistantMessages()).thenReturn(List.of(row));
-        when(taskRepository.find("task-1")).thenReturn(meta("task-1", 1L, "COMPLETED"));
+        when(taskMetaService.find("task-1")).thenReturn(meta("task-1", 1L, "COMPLETED"));
         when(eventStore.readAfter("task-1", 0L)).thenReturn(List.of(textEvent(1, "完整回答")));
 
         recovery.recoverOnStartup();
@@ -110,7 +110,7 @@ class InterruptedReplyRecoveryTest {
     void shouldIgnoreBrokenEventPayload() {
         ConversationMessage row = runningRow(1L, "c-1");
         when(messageMapper.selectRunningAssistantMessages()).thenReturn(List.of(row));
-        when(taskRepository.find("task-1")).thenReturn(meta("task-1", 1L, "RUNNING"));
+        when(taskMetaService.find("task-1")).thenReturn(meta("task-1", 1L, "RUNNING"));
         when(eventStore.readAfter("task-1", 0L)).thenReturn(List.of(
                 AgentTaskEvent.builder().seq(1).eventName("agent.text.delta").data("not-json").build(),
                 textEvent(2, "还能恢复")));

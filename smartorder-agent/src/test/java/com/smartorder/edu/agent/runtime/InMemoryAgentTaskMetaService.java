@@ -1,7 +1,7 @@
 package com.smartorder.edu.agent.runtime;
 
 import com.smartorder.edu.agent.model.enums.AgentTaskStatus;
-import com.smartorder.edu.agent.repository.AgentTaskRepository;
+import com.smartorder.edu.agent.service.AgentTaskMetaService;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,9 +9,14 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 测试用内存任务仓储：语义与 MySQL 实现保持一致，不依赖数据库。
+ * 测试用内存任务元数据实现：语义与 MySQL 版保持一致，不依赖数据库。
+ *
+ * <p>为什么继承 {@link AgentTaskMetaService}：库访问统一由 Mapper 承担后，
+ * 这里没有接口可实现了。测试关心的是“元数据状态机”本身，所以把涉及
+ * {@code AgentTaskRecordMapper} 的方法整体覆盖成内存 Map 实现，
+ * Mapper 传 null 即可——单测既不启动 Spring，也不需要真的连库。</p>
  */
-public class InMemoryAgentTaskRepository implements AgentTaskRepository {
+public class InMemoryAgentTaskMetaService extends AgentTaskMetaService {
 
     private static final long UNBOUND_STALE_MS = 30_000L;
 
@@ -20,6 +25,10 @@ public class InMemoryAgentTaskRepository implements AgentTaskRepository {
     private final Map<String, String> clientIndex = new ConcurrentHashMap<>();
 
     private final Map<String, String> conversationLatest = new ConcurrentHashMap<>();
+
+    public InMemoryAgentTaskMetaService() {
+        super(null, null);
+    }
 
     @Override
     public synchronized Reservation reserve(AgentTaskMeta candidate) {

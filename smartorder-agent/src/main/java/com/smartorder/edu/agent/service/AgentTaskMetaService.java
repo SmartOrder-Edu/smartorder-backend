@@ -1,37 +1,46 @@
-package com.smartorder.edu.agent.repository.impl;
+package com.smartorder.edu.agent.service;
 
 import com.smartorder.edu.agent.mapper.AgentTaskRecordMapper;
 import com.smartorder.edu.agent.mapper.ConversationMessageMapper;
 import com.smartorder.edu.agent.model.entity.AgentTaskRecord;
 import com.smartorder.edu.agent.model.entity.ConversationMessage;
 import com.smartorder.edu.agent.model.enums.AgentTaskStatus;
-import com.smartorder.edu.agent.repository.AgentTaskRepository;
 import com.smartorder.edu.agent.runtime.AgentTaskMeta;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.stereotype.Repository;
+import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 
 /**
- * 对话任务元数据仓储的 MyBatis 实现——MySQL {@code agent_chat_task} 是任务的权威来源。
+ * 对话任务元数据服务——{@code agent_chat_task} 的唯一读写入口。
  *
- * <p>Redis 只保存事件片段（Stream），不再保存任务状态。查询状态、刷新恢复、
- * 中断收敛都以本仓储为准；只有事件正文的补发需要读 Redis。</p>
+ * <p>MySQL {@code agent_chat_task} 是任务的权威来源；Redis Stream 只保存事件片段。
+ * 查询状态、刷新恢复、幂等重试、中断收敛都走本服务。</p>
+ *
+ * <p><b>为什么是 Service 而不是 Repository</b>：本模块的库访问统一由 MyBatis
+ * {@code @Mapper} 接口定义（{@link AgentTaskRecordMapper}、{@link ConversationMessageMapper}），
+ * 这里只承载“多条 SQL 组成的一个业务动作”——幂等抢占、消息补绑、占位任务清理——
+ * 它们需要事务边界和冲突重试，写不进单条 SQL，也不该塞回 Mapper。</p>
  */
 @Slf4j
-@Repository
+@Service
 @RequiredArgsConstructor
-public class MyBatisAgentTaskRepository implements AgentTaskRepository {
+public class AgentTaskMetaService {
 
     /** 未绑定消息的占位任务超过该时长仍未开始，视为进程在事务 A 之前退出 */
     private static final long UNBOUND_STALE_MS = 30_000L;
 
-    private final AgentTaskRecordMapper mapper;
+    /** 任务行预留结果：created=false 表示命中幂等键，调用方不应再次插入消息。 */
+    public record Reservation(AgentTaskMeta meta, boolean created) {
+    }
+
+    private final AgentTaskRecordMapper taskMapper;
 
     private final ConversationMessageMapper messageMapper;
 
@@ -45,11 +54,10 @@ public class MyBatisAgentTaskRepository implements AgentTaskRepository {
      *   <li>未绑定且已超时：说明上次进程在 openReply 前退出，删掉占位行后重新创建。</li>
      * </ul>
      */
-    @Override
     @Transactional(rollbackFor = Exception.class)
     public Reservation reserve(AgentTaskMeta candidate) {
         try {
-            mapper.insert(toRecord(candidate));
+            taskMapper.insert(toRecord(candidate));
             return new Reservation(candidate, true);
         } catch (DuplicateKeyException duplicate) {
             AgentTaskMeta existing = findByClientRequest(candidate.getUserId(), candidate.getClientRequestId());
@@ -66,14 +74,14 @@ public class MyBatisAgentTaskRepository implements AgentTaskRepository {
             // 残留占位：如果 openReply 已经落库但 bindTurn 没跑完，消息行还在，
             // 不能删任务重建（会插出第二对消息）；先把已有消息重新绑回任务行。
             if (rebindMessages(existing)) {
-                AgentTaskMeta rebound = toMeta(mapper.selectByTaskId(existing.getTaskId()));
+                AgentTaskMeta rebound = toMeta(taskMapper.selectByTaskId(existing.getTaskId()));
                 return new Reservation(rebound != null ? rebound : existing, false);
             }
             // 没有消息残留：复用原 taskId，先删后插，保证同一幂等键仍只有一个任务。
-            mapper.deleteUnbound(existing.getTaskId());
+            taskMapper.deleteUnbound(existing.getTaskId());
             candidate.setTaskId(existing.getTaskId());
             try {
-                mapper.insert(toRecord(candidate));
+                taskMapper.insert(toRecord(candidate));
                 return new Reservation(candidate, true);
             } catch (DuplicateKeyException retryConflict) {
                 AgentTaskMeta latest = findByClientRequest(candidate.getUserId(), candidate.getClientRequestId());
@@ -82,59 +90,52 @@ public class MyBatisAgentTaskRepository implements AgentTaskRepository {
         }
     }
 
-    @Override
     public AgentTaskMeta find(String taskId) {
         if (taskId == null || taskId.isBlank()) {
             return null;
         }
-        return toMeta(mapper.selectByTaskId(taskId));
+        return toMeta(taskMapper.selectByTaskId(taskId));
     }
 
-    @Override
     public AgentTaskMeta findByClientRequest(Long userId, String clientRequestId) {
         if (userId == null || clientRequestId == null || clientRequestId.isBlank()) {
             return null;
         }
-        return toMeta(mapper.selectByClientRequest(userId, clientRequestId));
+        return toMeta(taskMapper.selectByClientRequest(userId, clientRequestId));
     }
 
-    @Override
     public AgentTaskMeta findLatestByConversation(String conversationId) {
         if (conversationId == null || conversationId.isBlank()) {
             return null;
         }
-        return toMeta(mapper.selectLatestByConversation(conversationId));
+        return toMeta(taskMapper.selectLatestByConversation(conversationId));
     }
 
     /**
      * 事务 A 完成后回填会话与消息 ID。
      */
-    @Override
     public void bindTurn(String taskId, String conversationId, String traceId,
                          Long userMessageId, Long assistantMessageId,
                          Integer assistantSequenceNo, String title) {
-        mapper.bindTurn(taskId, conversationId, traceId, userMessageId,
+        taskMapper.bindTurn(taskId, conversationId, traceId, userMessageId,
                 assistantMessageId, assistantSequenceNo, title);
     }
 
-    @Override
     public void markRunning(String taskId) {
-        mapper.markRunning(taskId);
+        taskMapper.markRunning(taskId);
     }
 
-    @Override
     public void updateTerminalState(String taskId, AgentTaskStatus status, long lastSeq,
                                     String errorMessage, Long assistantMessageId, boolean replayable) {
-        mapper.updateTerminalState(taskId, status.name(), lastSeq, errorMessage,
+        taskMapper.updateTerminalState(taskId, status.name(), lastSeq, errorMessage,
                 assistantMessageId, replayable);
     }
 
-    @Override
     public void markReplayDegraded(String taskId) {
         try {
-            mapper.markReplayDegraded(taskId);
+            taskMapper.markReplayDegraded(taskId);
         } catch (Exception e) {
-            log.warn("[TaskRepository] 回放降级标记写入失败: taskId={}, reason={}", taskId, e.getMessage());
+            log.warn("[TaskMeta] 回放降级标记写入失败: taskId={}, reason={}", taskId, e.getMessage());
         }
     }
 
@@ -142,14 +143,21 @@ public class MyBatisAgentTaskRepository implements AgentTaskRepository {
      * 删除还没有绑定消息的占位任务（事务 A 失败或进程在 openReply 前退出）。
      * 如果 openReply 已落库但 bindTurn 没跑完，则先把消息重新绑回任务行，绝不删除。
      */
-    @Override
     @Transactional(rollbackFor = Exception.class)
     public void discardUnbound(String taskId) {
         AgentTaskMeta existing = find(taskId);
         if (existing != null && rebindMessages(existing)) {
             return;
         }
-        mapper.deleteUnbound(taskId);
+        taskMapper.deleteUnbound(taskId);
+    }
+
+    /**
+     * 进程在 openReply 之前退出留下的未绑定任务；定时清扫使用。
+     */
+    public List<AgentTaskMeta> findStaleReservations() {
+        LocalDateTime threshold = LocalDateTime.now().minusSeconds(UNBOUND_STALE_MS / 1000);
+        return taskMapper.selectStaleReservations(threshold).stream().map(this::toMeta).toList();
     }
 
     /**
@@ -168,22 +176,13 @@ public class MyBatisAgentTaskRepository implements AgentTaskRepository {
                 .filter(message -> "user".equals(message.getRole()))
                 .findFirst()
                 .orElse(null);
-        mapper.bindTurn(existing.getTaskId(), assistant.getConversationId(),
+        taskMapper.bindTurn(existing.getTaskId(), assistant.getConversationId(),
                 existing.getTraceId() != null ? existing.getTraceId() : assistant.getTraceId(),
                 user != null ? user.getId() : null,
                 assistant.getId(), assistant.getSequenceNo(), existing.getTitle());
-        log.info("[TaskRepository] 重新绑定已落库消息: taskId={}, assistantMsgId={}",
+        log.info("[TaskMeta] 重新绑定已落库消息: taskId={}, assistantMsgId={}",
                 existing.getTaskId(), assistant.getId());
         return true;
-    }
-
-    /**
-     * 进程在 openReply 之前退出留下的未绑定任务；定时清扫使用。
-     */
-    @Override
-    public List<AgentTaskMeta> findStaleReservations() {
-        LocalDateTime threshold = LocalDateTime.now().minusSeconds(UNBOUND_STALE_MS / 1000);
-        return mapper.selectStaleReservations(threshold).stream().map(this::toMeta).toList();
     }
 
     private AgentTaskRecord toRecord(AgentTaskMeta meta) {
@@ -237,6 +236,6 @@ public class MyBatisAgentTaskRepository implements AgentTaskRepository {
     }
 
     private LocalDateTime toLocalDateTime(long epochMillis) {
-        return LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(epochMillis), ZoneId.systemDefault());
+        return LocalDateTime.ofInstant(Instant.ofEpochMilli(epochMillis), ZoneId.systemDefault());
     }
 }

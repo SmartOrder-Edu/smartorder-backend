@@ -1,7 +1,5 @@
-package com.smartorder.edu.agent.repository;
+package com.smartorder.edu.agent.runtime.store;
 
-import com.smartorder.edu.agent.repository.impl.InMemoryAgentTaskEventStore;
-import com.smartorder.edu.agent.repository.impl.RedisAgentTaskEventStore;
 import com.smartorder.edu.agent.runtime.AgentTask;
 import com.smartorder.edu.agent.runtime.AgentTaskEvent;
 

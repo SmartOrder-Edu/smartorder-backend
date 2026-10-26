@@ -61,9 +61,11 @@ public class AgentChatServiceImpl implements AgentChatService {
      */
     @Override
     public AgentTaskVO sendMessage(AgentChatRequest request, Long userId, String clientRequestId) {
+        // 入口兜底：空消息不占任务行、不写库，直接 400
         if (request.getMessage() == null || request.getMessage().isBlank()) {
             throw new AgentTaskException(HttpStatus.BAD_REQUEST, "EMPTY_MESSAGE", "消息不能为空");
         }
+        // 空白串归一成 null，避免 " " 和 "" 各占一个幂等键
         String idempotencyKey = normalize(clientRequestId);
 
         // 事务 A 之前先抢 MySQL 任务行：唯一键 (user_id, client_request_id) 是幂等的最终防线。
@@ -71,6 +73,7 @@ public class AgentChatServiceImpl implements AgentChatService {
         AgentTaskRegistry.Reservation reservation = registry.reserve(
                 userId, taskId, idempotencyKey, request.getConversationId());
         if (!reservation.created()) {
+            // 幂等命中：本次未新建任务，直接回放首次创建时的快照（created=false 告知调用方）
             AgentTaskVO existing = registry.status(reservation.taskId(), userId);
             existing.setCreated(false);
             log.info("[Task] 命中幂等键，复用已有任务: taskId={}, userId={}, key={}",
@@ -78,9 +81,11 @@ public class AgentChatServiceImpl implements AgentChatService {
             return existing;
         }
 
+        // 一次发送一个 traceId，串起消息行、事件与日志，便于按链路排查
         String traceId = UUID.randomUUID().toString();
         AgentTurnContext turn;
         try {
+            // 事务 A：校验/新建会话、写用户消息、写 assistant 占位行（同一事务）
             ConversationMessageService.PendingReply state = conversationMessageService.openReply(
                     request.getConversationId(), userId, request.getMessage(),
                     request.getFileIds(), traceId, reservation.taskId());
@@ -93,11 +98,15 @@ public class AgentChatServiceImpl implements AgentChatService {
             throw new AgentTaskException(HttpStatus.BAD_REQUEST, "TURN_OPEN_FAILED",
                     e.getMessage() != null ? e.getMessage() : "会话不可用");
         }
+        // 新建会话时 conversationId 由服务端生成，回填后编排层与返回结果才是同一个 id
         request.setConversationId(turn.getConversationId());
 
+        // 绑定本轮消息：此后任务才可被 status / activeTask / 订阅找到
         AgentTask task = registry.bindTurn(reservation.taskId(), userId, idempotencyKey, turn);
         startAsync(task, request, turn);
 
+        // 返回可定位的一切句柄：即使一次 SSE 都没连上，前端也能凭 taskId 重订阅、凭 messageId 渲染
+        // lastSeq=0 + replayable=true：告知前端从 afterSeq=0 订阅即可拿到完整回放
         return AgentTaskVO.builder()
                 .taskId(task.getTaskId())
                 .conversationId(turn.getConversationId())
@@ -117,6 +126,8 @@ public class AgentChatServiceImpl implements AgentChatService {
     /**
      * 同步校验订阅：鉴权、游标、可回放性。不向连接写任何字节，失败时抛
      * {@link AgentTaskException}，控制器可在响应提交前返回 403/404/410。
+     *
+     * @param afterSeq 客户端已收到的最大事件序号，回放从 afterSeq+1 开始；0 表示从头
      */
     @Override
     public AgentTaskSubscriptionPlan validateSubscription(String taskId, Long userId,
@@ -144,16 +155,27 @@ public class AgentChatServiceImpl implements AgentChatService {
         });
     }
 
+    /**
+     * 任务快照：状态 + 游标 + 消息 id，用于断线后轮询兜底与刷新页面恢复 UI。
+     */
     @Override
     public AgentTaskVO status(String taskId, Long userId) {
         return registry.status(taskId, userId);
     }
 
+    /**
+     * 查会话内仍在跑的任务，前端重进会话时据此续订而不是重新发送。
+     */
     @Override
     public AgentTaskVO activeTask(String conversationId, Long userId) {
         return registry.activeTask(conversationId, userId);
     }
 
+    /**
+     * 请求取消：只置协作式标记位，由生成线程在下一个检查点自行退出，不强杀线程。
+     *
+     * @return cancelAccepted=false 表示任务已终态或已不在本机，前端按“已完成”处理即可
+     */
     @Override
     public Map<String, Object> cancel(String taskId, Long userId) {
         boolean accepted = registry.cancel(taskId, userId);
@@ -186,11 +208,15 @@ public class AgentChatServiceImpl implements AgentChatService {
                 }
             });
         } catch (RejectedExecutionException e) {
+            // 线程池满也要把任务收敛到失败态，否则任务停在 CREATED，前端会一直等
             log.error("[Task] 线程池拒绝任务: taskId={}", task.getTaskId(), e);
             registry.fail(task.getTaskId(), "系统繁忙，任务未能启动，请稍后重试");
         }
     }
 
+    /**
+     * 幂等键归一：去空白，空串视为未传（唯一索引允许多个 NULL，不会互相判重）。
+     */
     private String normalize(String clientRequestId) {
         if (clientRequestId == null) {
             return null;

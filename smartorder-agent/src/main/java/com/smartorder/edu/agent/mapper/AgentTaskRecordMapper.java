@@ -15,7 +15,7 @@ import java.util.List;
  * 对话任务表 CRUD。
  *
  * <p>这里只做表操作；任务运行时状态、Redis Stream 回放等逻辑在
- * {@code AgentTaskRegistry} / {@code AgentTaskRepository} 中。</p>
+ * {@code AgentTaskRegistry} / {@code AgentTaskMetaService} 中。</p>
  */
 @Mapper
 public interface AgentTaskRecordMapper extends BaseMapper<AgentTaskRecord> {

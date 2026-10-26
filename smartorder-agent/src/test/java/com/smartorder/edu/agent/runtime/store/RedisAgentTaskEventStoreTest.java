@@ -1,4 +1,4 @@
-package com.smartorder.edu.agent.repository.impl;
+package com.smartorder.edu.agent.runtime.store;
 
 import com.smartorder.edu.agent.config.AgentSseProperties;
 import com.smartorder.edu.agent.runtime.AgentTaskEvent;

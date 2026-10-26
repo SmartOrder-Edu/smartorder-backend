@@ -8,15 +8,15 @@ import com.smartorder.edu.agent.model.dto.AgentTurnContext;
 import com.smartorder.edu.agent.model.enums.AgentEventType;
 import com.smartorder.edu.agent.model.enums.AgentTaskStatus;
 import com.smartorder.edu.agent.model.vo.AgentTaskVO;
-import com.smartorder.edu.agent.repository.AgentTaskEventStore;
-import com.smartorder.edu.agent.repository.impl.InMemoryAgentTaskEventStore;
 import com.smartorder.edu.agent.runtime.AgentTask;
 import com.smartorder.edu.agent.runtime.AgentTaskEvent;
 import com.smartorder.edu.agent.runtime.AgentTaskEventMirror;
 import com.smartorder.edu.agent.runtime.AgentTaskRegistry;
-import com.smartorder.edu.agent.runtime.InMemoryAgentTaskRepository;
+import com.smartorder.edu.agent.runtime.InMemoryAgentTaskMetaService;
 import com.smartorder.edu.agent.runtime.AgentTaskSubscriptionPlan;
 import com.smartorder.edu.agent.runtime.RecordingSink;
+import com.smartorder.edu.agent.runtime.store.AgentTaskEventStore;
+import com.smartorder.edu.agent.runtime.store.InMemoryAgentTaskEventStore;
 import com.smartorder.edu.agent.service.AgentChatService;
 import com.smartorder.edu.agent.service.AgentOrchestrator;
 import com.smartorder.edu.agent.service.ConversationMessageService;
@@ -225,7 +225,7 @@ class AgentChatServiceImplTest {
     }
 
     private AgentTaskRegistry newManager(AgentTaskEventStore store) {
-        InMemoryAgentTaskRepository tasks = new InMemoryAgentTaskRepository();
+        InMemoryAgentTaskMetaService tasks = new InMemoryAgentTaskMetaService();
         AgentTaskEventMirror mirror = new AgentTaskEventMirror(store, tasks) {
             @Override
             public void append(String taskId, AgentTaskEvent event) {

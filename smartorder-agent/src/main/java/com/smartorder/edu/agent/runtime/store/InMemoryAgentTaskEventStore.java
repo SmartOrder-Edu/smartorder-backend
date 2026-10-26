@@ -1,6 +1,5 @@
-package com.smartorder.edu.agent.repository.impl;
+package com.smartorder.edu.agent.runtime.store;
 
-import com.smartorder.edu.agent.repository.AgentTaskEventStore;
 import com.smartorder.edu.agent.runtime.AgentTaskEvent;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;

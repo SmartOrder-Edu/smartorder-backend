@@ -7,8 +7,8 @@ import com.smartorder.edu.agent.model.dto.AgentTurnContext;
 import com.smartorder.edu.agent.model.enums.AgentEventType;
 import com.smartorder.edu.agent.model.enums.AgentTaskStatus;
 import com.smartorder.edu.agent.model.vo.AgentTaskVO;
-import com.smartorder.edu.agent.repository.AgentTaskEventStore;
-import com.smartorder.edu.agent.repository.impl.InMemoryAgentTaskEventStore;
+import com.smartorder.edu.agent.runtime.store.AgentTaskEventStore;
+import com.smartorder.edu.agent.runtime.store.InMemoryAgentTaskEventStore;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -292,7 +292,7 @@ class AgentTaskRegistryTest {
 
         private final AgentTaskEventStore store = new InMemoryAgentTaskEventStore();
 
-        private final InMemoryAgentTaskRepository tasks = new InMemoryAgentTaskRepository();
+        private final InMemoryAgentTaskMetaService tasks = new InMemoryAgentTaskMetaService();
 
         private final AgentTaskRegistry registry = newManager(store, tasks);
 
@@ -330,7 +330,7 @@ class AgentTaskRegistryTest {
                     .build();
         }
 
-        private static AgentTaskRegistry newManager(AgentTaskEventStore store, InMemoryAgentTaskRepository tasks) {
+        private static AgentTaskRegistry newManager(AgentTaskEventStore store, InMemoryAgentTaskMetaService tasks) {
             // 同步镜像：测试里不启线程，直接写存储，等价于“归档一直成功”
             AgentTaskEventMirror mirror = new AgentTaskEventMirror(store, tasks) {
                 @Override

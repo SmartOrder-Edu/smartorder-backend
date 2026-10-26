@@ -6,8 +6,8 @@ import com.smartorder.edu.agent.mapper.ConversationMessageMapper;
 import com.smartorder.edu.agent.model.entity.ConversationMessage;
 import com.smartorder.edu.agent.model.enums.AgentEventType;
 import com.smartorder.edu.agent.model.enums.AgentTaskStatus;
-import com.smartorder.edu.agent.repository.AgentTaskEventStore;
-import com.smartorder.edu.agent.repository.AgentTaskRepository;
+import com.smartorder.edu.agent.runtime.store.AgentTaskEventStore;
+import com.smartorder.edu.agent.service.AgentTaskMetaService;
 import com.smartorder.edu.agent.runtime.AgentTaskEvent;
 import com.smartorder.edu.agent.runtime.AgentTaskMeta;
 import com.smartorder.edu.agent.runtime.AgentTaskRegistry;
@@ -55,7 +55,7 @@ public class InterruptedReplyRecovery {
 
     private final ConversationMessageMapper messageMapper;
 
-    private final AgentTaskRepository taskRepository;
+    private final AgentTaskMetaService taskMetaService;
 
     private final AgentTaskEventStore eventStore;
 
@@ -123,7 +123,7 @@ public class InterruptedReplyRecovery {
         if (meta != null && meta.statusEnum() == AgentTaskStatus.COMPLETED && hasContent) {
             // 极端窗口：任务已终态但占位行没来得及收尾（例如 completeReply 抛异常）
             messageMapper.markRecoveredCompleted(row.getId(), content);
-            taskRepository.updateTerminalState(meta.getTaskId(), AgentTaskStatus.COMPLETED,
+            taskMetaService.updateTerminalState(meta.getTaskId(), AgentTaskStatus.COMPLETED,
                     lastSeq(meta.getTaskId()), null, row.getId(), meta.isReplayable());
             log.info("[ReplyRecovery] 任务已终态，补写完成: messageId={}, taskId={}",
                     row.getId(), meta.getTaskId());
@@ -134,7 +134,7 @@ public class InterruptedReplyRecovery {
                 hasContent ? MESSAGE_WITH_CONTENT : MESSAGE_EMPTY);
         if (meta != null) {
             // 消息行和任务行一起收敛；否则 activeTask 会一直返回一个永远 RUNNING 的任务。
-            taskRepository.updateTerminalState(meta.getTaskId(), AgentTaskStatus.INTERRUPTED,
+            taskMetaService.updateTerminalState(meta.getTaskId(), AgentTaskStatus.INTERRUPTED,
                     lastSeq(meta.getTaskId()), hasContent ? MESSAGE_WITH_CONTENT : MESSAGE_EMPTY,
                     row.getId(), meta.isReplayable());
         }
@@ -157,7 +157,7 @@ public class InterruptedReplyRecovery {
         }
         AgentTaskMeta meta;
         try {
-            meta = taskRepository.find(row.getTaskId());
+            meta = taskMetaService.find(row.getTaskId());
         } catch (Exception e) {
             log.warn("[ReplyRecovery] 任务元数据读取失败: taskId={}, reason={}",
                     row.getTaskId(), e.getMessage());

@@ -1,7 +1,7 @@
 package com.smartorder.edu.agent.runtime;
 
-import com.smartorder.edu.agent.repository.AgentTaskEventStore;
-import com.smartorder.edu.agent.repository.AgentTaskRepository;
+import com.smartorder.edu.agent.runtime.store.AgentTaskEventStore;
+import com.smartorder.edu.agent.service.AgentTaskMetaService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -40,7 +40,7 @@ public class AgentTaskEventMirror {
 
     private final AgentTaskEventStore store;
 
-    private final AgentTaskRepository taskRepository;
+    private final AgentTaskMetaService taskMetaService;
 
     private final BlockingQueue<Task> queue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
 
@@ -154,10 +154,10 @@ public class AgentTaskEventMirror {
     }
 
     private void markDegraded(String taskId) {
-        if (taskRepository == null || taskId == null) {
+        if (taskMetaService == null || taskId == null) {
             return;
         }
-        taskRepository.markReplayDegraded(taskId);
+        taskMetaService.markReplayDegraded(taskId);
     }
 
     /**

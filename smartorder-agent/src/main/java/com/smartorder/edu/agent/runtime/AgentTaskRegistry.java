@@ -10,8 +10,8 @@ import com.smartorder.edu.agent.model.dto.AgentTurnContext;
 import com.smartorder.edu.agent.model.enums.AgentEventType;
 import com.smartorder.edu.agent.model.enums.AgentTaskStatus;
 import com.smartorder.edu.agent.model.vo.AgentTaskVO;
-import com.smartorder.edu.agent.repository.AgentTaskEventStore;
-import com.smartorder.edu.agent.repository.AgentTaskRepository;
+import com.smartorder.edu.agent.runtime.store.AgentTaskEventStore;
+import com.smartorder.edu.agent.service.AgentTaskMetaService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -56,7 +56,7 @@ public class AgentTaskRegistry {
     /** 任务行已落库但本机运行时对象尚未建立时的宽限期；期间订阅返回 503 让客户端重试 */
     private static final long STARTING_GRACE_MS = 30_000L;
 
-    private final AgentTaskRepository repository;
+    private final AgentTaskMetaService taskMetaService;
 
     private final AgentTaskEventStore store;
 
@@ -122,7 +122,7 @@ public class AgentTaskRegistry {
                 .lastSeq(0L)
                 .replayable(true)
                 .build();
-        AgentTaskRepository.Reservation reservation = repository.reserve(candidate);
+        AgentTaskMetaService.Reservation reservation = taskMetaService.reserve(candidate);
         return new Reservation(reservation.meta().getTaskId(), reservation.created());
     }
 
@@ -139,7 +139,7 @@ public class AgentTaskRegistry {
             task = existing != null ? existing : created;
         }
         task.bindTurn(turn);
-        repository.bindTurn(taskId, turn.getConversationId(), turn.getTraceId(),
+        taskMetaService.bindTurn(taskId, turn.getConversationId(), turn.getTraceId(),
                 turn.getUserMessageId(), turn.getAssistantMessageId(),
                 turn.getAssistantSequenceNo(), turn.getTitle());
         log.info("[Task] 绑定本轮消息: taskId={}, userId={}, cid={}, userMsgId={}, assistantMsgId={}, clientRequestId={}",
@@ -154,7 +154,7 @@ public class AgentTaskRegistry {
     public void discardReservation(String taskId) {
         live.remove(taskId);
         try {
-            repository.discardUnbound(taskId);
+            taskMetaService.discardUnbound(taskId);
         } catch (Exception e) {
             log.warn("[Task] 清理占位任务失败: taskId={}, reason={}", taskId, e.getMessage());
         }
@@ -169,7 +169,7 @@ public class AgentTaskRegistry {
         if (task != null && context != null) {
             task.bindContext(context);
             try {
-                repository.markRunning(taskId);
+                taskMetaService.markRunning(taskId);
             } catch (Exception e) {
                 log.warn("[Task] 运行态回写失败: taskId={}, reason={}", taskId, e.getMessage());
             }
@@ -190,7 +190,7 @@ public class AgentTaskRegistry {
     }
 
     public String findTaskIdByClientRequest(Long userId, String clientRequestId) {
-        AgentTaskMeta meta = repository.findByClientRequest(userId, clientRequestId);
+        AgentTaskMeta meta = taskMetaService.findByClientRequest(userId, clientRequestId);
         return meta == null ? null : meta.getTaskId();
     }
 
@@ -365,7 +365,7 @@ public class AgentTaskRegistry {
         if (conversationId == null || conversationId.isBlank() || userId == null) {
             return null;
         }
-        AgentTaskMeta meta = repository.findLatestByConversation(conversationId);
+        AgentTaskMeta meta = taskMetaService.findLatestByConversation(conversationId);
         if (meta == null) {
             return null;
         }
@@ -413,7 +413,7 @@ public class AgentTaskRegistry {
 
     private void persistTerminalState(AgentTask task, AgentTaskStatus status, String error) {
         try {
-            repository.updateTerminalState(task.getTaskId(), status, task.getLastSeq(),
+            taskMetaService.updateTerminalState(task.getTaskId(), status, task.getLastSeq(),
                     error, task.getAssistantMessageId(), !task.isReplayDegraded());
         } catch (Exception e) {
             log.error("[Task] 终态写入失败: taskId={}, status={}",
@@ -425,7 +425,7 @@ public class AgentTaskRegistry {
         try {
             // 校验与接入之间隔了一次线程调度：重新读元数据，
             // 避免把刚刚完成的任务误标成中断。
-            AgentTaskMeta meta = repository.find(validatedMeta.getTaskId());
+            AgentTaskMeta meta = taskMetaService.find(validatedMeta.getTaskId());
             if (meta == null) {
                 throw AgentTaskException.notFound(validatedMeta.getTaskId());
             }
@@ -506,13 +506,13 @@ public class AgentTaskRegistry {
     private AgentTaskMeta interruptStale(AgentTaskMeta meta) {
         String taskId = meta.getTaskId();
         if (!interrupted.add(taskId)) {
-            AgentTaskMeta latest = repository.find(taskId);
+            AgentTaskMeta latest = taskMetaService.find(taskId);
             return latest != null ? latest : meta;
         }
         try {
             // 异步 attach 与任务线程可能并发：追加前再确认一次，
             // 避免把刚刚完成的任务标成中断，或与 done 事件撞 seq。
-            AgentTaskMeta latest = repository.find(taskId);
+            AgentTaskMeta latest = taskMetaService.find(taskId);
             if (latest != null && latest.statusEnum().isTerminal()) {
                 return latest;
             }
@@ -535,10 +535,10 @@ public class AgentTaskRegistry {
             // done 与在线链路保持一致：扁平结构，不套事件信封
             store.appendEvent(taskId, new AgentTaskEvent(doneSeq, AgentEventNames.DONE,
                     JSON.toJSONString(donePayload), System.currentTimeMillis()));
-            repository.updateTerminalState(taskId, AgentTaskStatus.INTERRUPTED, doneSeq,
+            taskMetaService.updateTerminalState(taskId, AgentTaskStatus.INTERRUPTED, doneSeq,
                     message, meta.getAssistantMessageId(), meta.isReplayable());
             log.warn("[Task] 标记中断: taskId={}, lastSeq={}", taskId, doneSeq);
-            AgentTaskMeta updated = repository.find(taskId);
+            AgentTaskMeta updated = taskMetaService.find(taskId);
             return updated != null ? updated : meta;
         } catch (Exception e) {
             interrupted.remove(taskId);
@@ -565,7 +565,7 @@ public class AgentTaskRegistry {
     private AgentTaskMeta loadMetaOrThrow(String taskId) {
         AgentTaskMeta meta;
         try {
-            meta = repository.find(taskId);
+            meta = taskMetaService.find(taskId);
         } catch (Exception e) {
             throw storeUnavailable(e);
         }
@@ -624,9 +624,9 @@ public class AgentTaskRegistry {
                 interrupted.remove(taskId);
             }
             // 进程在 openReply 之前退出的占位任务：没有消息可恢复，直接删除让重试重新建任务。
-            for (AgentTaskMeta stale : repository.findStaleReservations()) {
+            for (AgentTaskMeta stale : taskMetaService.findStaleReservations()) {
                 if (!live.containsKey(stale.getTaskId())) {
-                    repository.discardUnbound(stale.getTaskId());
+                    taskMetaService.discardUnbound(stale.getTaskId());
                     log.warn("[Task] 清理未开始的占位任务: taskId={}, userId={}",
                             stale.getTaskId(), stale.getUserId());
                 }
