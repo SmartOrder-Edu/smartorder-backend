@@ -1,7 +1,7 @@
 package com.smartorder.edu.agent.rag.health;
 
-import com.smartorder.edu.agent.rag.model.HealthCheckResult;
 import com.smartorder.edu.agent.rag.model.HealthCheckResult.ComponentStatus;
+import com.smartorder.edu.agent.rag.model.HealthCheckResult;
 import com.smartorder.edu.common.rag.vector.CollectionInitService;
 import com.smartorder.edu.common.service.INeo4jKnowledgeGraphService;
 import dev.langchain4j.model.chat.ChatModel;

@@ -2,12 +2,12 @@ package com.smartorder.edu.agent.tool.impl;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import com.smartorder.edu.agent.plan.PlanDraftService;
+import com.smartorder.edu.agent.model.enums.AgentEventType;
+import com.smartorder.edu.agent.service.PlanDraftService;
+import com.smartorder.edu.agent.service.TraceEventDispatcher;
 import com.smartorder.edu.agent.tool.ToolCategory;
 import com.smartorder.edu.agent.tool.ToolHandler;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
-import com.smartorder.edu.agent.trace.AgentEventType;
-import com.smartorder.edu.agent.trace.TraceEventDispatcher;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

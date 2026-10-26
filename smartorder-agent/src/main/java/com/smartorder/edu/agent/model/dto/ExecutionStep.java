@@ -1,5 +1,6 @@
 package com.smartorder.edu.agent.model.dto;
 
+import com.smartorder.edu.agent.service.impl.PlanSchemaValidator;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

@@ -1,30 +1,30 @@
 package com.smartorder.edu.agent.controller;
 
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
-import com.smartorder.edu.agent.stream.AgentChatTaskService;
-import com.smartorder.edu.agent.stream.AgentEventLog;
-import com.smartorder.edu.agent.stream.AgentStreamCursor;
+import com.smartorder.edu.agent.repository.impl.AgentChatEventLog;
+import com.smartorder.edu.agent.service.AgentChatTaskService;
+import com.smartorder.edu.agent.util.AgentStreamCursor;
 import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import io.jsonwebtoken.Claims;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.Executor;
-import java.io.IOException;
 
 /** 新版可恢复聊天接口；POST 唯一创建任务，所有 GET 均为只读。 */
 @RestController
 @RequestMapping("/agent/tasks")
 public class AgentTaskController {
     private final AgentChatTaskService tasks;
-    private final AgentEventLog events;
+    private final AgentChatEventLog events;
     private final Executor streamExecutor;
 
     /** 无效请求游标或幂等键返回 400，避免进入 SSE 静默重试。 */
@@ -34,7 +34,7 @@ public class AgentTaskController {
         return new Result<>(400, error.getMessage(), null);
     }
 
-    public AgentTaskController(AgentChatTaskService tasks, AgentEventLog events,
+    public AgentTaskController(AgentChatTaskService tasks, AgentChatEventLog events,
                                @Qualifier("agentStreamExecutor") Executor streamExecutor) {
         this.tasks = tasks;
         this.events = events;

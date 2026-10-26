@@ -1,6 +1,6 @@
 package com.smartorder.edu.agent.tool;
 
-import com.smartorder.edu.agent.prompt.PromptLoader;
+import com.smartorder.edu.agent.util.PromptLoader;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 

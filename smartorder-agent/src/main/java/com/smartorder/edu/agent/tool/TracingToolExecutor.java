@@ -1,8 +1,8 @@
 package com.smartorder.edu.agent.tool;
 
-import com.smartorder.edu.agent.trace.AgentEventType;
-import com.smartorder.edu.agent.trace.AgentRuntimeContext;
-import com.smartorder.edu.agent.trace.TraceEventDispatcher;
+import com.smartorder.edu.agent.model.dto.AgentRuntimeContext;
+import com.smartorder.edu.agent.model.enums.AgentEventType;
+import com.smartorder.edu.agent.service.TraceEventDispatcher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;

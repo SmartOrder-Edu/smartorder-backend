@@ -1,5 +1,7 @@
 package com.smartorder.edu.agent.config;
 
+import com.smartorder.edu.agent.service.impl.AgentRunSupervisor;
+import com.smartorder.edu.agent.tool.TracingToolExecutor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;

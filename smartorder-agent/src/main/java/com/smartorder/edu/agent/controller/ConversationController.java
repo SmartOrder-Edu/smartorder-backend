@@ -1,10 +1,11 @@
 package com.smartorder.edu.agent.controller;
 
 import com.smartorder.edu.agent.mapper.ConversationMessageMapper;
-import com.smartorder.edu.agent.memory.ConversationMemoryService;
+import com.smartorder.edu.agent.model.entity.Conversation;
 import com.smartorder.edu.agent.model.entity.ConversationMessage;
 import com.smartorder.edu.agent.model.vo.ConversationVO;
 import com.smartorder.edu.agent.model.vo.MessageVO;
+import com.smartorder.edu.agent.service.ConversationMemoryService;
 import com.smartorder.edu.agent.service.ConversationService;
 import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.util.ThreadLocalUtils;

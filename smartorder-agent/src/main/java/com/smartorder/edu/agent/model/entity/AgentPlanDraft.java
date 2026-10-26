@@ -1,5 +1,7 @@
 package com.smartorder.edu.agent.model.entity;
 
+import com.smartorder.edu.agent.model.dto.ExecutionPlan;
+import com.smartorder.edu.agent.model.dto.PlanContext;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 

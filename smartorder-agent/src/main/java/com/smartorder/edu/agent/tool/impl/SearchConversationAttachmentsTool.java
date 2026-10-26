@@ -1,10 +1,10 @@
 package com.smartorder.edu.agent.tool.impl;
 
-import com.smartorder.edu.agent.prompt.PromptLoader;
 import com.smartorder.edu.agent.service.AgentConversationAttachmentService;
 import com.smartorder.edu.agent.tool.ToolCategory;
 import com.smartorder.edu.agent.tool.ToolHandler;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
+import com.smartorder.edu.agent.util.PromptLoader;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

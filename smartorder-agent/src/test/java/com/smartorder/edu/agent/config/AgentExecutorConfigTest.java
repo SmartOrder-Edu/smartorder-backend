@@ -1,5 +1,6 @@
 package com.smartorder.edu.agent.config;
 
+import com.smartorder.edu.agent.service.impl.ConversationCompressServiceImpl;
 import com.smartorder.edu.student.config.StudentExecutorConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.scheduling.annotation.Async;
@@ -26,11 +27,12 @@ class AgentExecutorConfigTest {
 
     @Test
     void shouldKeepConversationCompressionAsync() throws Exception {
-        Method method = com.smartorder.edu.agent.memory.ConversationCompressService.class
+        // @Async 标注在实现类上（接口不承载调度注解），运行时由 CGLIB 代理读取实现类元数据
+        Method method = ConversationCompressServiceImpl.class
                 .getMethod("checkAndCompress", String.class, Long.class);
 
         Async async = method.getAnnotation(Async.class);
 
-        assertEquals("", async.value());
+        assertEquals("agentAsyncExecutor", async.value());
     }
 }

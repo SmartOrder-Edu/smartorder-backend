@@ -1,6 +1,7 @@
 package com.smartorder.edu.agent.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.smartorder.edu.agent.exception.AttachmentNotReadyException;
 import com.smartorder.edu.agent.mapper.AgentConversationAttachmentMapper;
 import com.smartorder.edu.agent.model.dto.AttachmentUploadInitRequest;
 import com.smartorder.edu.agent.model.dto.AttachmentUploadMergeRequest;

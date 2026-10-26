@@ -1,12 +1,12 @@
 package com.smartorder.edu.agent.controller;
 
 import com.alibaba.fastjson.JSON;
-import com.smartorder.edu.agent.generation.AgentGenerationException;
-import com.smartorder.edu.agent.generation.AgentGenerationService;
-import com.smartorder.edu.agent.generation.AgentGenerationSubscriptionPlan;
-import com.smartorder.edu.agent.generation.AgentGenerationVO;
-import com.smartorder.edu.agent.generation.SseEmitterEventSink;
+import com.smartorder.edu.agent.exception.AgentGenerationException;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
+import com.smartorder.edu.agent.model.vo.AgentGenerationVO;
+import com.smartorder.edu.agent.runtime.AgentGenerationSubscriptionPlan;
+import com.smartorder.edu.agent.runtime.SseEmitterEventSink;
+import com.smartorder.edu.agent.service.AgentGenerationService;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;

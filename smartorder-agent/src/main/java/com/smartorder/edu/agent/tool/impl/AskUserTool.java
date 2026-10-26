@@ -1,5 +1,7 @@
 package com.smartorder.edu.agent.tool.impl;
 
+import com.smartorder.edu.agent.model.dto.AgentRuntimeContext;
+import com.smartorder.edu.agent.service.impl.SelfManagedReActEngine;
 import com.smartorder.edu.agent.tool.ToolCategory;
 import com.smartorder.edu.agent.tool.ToolHandler;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;

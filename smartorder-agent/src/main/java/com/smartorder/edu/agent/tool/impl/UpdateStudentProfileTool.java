@@ -1,5 +1,7 @@
 package com.smartorder.edu.agent.tool.impl;
 
+import com.smartorder.edu.agent.service.impl.ProfileUpdateCoordinator;
+import com.smartorder.edu.agent.tool.ToolHandler;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
 import com.smartorder.edu.student.domain.dto.StudentProfileDimensionUpdateDTO;
 import com.smartorder.edu.student.service.IStudentProfileService;

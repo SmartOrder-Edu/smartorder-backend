@@ -1,5 +1,7 @@
 package com.smartorder.edu.agent.tool;
 
+import com.smartorder.edu.agent.tool.impl.WebSearchTool;
+
 /**
  * 工具处理接口——所有业务工具必须实现此接口
  *

@@ -3,6 +3,7 @@ package com.smartorder.edu.agent.model.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.smartorder.edu.agent.service.ConversationService;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 

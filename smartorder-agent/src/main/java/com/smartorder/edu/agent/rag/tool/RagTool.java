@@ -1,13 +1,13 @@
 package com.smartorder.edu.agent.rag.tool;
 
+import com.smartorder.edu.agent.model.enums.AgentEventType;
 import com.smartorder.edu.agent.rag.model.RagQueryRequest;
 import com.smartorder.edu.agent.rag.model.RagQueryResponse;
 import com.smartorder.edu.agent.rag.orchestrator.RagOrchestrator;
+import com.smartorder.edu.agent.service.TraceEventDispatcher;
 import com.smartorder.edu.agent.tool.ToolCategory;
 import com.smartorder.edu.agent.tool.ToolHandler;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
-import com.smartorder.edu.agent.trace.AgentEventType;
-import com.smartorder.edu.agent.trace.TraceEventDispatcher;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

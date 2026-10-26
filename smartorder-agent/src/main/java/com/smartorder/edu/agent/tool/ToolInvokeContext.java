@@ -1,7 +1,7 @@
 package com.smartorder.edu.agent.tool;
 
-import com.smartorder.edu.agent.route.AgentRunMode;
-import com.smartorder.edu.agent.trace.AgentRuntimeContext;
+import com.smartorder.edu.agent.model.dto.AgentRuntimeContext;
+import com.smartorder.edu.agent.model.enums.AgentRunMode;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

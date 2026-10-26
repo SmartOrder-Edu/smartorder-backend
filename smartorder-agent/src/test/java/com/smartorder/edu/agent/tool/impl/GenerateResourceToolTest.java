@@ -2,8 +2,8 @@ package com.smartorder.edu.agent.tool.impl;
 
 import com.smartorder.edu.agent.mapper.AgentResourceLogMapper;
 import com.smartorder.edu.agent.model.entity.AgentResourceLog;
-import com.smartorder.edu.agent.prompt.PromptLoader;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
+import com.smartorder.edu.agent.util.PromptLoader;
 import com.smartorder.edu.learning.domain.entity.Resource;
 import com.smartorder.edu.learning.dto.ResourceGenerationRequest;
 import com.smartorder.edu.learning.service.ResourceGenerationResult;

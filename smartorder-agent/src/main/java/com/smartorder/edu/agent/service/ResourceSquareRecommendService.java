@@ -3,6 +3,7 @@ package com.smartorder.edu.agent.service;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.smartorder.edu.agent.config.AgentConfiguration;
 import com.smartorder.edu.agent.model.vo.FeaturedResourceVO;
 import com.smartorder.edu.student.domain.dto.ResourceSquareListQueryDTO;
 import com.smartorder.edu.student.domain.entity.StudentProfile;
