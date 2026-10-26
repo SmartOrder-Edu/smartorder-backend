@@ -371,7 +371,7 @@ public class AgentGeneration {
     }
 
     /**
-     * 从运行上下文同步会话/追踪/消息标识——这些字段在 openTurn 之后才会陆续有值。
+     * 从运行上下文同步会话/追踪/消息标识——这些字段在 openReply 之后才会陆续有值。
      */
     private void syncContext(AgentRuntimeContext ctx) {
         if (ctx == null) {

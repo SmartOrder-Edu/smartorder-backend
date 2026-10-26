@@ -8,9 +8,9 @@ import com.smartorder.edu.agent.runtime.AgentEventSink;
 import com.smartorder.edu.agent.runtime.AgentGeneration;
 import com.smartorder.edu.agent.runtime.AgentGenerationRegistry;
 import com.smartorder.edu.agent.runtime.AgentGenerationSubscriptionPlan;
-import com.smartorder.edu.agent.service.AgentGenerationService;
+import com.smartorder.edu.agent.service.AgentChatService;
 import com.smartorder.edu.agent.service.AgentOrchestrator;
-import com.smartorder.edu.agent.service.ConversationTurnService;
+import com.smartorder.edu.agent.service.ConversationMessageService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
@@ -22,7 +22,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 
 /**
- * 生成任务应用服务——发送 / 订阅 / 查询 / 取消。
+ * 对话服务——发消息、订阅回复流、查状态、取消。
  *
  * <p><b>为什么发送与订阅必须拆开</b>：</p>
  * <ol>
@@ -30,35 +30,35 @@ import java.util.concurrent.RejectedExecutionException;
  *       因此可以把 conversationId / messageId 直接返回；即使 SSE 一次都没连上，
  *       前端也知道这段对话落在哪、消息是哪一条。</li>
  *   <li>生成在返回后异步执行，与连接彻底无关；SSE 订阅是只读的，断线重连只是重新订阅。</li>
- *   <li>发送可以安全重试：同一 clientRequestId 命中幂等直接复用，不会重复开轮或重复生成。</li>
+ *   <li>发送可以安全重试：同一 clientRequestId 命中幂等直接复用，不会重复插入消息或重复生成。</li>
  * </ol>
  */
 @Slf4j
 @Service
-public class AgentGenerationServiceImpl implements AgentGenerationService { 
+public class AgentChatServiceImpl implements AgentChatService { 
 
     private final AgentGenerationRegistry manager;
 
     private final AgentOrchestrator orchestrator;
 
-    private final ConversationTurnService turnService;
+    private final ConversationMessageService conversationMessageService;
 
     private final ExecutorService generationExecutor;
 
-    public AgentGenerationServiceImpl(AgentGenerationRegistry manager,
+    public AgentChatServiceImpl(AgentGenerationRegistry manager,
                                   AgentOrchestrator orchestrator,
-                                  ConversationTurnService turnService,
+                                  ConversationMessageService conversationMessageService,
                                   @Qualifier("agentGenerationExecutor") ExecutorService generationExecutor) {
         this.manager = manager;
         this.orchestrator = orchestrator;
-        this.turnService = turnService;
+        this.conversationMessageService = conversationMessageService;
         this.generationExecutor = generationExecutor;
     }
 
     /**
      * 创建（或幂等复用）一次生成：同步落库并返回会话/消息 ID，再异步启动编排。
      */
-    public AgentGenerationVO create(AgentChatRequest request, Long userId, String clientRequestId) {
+    public AgentGenerationVO sendMessage(AgentChatRequest request, Long userId, String clientRequestId) {
         String idempotencyKey = normalize(clientRequestId);
 
         String existingId = manager.findGenerationIdByClientRequest(userId, idempotencyKey);
@@ -83,12 +83,12 @@ public class AgentGenerationServiceImpl implements AgentGenerationService {
         String traceId = UUID.randomUUID().toString();
         AgentTurnContext turn;
         try {
-            ConversationTurnService.TurnState state = turnService.openTurn(
+            ConversationMessageService.PendingReply state = conversationMessageService.openReply(
                     request.getConversationId(), userId, request.getMessage(), request.getFileIds(), traceId);
             turn = AgentTurnContext.from(state, traceId);
         } catch (RuntimeException e) {
             // 会话已删除 / 无权访问 / 数据库异常：发送接口直接失败，不创建半截生成任务
-            log.warn("[Generation] 开轮失败: userId={}, cid={}, reason={}",
+            log.warn("[Generation] 插入消息失败: userId={}, cid={}, reason={}",
                     userId, request.getConversationId(), e.getMessage());
             throw new AgentGenerationException(HttpStatus.BAD_REQUEST, "TURN_OPEN_FAILED",
                     e.getMessage() != null ? e.getMessage() : "会话不可用");

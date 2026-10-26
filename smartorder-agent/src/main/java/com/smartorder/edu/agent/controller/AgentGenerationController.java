@@ -5,7 +5,7 @@ import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.model.vo.AgentGenerationVO;
 import com.smartorder.edu.agent.runtime.AgentGenerationSubscriptionPlan;
 import com.smartorder.edu.agent.runtime.SseEmitterEventSink;
-import com.smartorder.edu.agent.service.AgentGenerationService;
+import com.smartorder.edu.agent.service.AgentChatService;
 import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import io.jsonwebtoken.Claims;
@@ -32,6 +32,14 @@ import java.util.concurrent.RejectedExecutionException;
 /**
  * Agent 生成任务接口——发送与订阅分离，支持断线重连与按游标回放。
  *
+ * <p><b>客户端对接状态：移动端暂未实现。</b>本控制器是面向客户端的“发送/订阅分离 + 游标续传”协议，
+ * 服务端已实现并有测试覆盖，但客户端侧目前只有 Web 端接了：
+ * {@code smartorder-frontend/src/composables/useAgentChat.ts}（发送、状态、取消、活跃查询）与
+ * {@code useResumableAgentStream.ts}（SSE 订阅与重连）。
+ * 移动端（uni-app）仍在调用 {@code POST /agent/chat/stream} 旧兼容入口，尚未迁移到本链路，
+ * 因此这些接口没有移动端消费方，联调与验收以接口文档和后端测试为准。
+ * 后续移动端接入只需复用本协议（{@code clientRequestId} 幂等键 + {@code after} 游标），服务端无需改动。</p>
+ *
  * <p>协议：</p>
  * <ul>
  *   <li>{@code POST /agent/generations} 发送消息：同步完成事务 A 并返回
@@ -55,17 +63,19 @@ import java.util.concurrent.RejectedExecutionException;
 @Tag(name = "Agent 生成任务", description = "发送消息（返回会话与消息 ID）、SSE 订阅回放、状态与取消")
 public class AgentGenerationController {
 
-    private final AgentGenerationService generationService;
+    private final AgentChatService chatService;
 
+    // 客户端对接：移动端暂未实现——当前仅 Web 端 useAgentChat.ts 调用，uni-app 仍走旧入口
     @PostMapping
     @Operation(summary = "发送消息并创建生成任务（同步返回 conversationId / messageId，按 clientRequestId 幂等）")
     public Result<AgentGenerationVO> create(@RequestBody AgentChatRequest request) {
         Long userId = currentUserId();
         request.setUserId(userId);
-        AgentGenerationVO vo = generationService.create(request, userId, request.getClientRequestId());
+        AgentGenerationVO vo = chatService.sendMessage(request, userId, request.getClientRequestId());
         return Result.success(vo);
     }
 
+    // 客户端对接：移动端暂未实现——当前仅 Web 端 useResumableAgentStream.ts 订阅，uni-app 未接入
     @GetMapping(value = "/{generationId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "订阅并回放生成事件（SSE）",
             description = "after 为客户端已成功应用的最大 seq；支持 Last-Event-ID，二者冲突时返回 400")
@@ -88,7 +98,7 @@ public class AgentGenerationController {
         AgentGenerationSubscriptionPlan plan;
         try {
             // 同步阶段只做鉴权/游标校验；这一步不能写连接，否则 403/404/410 就来不及了
-            plan = generationService.validateSubscription(generationId, userId, cursor,
+            plan = chatService.validateSubscription(generationId, userId, cursor,
                     new SseEmitterEventSink(emitter));
         } catch (AgentGenerationException e) {
             log.info("[GenerationApi] 订阅被拒绝: generationId={}, after={}, status={}, reason={}",
@@ -104,7 +114,7 @@ public class AgentGenerationController {
             // 回放与实时接入在生成线程池上执行：控制器立刻返回，首字节不再等 backlog。
             // attach 可能先于本方法返回就开始写；SseEmitter 会缓存 early send，
             // 在响应初始化后按序 flush，因此不会丢回放事件。
-            generationService.attachAsync(plan);
+            chatService.attachAsync(plan);
         } catch (RejectedExecutionException e) {
             log.warn("[GenerationApi] 订阅线程池已满，拒绝接入: generationId={}", generationId);
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
@@ -117,22 +127,25 @@ public class AgentGenerationController {
                 .body(emitter);
     }
 
+    // 客户端对接：移动端暂未实现——当前仅 Web 端断线兜底查询调用，uni-app 未接入
     @GetMapping("/{generationId}")
     @Operation(summary = "查询生成任务状态")
     public Result<AgentGenerationVO> status(@PathVariable String generationId) {
-        return Result.success(generationService.status(generationId, currentUserId()));
+        return Result.success(chatService.status(generationId, currentUserId()));
     }
 
+    // 客户端对接：移动端暂未实现——当前仅 Web 端停止按钮调用，uni-app 未接入
     @PostMapping("/{generationId}/cancel")
     @Operation(summary = "取消生成任务（协作式）")
     public Result<Map<String, Object>> cancel(@PathVariable String generationId) {
-        return Result.success(generationService.cancel(generationId, currentUserId()));
+        return Result.success(chatService.cancel(generationId, currentUserId()));
     }
 
+    // 客户端对接：移动端暂未实现——当前仅 Web 端刷新恢复调用，uni-app 未接入
     @GetMapping("/conversations/{conversationId}/active")
     @Operation(summary = "查询会话当前生成（刷新页面恢复用）")
     public Result<AgentGenerationVO> activeGeneration(@PathVariable String conversationId) {
-        return Result.success(generationService.activeGeneration(conversationId, currentUserId()));
+        return Result.success(chatService.activeGeneration(conversationId, currentUserId()));
     }
 
     /**

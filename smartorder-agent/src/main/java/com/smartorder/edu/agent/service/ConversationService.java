@@ -22,7 +22,7 @@ import java.util.List;
  * - 列表 / 详情 / 改名 / 软删 / 状态校验
  * - 兜底补建（迁移遗漏或并发窗口导致主表行缺失时，就地补一行）
  * <p>
- * 不负责"轮次写入"（那是 {@link ConversationTurnService} 的事），避免事务边界混乱。
+ * 不负责消息写入（那是 {@link ConversationMessageService} 的事），避免事务边界混乱。
  */
 @Slf4j
 @Service

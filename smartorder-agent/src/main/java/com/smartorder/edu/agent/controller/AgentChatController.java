@@ -6,7 +6,7 @@ import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.model.vo.AgentGenerationVO;
 import com.smartorder.edu.agent.runtime.AgentGenerationSubscriptionPlan;
 import com.smartorder.edu.agent.runtime.SseEmitterEventSink;
-import com.smartorder.edu.agent.service.AgentGenerationService;
+import com.smartorder.edu.agent.service.AgentChatService;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
@@ -28,6 +28,9 @@ import java.util.concurrent.RejectedExecutionException;
  *
  * <p>这里保留旧的 POST 入口，等价于“创建生成 + 从 0 订阅”，
  * 让尚未迁移的页面（资源 AI 面板、uni-app）继续可用，并同样具备服务端持续生成的能力。</p>
+ *
+ * <p>TODO(客户端): 移动端正式接入时改走 {@code /agent/generations} 新链路
+ * （clientRequestId 幂等键 + after 游标重连），不要继续复用本兼容入口。</p>
  */
 @Slf4j
 @RestController
@@ -35,10 +38,10 @@ import java.util.concurrent.RejectedExecutionException;
 @Tag(name = "Agent 对话", description = "AI Agent 流式对话接口")
 public class AgentChatController {
 
-    private final AgentGenerationService generationService;
+    private final AgentChatService chatService;
 
-    public AgentChatController(AgentGenerationService generationService) {
-        this.generationService = generationService;
+    public AgentChatController(AgentChatService chatService) {
+        this.chatService = chatService;
     }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -58,7 +61,7 @@ public class AgentChatController {
 
         AgentGenerationVO generation;
         try {
-            generation = generationService.create(request, userId, request.getClientRequestId());
+            generation = chatService.sendMessage(request, userId, request.getClientRequestId());
         } catch (Exception e) {
             // 旧入口不能返回 JSON：用 SSE 的 error + done 收敛，避免前端一直转圈
             log.warn("[AgentChat] 创建生成失败: userId={}, cid={}, reason={}",
@@ -69,7 +72,7 @@ public class AgentChatController {
         AgentGenerationSubscriptionPlan plan;
         try {
             // 同步校验（通常只是内存检查），失败仍可以走 SSE error + done 收敛
-            plan = generationService.validateSubscription(generation.getGenerationId(), userId, 0L,
+            plan = chatService.validateSubscription(generation.getGenerationId(), userId, 0L,
                     new SseEmitterEventSink(emitter));
         } catch (AgentGenerationException e) {
             log.warn("[AgentChat] 订阅校验失败: generationId={}, reason={}",
@@ -83,7 +86,7 @@ public class AgentChatController {
 
         try {
             // 回放与实时接入异步执行，避免 servlet 线程先写满整段 backlog
-            generationService.attachAsync(plan);
+            chatService.attachAsync(plan);
         } catch (RejectedExecutionException e) {
             log.error("[AgentChat] 订阅线程池已满: generationId={}", generation.getGenerationId());
             return sseError("系统繁忙，订阅暂不可用，请稍后重试");

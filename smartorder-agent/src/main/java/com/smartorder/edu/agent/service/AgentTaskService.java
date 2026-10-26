@@ -5,7 +5,7 @@ import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import java.util.Map;
 
 /** 任务元数据与 Agent 执行生命周期；读取快照和 SSE 订阅绝不调用本服务的 create。 */
-public interface AgentChatTaskService {
+public interface AgentTaskService {
 
     Map<String, Object> create(AgentChatRequest request, Long userId, String tenantId);
 

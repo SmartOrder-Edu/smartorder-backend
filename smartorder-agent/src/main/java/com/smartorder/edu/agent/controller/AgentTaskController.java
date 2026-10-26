@@ -2,7 +2,7 @@ package com.smartorder.edu.agent.controller;
 
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.repository.impl.AgentChatEventLog;
-import com.smartorder.edu.agent.service.AgentChatTaskService;
+import com.smartorder.edu.agent.service.AgentTaskService;
 import com.smartorder.edu.agent.util.AgentStreamCursor;
 import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
@@ -23,7 +23,7 @@ import java.util.concurrent.Executor;
 @RestController
 @RequestMapping("/agent/tasks")
 public class AgentTaskController {
-    private final AgentChatTaskService tasks;
+    private final AgentTaskService tasks;
     private final AgentChatEventLog events;
     private final Executor streamExecutor;
 
@@ -34,7 +34,7 @@ public class AgentTaskController {
         return new Result<>(400, error.getMessage(), null);
     }
 
-    public AgentTaskController(AgentChatTaskService tasks, AgentChatEventLog events,
+    public AgentTaskController(AgentTaskService tasks, AgentChatEventLog events,
                                @Qualifier("agentStreamExecutor") Executor streamExecutor) {
         this.tasks = tasks;
         this.events = events;

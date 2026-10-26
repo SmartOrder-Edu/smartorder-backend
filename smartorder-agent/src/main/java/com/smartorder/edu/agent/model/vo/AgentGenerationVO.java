@@ -11,6 +11,9 @@ import lombok.NoArgsConstructor;
  *
  * <p>发送接口返回的就是它：前端在**建立 SSE 之前**就能拿到会话与消息 ID，
  * 因此即使事件流立刻失败，页面也知道这段对话属于哪个会话、占位消息是哪一条。</p>
+ *
+ * <p><b>客户端对接：移动端暂未实现。</b>当前消费方只有 Web 端；uni-app 尚未接入
+ * {@code /agent/generations} 链路，字段语义以本类与接口文档为准。</p>
  */
 @Data
 @Builder

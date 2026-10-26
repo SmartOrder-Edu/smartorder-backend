@@ -22,10 +22,10 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 会话轮次服务——「先落库、后生成」的核心。
+ * 会话消息服务——聊天消息落库与回复收尾。
  * <p>
  * 为什么必须是独立 Bean：{@code AgentOrchestratorImpl} 内部方法自调用时
- * Spring AOP 事务不生效，所以 openTurn / finalizeTurn / failTurn 各自
+ * Spring AOP 事务不生效，所以 openReply / completeReply / failReply 各自
  * {@code @Transactional}，由外部 Bean 调用。
  * <p>
  * 并发模型：
@@ -37,7 +37,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ConversationTurnService {
+public class ConversationMessageService {
 
     public static final String ROLE_USER = "user";
     public static final String ROLE_ASSISTANT = "assistant";
@@ -46,22 +46,22 @@ public class ConversationTurnService {
     private static final int PREVIEW_MAX = 200;
     private static final int ERROR_MAX = 500;
 
-    /** 未收尾的轮次状态超过该时长视为泄漏，openTurn 时顺手清理 */
+    /** 未收尾的回复状态超过该时长视为泄漏，openReply 时顺手清理 */
     private static final long STATE_TTL_MS = 30 * 60 * 1000L;
 
     private final ConversationMapper conversationMapper;
     private final ConversationMessageMapper messageMapper;
     private final ConversationService conversationService;
 
-    /** traceId → 本轮占位行状态；finalize/fail/cancel 后移除 */
-    private final Map<String, TurnState> turnStates = new ConcurrentHashMap<>();
+    /** traceId → 本轮待收尾的回复；complete/fail/cancel 后移除 */
+    private final Map<String, PendingReply> pendingReplies = new ConcurrentHashMap<>();
 
     /**
-     * 一轮对话的占位状态
+     * 一轮问答中待收尾的回复（用户消息 + assistant 占位行）
      */
     @Data
     @Builder
-    public static class TurnState {
+    public static class PendingReply {
         private String conversationId;
         private Long conversationPk;
         private Long userMessageId;
@@ -69,7 +69,7 @@ public class ConversationTurnService {
         private int userSequenceNo;
         private int assistantSequenceNo;
         private String title;
-        /** 标题来源（AUTO/LLM/USER）：AUTO 说明还没拿到模型标题，后续轮次可以再补 */
+        /** 标题来源（AUTO/LLM/USER）：AUTO 说明还没拿到模型标题，后续消息可以再补 */
         private String titleSource;
         /** 本轮是否新建了会话（用于 SSE agent.conversation.created） */
         private boolean created;
@@ -77,20 +77,20 @@ public class ConversationTurnService {
     }
 
     // ============================================================
-    // 事务 A：开轮（用户消息 + assistant 占位行）
+    // 事务 A：开启回复（插入用户消息 + assistant 占位行）
     // ============================================================
 
     /**
-     * 开启一轮对话：落用户消息 + 落 assistant 的 RUNNING 占位行，返回本轮状态。
+     * 开启一次回答：插入用户消息 + assistant 的 RUNNING 占位行，返回待收尾的回复。
      * <p>
      * 用户刷新页面时，正在生成的回答在库里是可见的（RUNNING），
      * 服务端崩溃后也有"僵尸行"可清理——这是与旧实现最大的区别。
      *
      * @param conversationId 前端传入的会话ID，为空则新建
-     * @return 本轮状态（含 conversationId / 占位行ID / 序号）
+     * @return 待收尾的回复（含 conversationId / 占位行ID / 序号）
      */
     @Transactional(rollbackFor = Exception.class)
-    public TurnState openTurn(String conversationId, Long userId, String content,
+    public PendingReply openReply(String conversationId, Long userId, String content,
                               List<Long> attachmentFileIds, String traceId) {
         pruneStaleStates();
 
@@ -133,7 +133,7 @@ public class ConversationTurnService {
         conversationMapper.incrMessageCount(publicId, 2);
         conversationMapper.touchLastMessage(publicId, now, normalize(content, PREVIEW_MAX));
 
-        TurnState state = TurnState.builder()
+        PendingReply state = PendingReply.builder()
                 .conversationId(publicId)
                 .conversationPk(locked != null ? locked.getId() : null)
                 .userMessageId(userMessage.getId())
@@ -145,9 +145,9 @@ public class ConversationTurnService {
                 .created(created)
                 .openedAt(System.currentTimeMillis())
                 .build();
-        turnStates.put(traceId, state);
+        pendingReplies.put(traceId, state);
 
-        log.info("[Turn] 开轮: cid={}, traceId={}, created={}, userSeq={}, assistantMsgId={}",
+        log.info("[Message] 开启回复: cid={}, traceId={}, created={}, userSeq={}, assistantMsgId={}",
                 publicId, traceId, created, userSeq, assistantMessage.getId());
         return state;
     }
@@ -162,8 +162,8 @@ public class ConversationTurnService {
      * @return true=命中了本轮占位行并已 UPDATE；false=未命中/已收尾过，调用方应退化为 INSERT
      */
     @Transactional(rollbackFor = Exception.class)
-    public boolean finalizeTurn(String traceId, String content, String reasoningContent, String metadataJson) {
-        TurnState state = traceId == null ? null : turnStates.get(traceId);
+    public boolean completeReply(String traceId, String content, String reasoningContent, String metadataJson) {
+        PendingReply state = traceId == null ? null : pendingReplies.get(traceId);
         if (state == null) {
             return false;
         }
@@ -172,12 +172,12 @@ public class ConversationTurnService {
                 reasoningContent, metadataJson, now);
         if (updated == 0) {
             // 占位行已被收尾（同一轮第二次调用）→ 交给调用方 INSERT 新气泡
-            turnStates.remove(traceId);
+            pendingReplies.remove(traceId);
             return false;
         }
         conversationMapper.touchLastMessage(state.getConversationId(), now, normalize(content, PREVIEW_MAX));
-        turnStates.remove(traceId);
-        log.info("[Turn] 收尾成功: cid={}, traceId={}, msgId={}", state.getConversationId(),
+        pendingReplies.remove(traceId);
+        log.info("[Message] 完成回复: cid={}, traceId={}, msgId={}", state.getConversationId(),
                 traceId, state.getAssistantMessageId());
         return true;
     }
@@ -190,15 +190,15 @@ public class ConversationTurnService {
      * @return true=已处理本轮占位行
      */
     @Transactional(rollbackFor = Exception.class)
-    public boolean failTurn(String traceId, String errorMessage, String partialContent) {
-        TurnState state = traceId == null ? null : turnStates.get(traceId);
+    public boolean failReply(String traceId, String errorMessage, String partialContent) {
+        PendingReply state = traceId == null ? null : pendingReplies.get(traceId);
         if (state == null) {
             return false;
         }
         int updated = messageMapper.markFailed(state.getAssistantMessageId(), partialContent,
                 truncate(errorMessage, ERROR_MAX), LocalDateTime.now());
-        turnStates.remove(traceId);
-        log.warn("[Turn] 失败收尾: cid={}, traceId={}, msgId={}, affected={}, reason={}",
+        pendingReplies.remove(traceId);
+        log.warn("[Message] 失败回复: cid={}, traceId={}, msgId={}, affected={}, reason={}",
                 state.getConversationId(), traceId, state.getAssistantMessageId(), updated,
                 truncate(errorMessage, 120));
         return updated > 0;
@@ -208,15 +208,15 @@ public class ConversationTurnService {
      * 用户中止（"停止生成"）：保留已生成内容，状态置 CANCELLED。
      */
     @Transactional(rollbackFor = Exception.class)
-    public boolean cancelTurn(String traceId, String partialContent) {
-        TurnState state = traceId == null ? null : turnStates.get(traceId);
+    public boolean cancelReply(String traceId, String partialContent) {
+        PendingReply state = traceId == null ? null : pendingReplies.get(traceId);
         if (state == null) {
             return false;
         }
         int updated = messageMapper.markCancelled(state.getAssistantMessageId(), partialContent,
                 LocalDateTime.now());
-        turnStates.remove(traceId);
-        log.info("[Turn] 用户中止: cid={}, traceId={}, msgId={}, affected={}",
+        pendingReplies.remove(traceId);
+        log.info("[Message] 用户中止: cid={}, traceId={}, msgId={}, affected={}",
                 state.getConversationId(), traceId, state.getAssistantMessageId(), updated);
         return updated > 0;
     }
@@ -281,8 +281,8 @@ public class ConversationTurnService {
                 ConversationMessage.STATUS_COMPLETED, null, 0, null, null, null, null, now, toolName);
     }
 
-    public boolean hasOpenTurn(String traceId) {
-        return traceId != null && turnStates.containsKey(traceId);
+    public boolean hasPendingReply(String traceId) {
+        return traceId != null && pendingReplies.containsKey(traceId);
     }
 
     // ============================================================
@@ -340,12 +340,12 @@ public class ConversationTurnService {
             conversationService.createIfAbsent(conversationId, userId, null);
             conversation = conversationMapper.selectByPublicIdForUpdate(conversationId);
             if (conversation == null) {
-                log.warn("[Turn] 会话主表行补建失败，丢弃消息写入: cid={}", conversationId);
+                log.warn("[Message] 会话主表行补建失败，丢弃消息写入: cid={}", conversationId);
                 return null;
             }
         }
         if (!Conversation.STATUS_ACTIVE.equals(conversation.getStatus())) {
-            log.warn("[Turn] 会话不可写（{}），丢弃消息写入: cid={}", conversation.getStatus(), conversationId);
+            log.warn("[Message] 会话不可写（{}），丢弃消息写入: cid={}", conversation.getStatus(), conversationId);
             return null;
         }
         return conversation;
@@ -382,10 +382,10 @@ public class ConversationTurnService {
     }
 
     private void pruneStaleStates() {
-        if (turnStates.size() < 512) {
+        if (pendingReplies.size() < 512) {
             return;
         }
         long threshold = System.currentTimeMillis() - STATE_TTL_MS;
-        turnStates.entrySet().removeIf(e -> e.getValue().getOpenedAt() < threshold);
+        pendingReplies.entrySet().removeIf(e -> e.getValue().getOpenedAt() < threshold);
     }
 }

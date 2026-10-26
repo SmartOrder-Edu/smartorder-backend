@@ -20,7 +20,7 @@ import com.smartorder.edu.agent.model.enums.IntentType;
 import com.smartorder.edu.agent.runtime.ExecutionBudget;
 import com.smartorder.edu.agent.service.AgentRunStateService;
 import com.smartorder.edu.agent.service.ClarificationService;
-import com.smartorder.edu.agent.service.ConversationMemoryService;
+import com.smartorder.edu.agent.service.ConversationContextService;
 import com.smartorder.edu.agent.service.PlanDraftService;
 import com.smartorder.edu.agent.service.PlannerAgent;
 import com.smartorder.edu.agent.service.TraceEventDispatcher;
@@ -63,7 +63,7 @@ public class PlanAndExecuteEngine {
     private final PlanDraftService draftService;
     private final ClarificationService clarificationService;
     private final TraceEventDispatcher dispatcher;
-    private final ConversationMemoryService memoryService;
+    private final ConversationContextService contextService;
     private final SelfManagedReActEngine reActEngine;
     private final LLMStepVerifier stepVerifier;
     private final PromptLoader promptLoader;
@@ -115,7 +115,7 @@ public class PlanAndExecuteEngine {
                     "message", "规划生成失败: " + e.getMessage()
             ));
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", errorMsg));
-            memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
+            contextService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                     errorMsg, null, context.getTraceId(), null);
             context.setAssistantMessageSaved(true);
             return;
@@ -131,7 +131,7 @@ public class PlanAndExecuteEngine {
                     planRaw != null ? planRaw.substring(0, Math.min(300, planRaw.length())) : "null");
             String errorMsg = "抱歉，生成任务计划时机型返回格式异常，请稍后重试。";
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", errorMsg));
-            memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
+            contextService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                     errorMsg, null, context.getTraceId(), null);
             context.setAssistantMessageSaved(true);
             return;
@@ -202,7 +202,7 @@ public class PlanAndExecuteEngine {
             // 输出摘要
             String summaryText = buildPlanSummaryText(plan);
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", summaryText));
-            memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
+            contextService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                     summaryText, null, context.getTraceId(), null);
             context.setAssistantMessageSaved(true);
             return;
@@ -228,7 +228,7 @@ public class PlanAndExecuteEngine {
         // 输出计划摘要文本
         String summaryText = buildPlanSummaryText(plan);
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", summaryText));
-        memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
+        contextService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                 summaryText, null, context.getTraceId(), null);
         context.setAssistantMessageSaved(true);
     }
@@ -404,7 +404,7 @@ public class PlanAndExecuteEngine {
 
                 String confirmText = buildConfirmationText(task, plan);
                 dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", confirmText));
-                memoryService.saveAssistantMessage(conversationId, userId, confirmText, null,
+                contextService.saveAssistantMessage(conversationId, userId, confirmText, null,
                         context.getTraceId(), null);
                 context.setAssistantMessageSaved(true);
                 return;
@@ -489,7 +489,7 @@ public class PlanAndExecuteEngine {
         // Generate user-friendly completion message for the AI chat body
         String userFriendlyMsg = buildUserFriendlyCompletionMessage(plan);
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", userFriendlyMsg));
-        memoryService.saveAssistantMessage(conversationId, userId,
+        contextService.saveAssistantMessage(conversationId, userId,
                 userFriendlyMsg, null, context.getTraceId(), null);
         context.setAssistantMessageSaved(true);
 
@@ -610,7 +610,7 @@ public class PlanAndExecuteEngine {
                         // 保存确认语
                         String ackMsg = "已收到你的回答，还有一个问题需要确认。";
                         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", ackMsg));
-                        memoryService.saveAssistantMessage(context.getConversationId(), context.getUserId(),
+                        contextService.saveAssistantMessage(context.getConversationId(), context.getUserId(),
                                 ackMsg, null, context.getTraceId(), null);
 
                         // Acknowledge 上一个 clarification
@@ -747,7 +747,7 @@ public class PlanAndExecuteEngine {
         String savedText = displayAnswer != null && !displayAnswer.isBlank()
                 ? "【澄清回答】" + displayAnswer
                 : "【澄清回答】" + answer;
-        memoryService.saveUserMessage(conversationId, userId, savedText, null);
+        contextService.saveUserMessage(conversationId, userId, savedText, null);
 
         // 提交结构化回答（带所有权校验）
         ClarificationPayload nextClarification;
@@ -807,7 +807,7 @@ public class PlanAndExecuteEngine {
 
             String ackMsg = "已收到你的回答，还有一个问题需要确认。";
             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", ackMsg));
-            memoryService.saveAssistantMessage(conversationId, userId, ackMsg, null, traceId, null);
+            contextService.saveAssistantMessage(conversationId, userId, ackMsg, null, traceId, null);
             clarificationService.acknowledge(clarificationId, ackMsg);
 
             dispatcher.complete(emitter, context);
@@ -962,7 +962,7 @@ public class PlanAndExecuteEngine {
         // 会话摘要（如有）
         String conversationSummary = "";
         try {
-            String summary = memoryService.getSummaryText(context.getConversationId());
+            String summary = contextService.getSummaryText(context.getConversationId());
             if (summary != null) {
                 conversationSummary = "\n历史对话摘要：\n" + summary;
             }
@@ -1073,7 +1073,7 @@ public class PlanAndExecuteEngine {
 
         // 保存澄清消息，metadataJson 存储结构化信息用于历史回放
         String metadataJson = firstClarification != null ? JSON.toJSONString(firstClarification) : null;
-        memoryService.saveAssistantMessage(context.getConversationId(),
+        contextService.saveAssistantMessage(context.getConversationId(),
                 request != null ? request.getUserId() : context.getUserId(),
                 question, null, context.getTraceId(), metadataJson);
         context.setAssistantMessageSaved(true);
@@ -1130,7 +1130,7 @@ public class PlanAndExecuteEngine {
 
         String summaryText = buildPlanSummaryText(plan);
         dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of("text", summaryText));
-        memoryService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
+        contextService.saveAssistantMessage(context.getConversationId(), request.getUserId(),
                 summaryText, null, context.getTraceId(), null);
         context.setAssistantMessageSaved(true);
     }

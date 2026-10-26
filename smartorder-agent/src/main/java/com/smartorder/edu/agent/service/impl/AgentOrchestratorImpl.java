@@ -16,9 +16,9 @@ import com.smartorder.edu.agent.runtime.AgentGenerationRegistry;
 import com.smartorder.edu.agent.runtime.ExecutionBudget;
 import com.smartorder.edu.agent.service.AgentConversationAttachmentService;
 import com.smartorder.edu.agent.service.AgentOrchestrator;
-import com.smartorder.edu.agent.service.ConversationMemoryService;
+import com.smartorder.edu.agent.service.ConversationContextService;
 import com.smartorder.edu.agent.service.ConversationTitleService;
-import com.smartorder.edu.agent.service.ConversationTurnService;
+import com.smartorder.edu.agent.service.ConversationMessageService;
 import com.smartorder.edu.agent.service.IntentRouteService;
 import com.smartorder.edu.agent.service.PlannerAgent;
 import com.smartorder.edu.agent.service.TraceEventDispatcher;
@@ -47,8 +47,8 @@ import java.util.UUID;
 public class AgentOrchestratorImpl implements AgentOrchestrator {
 
     /**
-     * 标题补生成的最大轮次：前 3 条用户消息内，只要标题还是 AUTO（系统兜底）就再试一次。
-     * 超过这个轮次还失败就认了——再往后会话已经聊开了，重命名反而突兀。
+     * 标题补生成的最大次数：前 3 条用户消息内，只要标题还是 AUTO（系统兜底）就再试一次。
+     * 超过这个次数还失败就认了——再往后会话已经聊开了，重命名反而突兀。
      */
     private static final int RETITLE_MAX_SEQUENCE = 3;
 
@@ -56,10 +56,10 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
     private final SelfManagedReActEngine reActEngine;
     private final PlanAndExecuteEngine planAndExecuteEngine;
     private final TraceEventDispatcher dispatcher;
-    private final ConversationMemoryService memoryService;
+    private final ConversationContextService contextService;
     private final AgentConversationAttachmentService attachmentService;
     private final ProfileUpdateCoordinator profileUpdateCoordinator;
-    private final ConversationTurnService conversationTurnService;
+    private final ConversationMessageService conversationMessageService;
     private final ConversationTitleService conversationTitleService;
 
     private final AgentRunSupervisor runSupervisor;
@@ -99,17 +99,17 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         context.setBudget(ExecutionBudget.reactDefault());
 
         // ===== 事务 A：先落库（用户消息 + assistant 占位行），再生成 =====
-        // 新链路的 openTurn 已在发送接口里同步完成（响应要直接带 conversationId/messageId），
-        // 只有旧入口（turn == null）才在这里补开轮次。
+        // 新链路的 openReply 已在发送接口里同步完成（响应要直接带 conversationId/messageId），
+        // 只有旧入口（turn == null）才在这里补插消息。
         if (turn == null) {
             try {
-                ConversationTurnService.TurnState state = conversationTurnService.openTurn(
+                ConversationMessageService.PendingReply state = conversationMessageService.openReply(
                         request.getConversationId(), request.getUserId(),
                         request.getMessage(), request.getFileIds(), traceId);
                 turn = AgentTurnContext.from(state, traceId);
             } catch (Exception e) {
                 // 会话已删除 / 无权访问 / 数据库异常：不写库，直接以错误事件收敛
-                log.warn("[AgentOrchestrator] 开轮失败: traceId={}, cid={}, reason={}",
+                log.warn("[AgentOrchestrator] 插入消息失败: traceId={}, cid={}, reason={}",
                         traceId, request.getConversationId(), e.getMessage());
                 context.setConversationId(request.getConversationId());
                 dispatcher.error(emitter, context,
@@ -182,7 +182,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                     dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of(
                             "text", answer
                     ));
-                    memoryService.saveAssistantMessage(conversationId, request.getUserId(), answer,
+                    contextService.saveAssistantMessage(conversationId, request.getUserId(), answer,
                             null, context.getTraceId(), null);
                     context.setAssistantMessageSaved(true);
                     dispatcher.complete(emitter, context);
@@ -247,7 +247,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                             dispatcher.emit(emitter, context, AgentEventType.TEXT_DELTA, Map.of(
                                     "text", clarificationMsg
                             ));
-                            memoryService.saveAssistantMessage(conversationId, request.getUserId(),
+                            contextService.saveAssistantMessage(conversationId, request.getUserId(),
                                     clarificationMsg, null, context.getTraceId(), null);
                             context.setAssistantMessageSaved(true);
                         } else {
@@ -265,7 +265,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
             //    - submit(): 校验参数后提交后台线程 → extractor.extract(currentUserMessage, history) →
             //      router LLM → extraction LLM → updateStudentProfileTool.execute()
             //      不再使用关键词预过滤——由 router LLM 自行判断是否包含画像信息
-            List<ChatMessage> conversationHistory = memoryService.getRecentChatMessages(conversationId, 30);
+            List<ChatMessage> conversationHistory = contextService.getRecentChatMessages(conversationId, 30);
             log.info("[AgentOrchestrator] 提交画像分析: userId={}, conversationId={}, traceId={}, "
                     + "historySize={}, currentMsg={}",
                     request.getUserId(), conversationId, context.getTraceId(),
@@ -454,7 +454,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         //   - submit(): 校验参数后提交后台线程 → extractor.extract() →
         //     router LLM → extraction LLM → updateStudentProfileTool.execute()
         //     不再使用关键词预过滤——由 router LLM 自行判断是否包含画像信息
-        List<ChatMessage> conversationHistory = memoryService.getRecentChatMessages(conversationId, 30);
+        List<ChatMessage> conversationHistory = contextService.getRecentChatMessages(conversationId, 30);
         log.info("[AgentOrchestrator:forcedMode] 提交画像分析: userId={}, conversationId={}, traceId={}, "
                 + "historySize={}, currentMsg={}",
                 request.getUserId(), conversationId, context.getTraceId(),

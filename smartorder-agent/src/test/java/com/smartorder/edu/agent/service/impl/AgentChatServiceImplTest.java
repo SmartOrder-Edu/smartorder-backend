@@ -16,9 +16,9 @@ import com.smartorder.edu.agent.runtime.AgentGenerationEventMirror;
 import com.smartorder.edu.agent.runtime.AgentGenerationRegistry;
 import com.smartorder.edu.agent.runtime.AgentGenerationSubscriptionPlan;
 import com.smartorder.edu.agent.runtime.RecordingSink;
-import com.smartorder.edu.agent.service.AgentGenerationService;
+import com.smartorder.edu.agent.service.AgentChatService;
 import com.smartorder.edu.agent.service.AgentOrchestrator;
-import com.smartorder.edu.agent.service.ConversationTurnService;
+import com.smartorder.edu.agent.service.ConversationMessageService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -46,7 +46,7 @@ import static org.mockito.Mockito.when;
 /**
  * 发送接口的语义：同步开轮并返回会话/消息 ID；同一 clientRequestId 只执行一次业务。
  */
-class AgentGenerationServiceImplTest {
+class AgentChatServiceImplTest {
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
@@ -60,11 +60,11 @@ class AgentGenerationServiceImplTest {
         AgentGenerationEventStore store = new InMemoryAgentGenerationEventStore();
         AgentGenerationRegistry manager = newManager(store);
         AgentOrchestrator orchestrator = mock(AgentOrchestrator.class);
-        ConversationTurnService turnService = mock(ConversationTurnService.class);
-        when(turnService.openTurn(any(), any(), any(), any(), any())).thenReturn(turnState());
-        AgentGenerationService service = new AgentGenerationServiceImpl(manager, orchestrator, turnService, executor);
+        ConversationMessageService messageService = mock(ConversationMessageService.class);
+        when(messageService.openReply(any(), any(), any(), any(), any())).thenReturn(turnState());
+        AgentChatService service = new AgentChatServiceImpl(manager, orchestrator, messageService, executor);
 
-        AgentGenerationVO vo = service.create(request("你好"), 7L, "key-0");
+        AgentGenerationVO vo = service.sendMessage(request("你好"), 7L, "key-0");
 
         // 发送响应里必须已经带齐会话与消息 ID，SSE 只负责后续增量
         assertTrue(vo.isCreated());
@@ -79,7 +79,7 @@ class AgentGenerationServiceImplTest {
         // 编排线程拿到的是同一轮（不会在异步阶段再开一次轮次）
         verify(orchestrator, timeout(2000))
                 .handle(any(), isNull(), eq(vo.getGenerationId()), any(AgentTurnContext.class));
-        verify(turnService, timeout(2000)).openTurn(any(), eq(7L), eq("你好"), any(), anyString());
+        verify(messageService, timeout(2000)).openReply(any(), eq(7L), eq("你好"), any(), anyString());
     }
 
     @Test
@@ -87,12 +87,12 @@ class AgentGenerationServiceImplTest {
         AgentGenerationEventStore store = new InMemoryAgentGenerationEventStore();
         AgentGenerationRegistry manager = newManager(store);
         AgentOrchestrator orchestrator = mock(AgentOrchestrator.class);
-        ConversationTurnService turnService = mock(ConversationTurnService.class);
-        when(turnService.openTurn(any(), any(), any(), any(), any())).thenReturn(turnState());
-        AgentGenerationService service = new AgentGenerationServiceImpl(manager, orchestrator, turnService, executor);
+        ConversationMessageService messageService = mock(ConversationMessageService.class);
+        when(messageService.openReply(any(), any(), any(), any(), any())).thenReturn(turnState());
+        AgentChatService service = new AgentChatServiceImpl(manager, orchestrator, messageService, executor);
 
-        AgentGenerationVO first = service.create(request("你好"), 7L, "key-1");
-        AgentGenerationVO second = service.create(request("你好"), 7L, "key-1");
+        AgentGenerationVO first = service.sendMessage(request("你好"), 7L, "key-1");
+        AgentGenerationVO second = service.sendMessage(request("你好"), 7L, "key-1");
 
         assertTrue(first.isCreated());
         assertFalse(second.isCreated());
@@ -103,7 +103,7 @@ class AgentGenerationServiceImplTest {
         // 响应丢失后重试：不重复开轮、不重复执行业务
         verify(orchestrator, timeout(2000).times(1))
                 .handle(any(), isNull(), eq(first.getGenerationId()), any(AgentTurnContext.class));
-        verify(turnService, timeout(2000).times(1)).openTurn(any(), any(), any(), any(), any());
+        verify(messageService, timeout(2000).times(1)).openReply(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -111,13 +111,13 @@ class AgentGenerationServiceImplTest {
         AgentGenerationEventStore store = new InMemoryAgentGenerationEventStore();
         AgentGenerationRegistry manager = newManager(store);
         AgentOrchestrator orchestrator = mock(AgentOrchestrator.class);
-        ConversationTurnService turnService = mock(ConversationTurnService.class);
-        when(turnService.openTurn(any(), any(), any(), any(), any()))
+        ConversationMessageService messageService = mock(ConversationMessageService.class);
+        when(messageService.openReply(any(), any(), any(), any(), any()))
                 .thenThrow(new IllegalStateException("会话已删除或已归档"));
-        AgentGenerationService service = new AgentGenerationServiceImpl(manager, orchestrator, turnService, executor);
+        AgentChatService service = new AgentChatServiceImpl(manager, orchestrator, messageService, executor);
 
         AgentGenerationException error = assertThrows(AgentGenerationException.class,
-                () -> service.create(request("你好"), 7L, "key-3"));
+                () -> service.sendMessage(request("你好"), 7L, "key-3"));
 
         assertEquals("TURN_OPEN_FAILED", error.getCode());
         assertTrue(error.getMessage().contains("会话已删除"));
@@ -129,13 +129,13 @@ class AgentGenerationServiceImplTest {
         AgentGenerationEventStore store = new InMemoryAgentGenerationEventStore();
         AgentGenerationRegistry manager = newManager(store);
         AgentOrchestrator orchestrator = mock(AgentOrchestrator.class);
-        ConversationTurnService turnService = mock(ConversationTurnService.class);
-        when(turnService.openTurn(any(), any(), any(), any(), any())).thenReturn(turnState());
+        ConversationMessageService messageService = mock(ConversationMessageService.class);
+        when(messageService.openReply(any(), any(), any(), any(), any())).thenReturn(turnState());
         doThrow(new IllegalStateException("编排炸了")).when(orchestrator)
                 .handle(any(), isNull(), anyString(), any());
-        AgentGenerationService service = new AgentGenerationServiceImpl(manager, orchestrator, turnService, executor);
+        AgentChatService service = new AgentChatServiceImpl(manager, orchestrator, messageService, executor);
 
-        AgentGenerationVO vo = service.create(request("你好"), 7L, "key-2");
+        AgentGenerationVO vo = service.sendMessage(request("你好"), 7L, "key-2");
 
         AgentGenerationVO status = awaitTerminal(service, vo.getGenerationId());
         assertEquals("FAILED", status.getStatus());
@@ -164,8 +164,8 @@ class AgentGenerationServiceImplTest {
         manager.publish(context, AgentEventType.TEXT_DELTA, Map.of("text", "你好"));
 
         ExecutorService deferredExecutor = mock(ExecutorService.class);
-        AgentGenerationService service = new AgentGenerationServiceImpl(
-                manager, mock(AgentOrchestrator.class), mock(ConversationTurnService.class), deferredExecutor);
+        AgentChatService service = new AgentChatServiceImpl(
+                manager, mock(AgentOrchestrator.class), mock(ConversationMessageService.class), deferredExecutor);
 
         RecordingSink sink = new RecordingSink();
         AgentGenerationSubscriptionPlan plan = service.validateSubscription(
@@ -182,7 +182,7 @@ class AgentGenerationServiceImplTest {
         assertEquals(1, sink.events.size());
     }
 
-    private AgentGenerationVO awaitTerminal(AgentGenerationService service, String generationId)
+    private AgentGenerationVO awaitTerminal(AgentChatService service, String generationId)
             throws InterruptedException {
         for (int i = 0; i < 100; i++) {
             AgentGenerationVO status = service.status(generationId, 7L);
@@ -194,8 +194,8 @@ class AgentGenerationServiceImplTest {
         throw new AssertionError("生成未在预期时间内收敛: " + generationId);
     }
 
-    private ConversationTurnService.TurnState turnState() {
-        return ConversationTurnService.TurnState.builder()
+    private ConversationMessageService.PendingReply turnState() {
+        return ConversationMessageService.PendingReply.builder()
                 .conversationId("c-1")
                 .conversationPk(1L)
                 .userMessageId(11L)

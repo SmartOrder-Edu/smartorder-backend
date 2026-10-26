@@ -6,12 +6,12 @@ import dev.langchain4j.data.message.ChatMessage;
 import java.util.List;
 
 /**
- * 会话记忆服务——替代 AgentConfiguration 中的纯内存 ChatMemory
+ * 会话上下文服务——替代 AgentConfiguration 中的纯内存 ChatMemory
  *
  * 上下文组装策略：
  * System Prompt + 会话摘要 + 最近 30 条消息（含当前用户消息，因为 orchestrator 已提前落库）
  */
-public interface ConversationMemoryService {
+public interface ConversationContextService {
 
     String getSystemPrompt();
 

@@ -6,9 +6,9 @@ import com.smartorder.edu.agent.mapper.ConversationMessageMapper;
 import com.smartorder.edu.agent.mapper.ConversationSummaryMapper;
 import com.smartorder.edu.agent.model.entity.ConversationMessage;
 import com.smartorder.edu.agent.model.entity.ConversationSummary;
-import com.smartorder.edu.agent.service.ConversationMemoryService;
+import com.smartorder.edu.agent.service.ConversationContextService;
 import com.smartorder.edu.agent.service.ConversationService;
-import com.smartorder.edu.agent.service.ConversationTurnService;
+import com.smartorder.edu.agent.service.ConversationMessageService;
 import com.smartorder.edu.agent.util.ConfirmationWords;
 import com.smartorder.edu.agent.util.PromptLoader;
 import dev.langchain4j.data.message.AiMessage;
@@ -24,7 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 会话记忆服务——替代 AgentConfiguration 中的纯内存 ChatMemory
+ * 会话上下文服务——替代 AgentConfiguration 中的纯内存 ChatMemory
  *
  * 上下文组装策略：
  * System Prompt + 会话摘要 + 最近 30 条消息（含当前用户消息，因为 orchestrator 已提前落库）
@@ -32,13 +32,13 @@ import java.util.List;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ConversationMemoryServiceImpl implements ConversationMemoryService { 
+public class ConversationContextServiceImpl implements ConversationContextService { 
 
     private final ConversationMessageMapper messageMapper;
     private final ConversationSummaryMapper summaryMapper;
     private final AgentTraceEventMapper traceEventMapper;
     private final PromptLoader promptLoader;
-    private final ConversationTurnService turnService;
+    private final ConversationMessageService messageService;
     private final ConversationService conversationService;
 
     private static final int MAX_RECENT_MESSAGES = 30;
@@ -93,12 +93,12 @@ public class ConversationMemoryServiceImpl implements ConversationMemoryService 
     /**
      * 保存用户消息。
      * <p>
-     * 首条消息不再走这里——它由 {@link ConversationTurnService#openTurn} 在事务 A 里
+     * 首条消息不再走这里——它由 {@link ConversationMessageService#openReply} 在事务 A 里
      * 与 assistant 占位行一起落库。这里服务于"一轮内追加的用户消息"
      * （如计划澄清回答、计划确认文本）。
      */
     public void saveUserMessage(String conversationId, Long userId, String content, List<Long> attachmentFileIds) {
-        turnService.appendUserMessage(conversationId, userId, content, attachmentFileIds);
+        messageService.appendUserMessage(conversationId, userId, content, attachmentFileIds);
     }
 
     /**
@@ -106,22 +106,22 @@ public class ConversationMemoryServiceImpl implements ConversationMemoryService 
      * <p>
      * 语义保持"一次调用 = 一条气泡"，但写入方式变了：
      * 1) 命中本轮占位行 → UPDATE 收尾（RUNNING → COMPLETED），15 处调用点无需改动；
-     * 2) 未命中（同一轮第二次调用 / 计划执行等非 openTurn 路径）→ INSERT 一条新消息，
+     * 2) 未命中（同一轮第二次调用 / 计划执行等非 openReply 路径）→ INSERT 一条新消息，
      *    序号由会话行锁分配，不会与占位行冲突。
      */
     public void saveAssistantMessage(String conversationId, Long userId, String content,
                                      String reasoningContent, String traceId, String metadataJson) {
-        if (turnService.finalizeTurn(traceId, content, reasoningContent, metadataJson)) {
+        if (messageService.completeReply(traceId, content, reasoningContent, metadataJson)) {
             return;
         }
-        turnService.appendAssistantMessage(conversationId, userId, content, reasoningContent, traceId, metadataJson);
+        messageService.appendAssistantMessage(conversationId, userId, content, reasoningContent, traceId, metadataJson);
     }
 
     /**
      * 保存工具消息（is_visible=0，占序号但不计入可见消息数、不进模型上下文）
      */
     public void saveToolMessage(String conversationId, Long userId, String toolName, String content) {
-        turnService.appendToolMessage(conversationId, userId, toolName, content);
+        messageService.appendToolMessage(conversationId, userId, toolName, content);
     }
 
     /**
@@ -135,7 +135,7 @@ public class ConversationMemoryServiceImpl implements ConversationMemoryService 
      * 删除对话（软删会话 + 软删消息和摘要，硬删除追踪事件）
      * <p>
      * 先软删会话主表：这样后续任何按 conversation_id 的写入都会被
-     * {@link ConversationTurnService} 的会话状态校验挡住。
+     * {@link ConversationMessageService} 的会话状态校验挡住。
      */
     @Transactional
     public void deleteConversation(String conversationId, Long userId) {

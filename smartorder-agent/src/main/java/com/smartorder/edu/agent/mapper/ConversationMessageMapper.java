@@ -233,7 +233,7 @@ public interface ConversationMessageMapper extends BaseMapper<ConversationMessag
     int markInvisible(@Param("id") Long id);
 
     /**
-     * 僵尸清理：RUNNING 且 started_at 早于阈值的占位行 → FAILED。
+     * 超时清理：RUNNING 且 started_at 早于阈值的占位行 → FAILED。
      */
     @Update("""
         UPDATE conversation_message

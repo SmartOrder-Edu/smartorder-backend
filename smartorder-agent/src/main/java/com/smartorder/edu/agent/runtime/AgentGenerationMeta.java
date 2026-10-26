@@ -23,7 +23,7 @@ public class AgentGenerationMeta {
 
     private String generationId;
 
-    /** 会话 public_id；新会话在 openTurn 之后才能确定，因此允许为空 */
+    /** 会话 public_id；新会话在 openReply 之后才能确定，因此允许为空 */
     private String conversationId;
 
     /** 归属用户——订阅/查询/取消都必须校验，不能把 generationId 当授权凭证 */

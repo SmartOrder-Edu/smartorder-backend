@@ -2,7 +2,7 @@ package com.smartorder.edu.agent.controller;
 
 import com.smartorder.edu.agent.controller.AgentTaskController;
 import com.smartorder.edu.agent.repository.impl.AgentChatEventLog;
-import com.smartorder.edu.agent.service.AgentChatTaskService;
+import com.smartorder.edu.agent.service.AgentTaskService;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -19,7 +19,7 @@ import static org.mockito.Mockito.*;
 class AgentTaskControllerDisconnectTest {
     @Test
     void disconnectDoesNotCompleteBrokenEmitter() throws IOException {
-        AgentChatTaskService tasks = mock(AgentChatTaskService.class);
+        AgentTaskService tasks = mock(AgentTaskService.class);
         AgentChatEventLog events = mock(AgentChatEventLog.class);
         SseEmitter emitter = mock(SseEmitter.class);
         when(events.read("task-1", "0-0")).thenReturn(List.of());

@@ -8,7 +8,7 @@
 | 包 | 放什么 | 当前内容 |
 | --- | --- | --- |
 | `controller/` | REST 接口，只做参数校验、鉴权、协议转换 | 9 个 `*Controller` |
-| `service/` | 业务接口 + 无接口的业务服务 | 14 个接口（`AgentGenerationService`、`ClarificationService`…）+ 9 个历史业务服务（`ConversationTurnService` 等） |
+| `service/` | 业务接口 + 无接口的业务服务 | 14 个接口（`AgentChatService`、`ClarificationService`…）+ 9 个业务服务（`ConversationMessageService` 等） |
 | `service/impl/` | 接口实现，以及仅供 service 层使用的内部协作类 | 9 个 `*ServiceImpl` + 编排引擎/校验器/路由策略（`AgentOrchestratorImpl`、`PlanAndExecuteEngine`、`StateRuleRouter`…） |
 | `mapper/` | MyBatis-Plus `BaseMapper`，只做表 CRUD | 10 个 Mapper |
 | `model/entity/` | 数据库实体 | 10 个 |
@@ -21,7 +21,7 @@
 | `util/` | 无状态工具与加载器 | `PromptLoader`、`TitleNormalizer`、`TitleInputExtractor`、`ConfirmationWords`、`AgentStreamCursor` |
 | `runtime/` | **生成任务运行时内核**：内存聚合、事件、订阅、SSE 出口、执行预算 | `AgentGeneration`、`AgentGenerationRegistry`、`AgentGenerationEvent(Meta/Subscription)`、`AgentEventSink`、`SseEmitterEventSink`、`AgentGenerationEventMirror`、`ExecutionBudget` |
 | `repository/` | **非 MyBatis 的数据访问**（Redis 事件归档等） | `AgentGenerationEventStore` + `impl/{Redis,InMemory}AgentGenerationEventStore`、`AgentChatEventLog` |
-| `task/` | 定时任务 | `ConversationZombieCleaner` |
+| `task/` | 定时任务 | `StaleMessageCleaner` |
 | `rag/` | RAG 子模块（检索/重排/评测，保持纵向内聚） | 26 个类 |
 | `tool/` | Agent 工具与注册表（保持纵向内聚） | 32 个类 |
 
@@ -48,9 +48,18 @@
   - `AgentGenerationManager` → `AgentGenerationRegistry`（它是本机运行时注册表，不是万能的 Manager）；
   - `AgentEventLog` → `AgentChatEventLog`（与生成任务的 `AgentGenerationEventStore` 区分）；
   - `PromptLoader` 归入 `util`，`AgentSseProperties` 归入 `config`。
-- 9 个服务抽出接口：`AgentGenerationService`、`AgentChatTaskService`、`ConversationMemoryService`、
-  `ConversationCompressService`、`ConversationTitleService`、`ClarificationService`、`PlanConfirmService`、
+- 9 个服务抽出接口：`AgentChatService`、`AgentTaskService`、`ConversationContextService`、
+  `ConversationSummaryService`、`ConversationTitleService`、`ClarificationService`、`PlanConfirmService`、
   `ProfilePromptService`、`IntentRouteService`。
+- 服务命名统一改为「业务动作」而不是「内部机制」：
+  - `ConversationTurnService` → `ConversationMessageService`（它做的就是会话消息落库与回复收尾，不是抽象的“轮次”）；
+  - `AgentGenerationService` → `AgentChatService`（发消息 / 订阅回复流 / 查状态 / 取消），`create` → `sendMessage`；
+  - `AgentChatTaskService` → `AgentTaskService`（与 `AgentTaskController` 对齐，避免和 `AgentChatService` 混淆）；
+  - `ConversationMemoryService` → `ConversationContextService`（给模型组装上下文，不是框架里的 ChatMemory）；
+  - `ConversationCompressService` → `ConversationSummaryService`（“压缩”是手段，产出是会话摘要）；
+  - `ConversationZombieCleaner` → `StaleMessageCleaner`（清理的是超时的占位消息，不是会话）。
+  - 方法名同步：`openTurn/finalizeTurn/failTurn/cancelTurn` → `openReply/completeReply/failReply/cancelReply`，
+    内部状态类 `TurnState` → `PendingReply`。
 
 ## 新增代码放哪里（示例）
 

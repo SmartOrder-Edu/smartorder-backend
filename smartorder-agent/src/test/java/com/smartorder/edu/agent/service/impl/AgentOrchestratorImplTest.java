@@ -8,9 +8,9 @@ import com.smartorder.edu.agent.model.enums.IntentType;
 import com.smartorder.edu.agent.model.enums.RoutingSource;
 import com.smartorder.edu.agent.runtime.AgentGenerationRegistry;
 import com.smartorder.edu.agent.service.AgentConversationAttachmentService;
-import com.smartorder.edu.agent.service.ConversationMemoryService;
+import com.smartorder.edu.agent.service.ConversationContextService;
 import com.smartorder.edu.agent.service.ConversationTitleService;
-import com.smartorder.edu.agent.service.ConversationTurnService;
+import com.smartorder.edu.agent.service.ConversationMessageService;
 import com.smartorder.edu.agent.service.IntentRouteService;
 import com.smartorder.edu.agent.service.TraceEventDispatcher;
 import com.smartorder.edu.agent.service.impl.ProfileUpdateCoordinator;
@@ -36,10 +36,10 @@ class AgentOrchestratorImplTest {
         SelfManagedReActEngine reActEngine = mock(SelfManagedReActEngine.class);
         PlanAndExecuteEngine planAndExecuteEngine = mock(PlanAndExecuteEngine.class);
         TraceEventDispatcher dispatcher = mock(TraceEventDispatcher.class);
-        ConversationMemoryService memoryService = mock(ConversationMemoryService.class);
+        ConversationContextService contextService = mock(ConversationContextService.class);
         AgentConversationAttachmentService attachmentService = mock(AgentConversationAttachmentService.class);
         ProfileUpdateCoordinator profileUpdateCoordinator = mock(ProfileUpdateCoordinator.class);
-        ConversationTurnService turnService = mock(ConversationTurnService.class);
+        ConversationMessageService messageService = mock(ConversationMessageService.class);
         ConversationTitleService titleService = mock(ConversationTitleService.class);
         AgentRunSupervisor runSupervisor = mock(AgentRunSupervisor.class);
         AgentGenerationRegistry generationManager = mock(AgentGenerationRegistry.class);
@@ -48,10 +48,10 @@ class AgentOrchestratorImplTest {
                 reActEngine,
                 planAndExecuteEngine,
                 dispatcher,
-                memoryService,
+                contextService,
                 attachmentService,
                 profileUpdateCoordinator,
-                turnService,
+                messageService,
                 titleService,
                 runSupervisor,
                 generationManager
@@ -66,7 +66,7 @@ class AgentOrchestratorImplTest {
                 .source(RoutingSource.KEYWORD)
                 .reason("test")
                 .build();
-        ConversationTurnService.TurnState turnState = ConversationTurnService.TurnState.builder()
+        ConversationMessageService.PendingReply turnState = ConversationMessageService.PendingReply.builder()
                 .conversationId("conversation-1")
                 .conversationPk(1L)
                 .userMessageId(11L)
@@ -76,9 +76,9 @@ class AgentOrchestratorImplTest {
                 .title("我准备考研")
                 .created(false)
                 .build();
-        when(turnService.openTurn(any(), any(), any(), any(), any())).thenReturn(turnState);
+        when(messageService.openReply(any(), any(), any(), any(), any())).thenReturn(turnState);
         when(routeService.route(any(RouteContext.class))).thenReturn(routeResult);
-        when(memoryService.getRecentChatMessages("conversation-1", 30)).thenReturn(List.of());
+        when(contextService.getRecentChatMessages("conversation-1", 30)).thenReturn(List.of());
         doAnswer(invocation -> {
             Runnable runnable = invocation.getArgument(3);
             runnable.run();
@@ -92,9 +92,9 @@ class AgentOrchestratorImplTest {
 
         orchestrator.handle(request, emitter);
 
-        // 事务 A（openTurn 落用户消息 + 占位行）必须先于意图路由
-        InOrder order = inOrder(turnService, routeService);
-        order.verify(turnService).openTurn(eq("conversation-1"), eq(7L),
+        // 事务 A（openReply 落用户消息 + 占位行）必须先于意图路由
+        InOrder order = inOrder(messageService, routeService);
+        order.verify(messageService).openReply(eq("conversation-1"), eq(7L),
                 eq("我准备考研，但是大二的时候没有怎么学会数据结构"), any(), any());
         order.verify(routeService).route(any(RouteContext.class));
         verify(reActEngine).execute(eq(request), eq(routeResult), any(), eq(emitter));

@@ -7,7 +7,7 @@ import com.smartorder.edu.agent.model.entity.AgentClarification;
 import com.smartorder.edu.agent.model.entity.AgentPlanDraft;
 import com.smartorder.edu.agent.service.AgentRunStateService;
 import com.smartorder.edu.agent.service.ClarificationService;
-import com.smartorder.edu.agent.service.ConversationMemoryService;
+import com.smartorder.edu.agent.service.ConversationContextService;
 import com.smartorder.edu.agent.service.PlanDraftService;
 import com.smartorder.edu.agent.service.TraceEventDispatcher;
 import com.smartorder.edu.agent.service.impl.LLMStepVerifier;
@@ -96,7 +96,7 @@ class PlanAndExecuteEngineTest {
                 draftService,
                 clarificationService,
                 mock(TraceEventDispatcher.class),
-                mock(ConversationMemoryService.class),
+                mock(ConversationContextService.class),
                 mock(SelfManagedReActEngine.class),
                 mock(LLMStepVerifier.class),
                 mock(PromptLoader.class),

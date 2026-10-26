@@ -3,7 +3,7 @@ package com.smartorder.edu.agent.service.impl;
 import com.alibaba.fastjson.JSON;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.repository.impl.AgentChatEventLog;
-import com.smartorder.edu.agent.service.AgentChatTaskService;
+import com.smartorder.edu.agent.service.AgentTaskService;
 import com.smartorder.edu.agent.service.AgentOrchestrator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,13 +27,13 @@ import java.util.concurrent.ExecutorService;
 /** 任务元数据与 Agent 执行生命周期；读取快照和 SSE 订阅绝不调用本服务的 create。 */
 @Slf4j
 @Service
-public class AgentChatTaskServiceImpl implements AgentChatTaskService { 
+public class AgentTaskServiceImpl implements AgentTaskService { 
     private final JdbcTemplate jdbc;
     private final AgentOrchestrator orchestrator;
     private final AgentChatEventLog eventLog;
     private final ExecutorService executor;
 
-    public AgentChatTaskServiceImpl(JdbcTemplate jdbc, AgentOrchestrator orchestrator, AgentChatEventLog eventLog,
+    public AgentTaskServiceImpl(JdbcTemplate jdbc, AgentOrchestrator orchestrator, AgentChatEventLog eventLog,
                                 @Qualifier("agentChatExecutor") ExecutorService executor) {
         this.jdbc = jdbc;
         this.orchestrator = orchestrator;

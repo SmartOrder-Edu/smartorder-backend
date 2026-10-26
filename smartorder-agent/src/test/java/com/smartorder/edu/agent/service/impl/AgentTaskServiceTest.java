@@ -3,7 +3,7 @@ package com.smartorder.edu.agent.service.impl;
 import com.alibaba.fastjson.JSON;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.repository.impl.AgentChatEventLog;
-import com.smartorder.edu.agent.service.AgentChatTaskService;
+import com.smartorder.edu.agent.service.AgentTaskService;
 import com.smartorder.edu.agent.service.AgentOrchestrator;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DuplicateKeyException;
@@ -23,14 +23,14 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /** 验证任务幂等创建、租户隔离以及快照正文与游标配对。 */
-class AgentChatTaskServiceTest {
+class AgentTaskServiceTest {
     @Test
     void createsOneTaskAndReturnsSameTaskForDuplicateRequest() throws Exception {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         AgentOrchestrator orchestrator = mock(AgentOrchestrator.class);
         AgentChatEventLog log = mock(AgentChatEventLog.class);
         ExecutorService executor = mock(ExecutorService.class);
-        AgentChatTaskService service = new AgentChatTaskServiceImpl(jdbc, orchestrator, log, executor);
+        AgentTaskService service = new AgentTaskServiceImpl(jdbc, orchestrator, log, executor);
         AgentChatRequest request = new AgentChatRequest();
         request.setRequestId("request-1");
         request.setMessage("解释线程池");
@@ -59,7 +59,7 @@ class AgentChatTaskServiceTest {
     @Test
     void rejectsOtherTenantAndKeepsSnapshotCursorWithProjection() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        AgentChatTaskService service = new AgentChatTaskServiceImpl(jdbc,
+        AgentTaskService service = new AgentTaskServiceImpl(jdbc,
                 mock(AgentOrchestrator.class), mock(AgentChatEventLog.class), mock(ExecutorService.class));
         when(jdbc.queryForList(anyString(), eq("task-1"), eq(7L), eq("tenant-b")))
                 .thenReturn(List.of());
@@ -85,7 +85,7 @@ class AgentChatTaskServiceTest {
     void discoversRecentlyCompletedTaskWithoutStartingWorker() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         ExecutorService executor = mock(ExecutorService.class);
-        AgentChatTaskService service = new AgentChatTaskServiceImpl(jdbc,
+        AgentTaskService service = new AgentTaskServiceImpl(jdbc,
                 mock(AgentOrchestrator.class), mock(AgentChatEventLog.class), executor);
         when(jdbc.queryForList(anyString(), eq("conv-1"), eq(7L), eq("tenant-a")))
                 .thenReturn(List.of(Map.of("task_id", "task-1", "conversation_id", "conv-1",

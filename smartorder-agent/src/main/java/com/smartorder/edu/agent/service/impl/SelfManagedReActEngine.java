@@ -7,8 +7,8 @@ import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.model.dto.AgentRuntimeContext;
 import com.smartorder.edu.agent.model.dto.IntentRouteResult;
 import com.smartorder.edu.agent.model.enums.AgentEventType;
-import com.smartorder.edu.agent.service.ConversationCompressService;
-import com.smartorder.edu.agent.service.ConversationMemoryService;
+import com.smartorder.edu.agent.service.ConversationSummaryService;
+import com.smartorder.edu.agent.service.ConversationContextService;
 import com.smartorder.edu.agent.service.TraceEventDispatcher;
 import com.smartorder.edu.agent.tool.LangChain4jToolAdapter;
 import com.smartorder.edu.agent.tool.ToolInvokeContext;
@@ -67,8 +67,8 @@ public class SelfManagedReActEngine {
     private final StreamingChatModel streamingChatLanguageModel;
     private final LangChain4jToolAdapter toolAdapter;
     private final TraceEventDispatcher dispatcher;
-    private final ConversationMemoryService memoryService;
-    private final ConversationCompressService compressService;
+    private final ConversationContextService contextService;
+    private final ConversationSummaryService summaryService;
     private final PromptLoader promptLoader;
 
     /**
@@ -134,7 +134,7 @@ public class SelfManagedReActEngine {
             SseEmitter emitter
     ) {
         // 1. 从记忆系统构建历史上下文（已包含当前用户消息，因为 orchestrator 在调用引擎前已落库）
-        List<ChatMessage> messages = memoryService.buildMessages(
+        List<ChatMessage> messages = contextService.buildMessages(
                 runtimeContext.getConversationId(), request.getUserId());
         if (runtimeContext.getAttachmentContext() != null && !runtimeContext.getAttachmentContext().isBlank()) {
             messages.add(Math.min(1, messages.size()), SystemMessage.from(runtimeContext.getAttachmentContext()));
@@ -184,7 +184,7 @@ public class SelfManagedReActEngine {
         List<ChatMessage> messages = new ArrayList<>();
 
         // 主系统提示
-        messages.add(SystemMessage.from(memoryService.getSystemPrompt()));
+        messages.add(SystemMessage.from(contextService.getSystemPrompt()));
 
         // 任务专属系统提示
         if (taskSystemMessage != null && !taskSystemMessage.isBlank()) {
@@ -263,7 +263,7 @@ public class SelfManagedReActEngine {
     ) {
         List<ChatMessage> messages = new ArrayList<>();
 
-        messages.add(SystemMessage.from(memoryService.getSystemPrompt()));
+        messages.add(SystemMessage.from(contextService.getSystemPrompt()));
 
         if (taskSystemMessage != null && !taskSystemMessage.isBlank()) {
             messages.add(SystemMessage.from(taskSystemMessage));
@@ -409,7 +409,7 @@ public class SelfManagedReActEngine {
                                     ? allThinkingBuilder.toString() : null;
                             String segmentsJson = reasoningSegments.isEmpty() ? null
                                     : JSON.toJSONString(reasoningSegments);
-                            memoryService.saveAssistantMessage(
+                            contextService.saveAssistantMessage(
                                     runtimeContext.getConversationId(), request.getUserId(),
                                     clarificationText, reasoningContent,
                                     runtimeContext.getTraceId(), segmentsJson);
@@ -448,7 +448,7 @@ public class SelfManagedReActEngine {
                         seg.put("toolCall", toolCall);
 
                         if (options.saveToolMessages()) {
-                            memoryService.saveToolMessage(
+                            contextService.saveToolMessage(
                                     runtimeContext.getConversationId(), request.getUserId(),
                                     toolRequest.name(), toolResult);
                         }
@@ -500,12 +500,12 @@ public class SelfManagedReActEngine {
         if (options.saveAssistantMessage()) {
             String reasoningContent = allThinkingBuilder.length() > 0 ? allThinkingBuilder.toString() : null;
             String segmentsJson = reasoningSegments.isEmpty() ? null : JSON.toJSONString(reasoningSegments);
-            memoryService.saveAssistantMessage(
+            contextService.saveAssistantMessage(
                     runtimeContext.getConversationId(), request.getUserId(), finalAnswer, reasoningContent,
                     runtimeContext.getTraceId(), segmentsJson);
             runtimeContext.setAssistantMessageSaved(true);
 
-            compressService.checkAndCompress(runtimeContext.getConversationId(), request.getUserId());
+            summaryService.summarizeIfNeeded(runtimeContext.getConversationId(), request.getUserId());
         }
 
         return finalAnswer;

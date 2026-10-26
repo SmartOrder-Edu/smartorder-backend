@@ -5,7 +5,7 @@ import com.smartorder.edu.agent.model.entity.Conversation;
 import com.smartorder.edu.agent.model.entity.ConversationMessage;
 import com.smartorder.edu.agent.model.vo.ConversationVO;
 import com.smartorder.edu.agent.model.vo.MessageVO;
-import com.smartorder.edu.agent.service.ConversationMemoryService;
+import com.smartorder.edu.agent.service.ConversationContextService;
 import com.smartorder.edu.agent.service.ConversationService;
 import com.smartorder.edu.common.model.vo.Result;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
@@ -30,7 +30,7 @@ import java.util.Map;
 public class ConversationController {
 
     private final ConversationMessageMapper messageMapper;
-    private final ConversationMemoryService memoryService;
+    private final ConversationContextService contextService;
     private final ConversationService conversationService;
 
     @GetMapping("/conversations")
@@ -120,7 +120,7 @@ public class ConversationController {
                description = "软删会话（status=DELETED）+ 软删消息与摘要，硬删追踪事件；消息数据保留但不再可访问")
     public Result<String> deleteConversation(@PathVariable String conversationId) {
         Long userId = getCurrentUserId();
-        memoryService.deleteConversation(conversationId, userId);
+        contextService.deleteConversation(conversationId, userId);
         return Result.success("对话删除成功");
     }
 

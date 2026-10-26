@@ -2,7 +2,7 @@ package com.smartorder.edu.agent.controller;
 
 import com.smartorder.edu.agent.exception.AgentGenerationException;
 import com.smartorder.edu.agent.runtime.AgentGenerationSubscriptionPlan;
-import com.smartorder.edu.agent.service.AgentGenerationService;
+import com.smartorder.edu.agent.service.AgentChatService;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.AfterEach;
@@ -31,7 +31,7 @@ import static org.mockito.Mockito.when;
  */
 class AgentGenerationControllerTest {
 
-    private final AgentGenerationService service = mock(AgentGenerationService.class);
+    private final AgentChatService service = mock(AgentChatService.class);
 
     private final AgentGenerationController controller = new AgentGenerationController(service);
 

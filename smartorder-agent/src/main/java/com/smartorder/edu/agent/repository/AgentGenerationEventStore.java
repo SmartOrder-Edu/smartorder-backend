@@ -83,7 +83,7 @@ public interface AgentGenerationEventStore {
     void bindConversation(String conversationId, String generationId);
 
     /**
-     * 会话 ID 在 openTurn 之后才确定，回填到生成元数据里。
+     * 会话 ID 在 openReply 之后才确定，回填到生成元数据里。
      */
     void updateConversation(String generationId, String conversationId);
 

@@ -140,7 +140,7 @@ public class AgentGenerationRegistry {
     }
 
     /**
-     * 会话 ID 在 openTurn 之后才确定，绑定后刷新恢复才能找到这次生成。
+     * 会话 ID 在 openReply 之后才确定，绑定后刷新恢复才能找到这次生成。
      */
     public void bindConversation(String generationId, String conversationId) {
         if (generationId == null || conversationId == null || conversationId.isBlank()) {

@@ -42,7 +42,7 @@ public class AgentRuntimeContext {
     private Long conversationPk;
 
     /**
-     * 本轮轮次ID（当前实现等于 traceId），用于把"一次请求"和"一次生成"绑定
+     * 本轮追踪ID（当前实现等于 traceId），用于把"一次请求"和"一次生成"绑定
      */
     private String turnId;
 

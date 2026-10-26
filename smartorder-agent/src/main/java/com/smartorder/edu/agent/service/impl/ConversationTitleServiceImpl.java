@@ -5,7 +5,7 @@ import com.smartorder.edu.agent.model.dto.AgentRuntimeContext;
 import com.smartorder.edu.agent.model.entity.Conversation;
 import com.smartorder.edu.agent.model.enums.AgentEventType;
 import com.smartorder.edu.agent.service.ConversationTitleService;
-import com.smartorder.edu.agent.service.ConversationTurnService;
+import com.smartorder.edu.agent.service.ConversationMessageService;
 import com.smartorder.edu.agent.service.TitleGeneratorAgent;
 import com.smartorder.edu.agent.service.TraceEventDispatcher;
 import com.smartorder.edu.agent.util.PromptLoader;
@@ -26,7 +26,7 @@ import java.util.Map;
  * 会话标题生成服务——把用户首条消息压成"标签式"短标题。
  *
  * <p><b>为什么异步</b>：标题要调一次 LLM（数百毫秒到数秒），而首条消息落库
- * （{@code ConversationTurnService#openTurn}）是持有 conversation 行锁的事务 A，
+ * （{@code ConversationMessageService#openReply}）是持有 conversation 行锁的事务 A，
  * 绝不能把 LLM 调用塞进事务里；同时 SSE 首包必须立刻返回，用户要马上看到自己的消息。
  * 因此这里用 {@code @Async} 在事务提交之后独立执行，失败也不影响主流程。</p>
  *

@@ -1,6 +1,6 @@
 package com.smartorder.edu.agent.model.dto;
 
-import com.smartorder.edu.agent.service.ConversationTurnService;
+import com.smartorder.edu.agent.service.ConversationMessageService;
 import lombok.Builder;
 import lombok.Data;
 
@@ -12,7 +12,7 @@ import lombok.Data;
  * 之后的 SSE 只负责增量输出与断线重放，不再承担“创建会话/占位消息”的职责。</p>
  *
  * <p>它同时是编排器的输入：生成任务启动时直接复用这一轮的 ID 和 traceId，
- * 不会在异步线程里再开一次轮次（否则同一句话会出现两条用户消息）。</p>
+ * 不会在异步线程里再插一次消息（否则同一句话会出现两条用户消息）。</p>
  */
 @Data
 @Builder
@@ -37,13 +37,13 @@ public class AgentTurnContext {
     /** 本轮兜底标题（首条消息时为截断的用户消息） */
     private String title;
 
-    /** AUTO / LLM / USER，用于判断后续轮次是否还要补标题 */
+    /** AUTO / LLM / USER，用于判断后续消息是否还要补标题 */
     private String titleSource;
 
     /** 本轮是否新建了会话 */
     private boolean created;
 
-    public static AgentTurnContext from(ConversationTurnService.TurnState turn, String traceId) {
+    public static AgentTurnContext from(ConversationMessageService.PendingReply turn, String traceId) {
         if (turn == null) {
             return null;
         }

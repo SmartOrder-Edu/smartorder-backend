@@ -4,8 +4,8 @@ import com.smartorder.edu.agent.exception.BudgetExceededException;
 import com.smartorder.edu.agent.model.dto.AgentRuntimeContext;
 import com.smartorder.edu.agent.model.enums.AgentEventType;
 import com.smartorder.edu.agent.runtime.ExecutionBudget;
-import com.smartorder.edu.agent.service.ConversationMemoryService;
-import com.smartorder.edu.agent.service.ConversationTurnService;
+import com.smartorder.edu.agent.service.ConversationContextService;
+import com.smartorder.edu.agent.service.ConversationMessageService;
 import com.smartorder.edu.agent.service.TraceEventDispatcher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -23,7 +23,7 @@ import java.util.concurrent.*;
  * 2. 收尾本轮的 assistant 占位行（成功→COMPLETED，异常→FAILED + error_message）
  * 3. 正确关闭 SSE 连接（TRACE_COMPLETED + DONE）
  * <p>
- * 与改造前的区别：不再"新插一条兜底消息"，而是收尾 openTurn 时创建的占位行，
+ * 与改造前的区别：不再"新插一条兜底消息"，而是收尾 openReply 时创建的占位行，
  * 这样库里不会出现"一条失败记录 + 一条兜底消息"两条互相矛盾的数据。
  */
 @Slf4j
@@ -31,17 +31,17 @@ import java.util.concurrent.*;
 public class AgentRunSupervisor {
 
     private final TraceEventDispatcher dispatcher;
-    private final ConversationMemoryService memoryService;
-    private final ConversationTurnService turnService;
+    private final ConversationContextService contextService;
+    private final ConversationMessageService messageService;
     private final ExecutorService supervisorExecutor;
 
     public AgentRunSupervisor(TraceEventDispatcher dispatcher,
-                              ConversationMemoryService memoryService,
-                              ConversationTurnService turnService,
+                              ConversationContextService contextService,
+                              ConversationMessageService messageService,
                               @Qualifier("agentChatExecutor") ExecutorService supervisorExecutor) {
         this.dispatcher = dispatcher;
-        this.memoryService = memoryService;
-        this.turnService = turnService;
+        this.contextService = contextService;
+        this.messageService = messageService;
         this.supervisorExecutor = supervisorExecutor;
     }
 
@@ -144,14 +144,14 @@ public class AgentRunSupervisor {
         boolean closed = false;
         if (exitReason != ExitReason.NORMAL) {
             try {
-                closed = turnService.failTurn(context.getTraceId(), fallback, fallback);
+                closed = messageService.failReply(context.getTraceId(), fallback, fallback);
             } catch (Exception ex) {
                 log.error("[Supervisor] 失败收尾异常: traceId={}", context.getTraceId(), ex);
             }
         }
         if (!closed) {
             try {
-                memoryService.saveAssistantMessage(
+                contextService.saveAssistantMessage(
                         context.getConversationId(),
                         context.getUserId(),
                         fallback,

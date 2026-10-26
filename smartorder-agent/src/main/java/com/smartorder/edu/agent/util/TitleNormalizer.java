@@ -161,7 +161,7 @@ public final class TitleNormalizer {
      * 是否是"还没有真标题"的占位状态。
      *
      * <p>用于两处：① 模型只吐出"新对话"时不落库（保持 {@code title_source=AUTO}，
-     * 下一轮还能再生成）；② 后续轮次判断要不要补生成标题。</p>
+     * 下一轮还能再生成）；② 后续消息判断要不要补生成标题。</p>
      */
     public static boolean isPlaceholder(String title) {
         return title == null || title.isBlank() || PLACEHOLDER.equals(title.trim());

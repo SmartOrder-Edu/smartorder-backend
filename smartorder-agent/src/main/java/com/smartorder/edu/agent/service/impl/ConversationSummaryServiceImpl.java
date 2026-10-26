@@ -4,8 +4,8 @@ import com.smartorder.edu.agent.mapper.ConversationMessageMapper;
 import com.smartorder.edu.agent.mapper.ConversationSummaryMapper;
 import com.smartorder.edu.agent.model.entity.ConversationMessage;
 import com.smartorder.edu.agent.model.entity.ConversationSummary;
-import com.smartorder.edu.agent.service.ConversationCompressService;
-import com.smartorder.edu.agent.service.ConversationMemoryService;
+import com.smartorder.edu.agent.service.ConversationSummaryService;
+import com.smartorder.edu.agent.service.ConversationContextService;
 import com.smartorder.edu.agent.service.SummaryAgent;
 import com.smartorder.edu.agent.util.PromptLoader;
 import dev.langchain4j.model.chat.ChatModel;
@@ -18,9 +18,9 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * 会话压缩服务——消息超过 40 条时自动触发摘要压缩
+ * 会话摘要服务——消息超过 40 条时自动触发生成摘要
  *
- * 压缩策略：
+ * 摘要策略：
  * - 消息数 > 40 → 异步触发摘要
  * - 摘要写入 conversation_summary
  * - 旧消息标记 is_compressed = 1
@@ -29,24 +29,24 @@ import java.util.List;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ConversationCompressServiceImpl implements ConversationCompressService { 
+public class ConversationSummaryServiceImpl implements ConversationSummaryService { 
 
     private static final int COMPRESS_THRESHOLD = 40;
 
     private final ConversationMessageMapper messageMapper;
     private final ConversationSummaryMapper summaryMapper;
-    private final ConversationMemoryService memoryService;
+    private final ConversationContextService contextService;
     private final ChatModel chatLanguageModel;
     private final PromptLoader promptLoader;
 
     /**
-     * 检查并触发压缩（异步执行，不阻塞聊天）
+     * 检查并按需摘要（异步执行，不阻塞聊天）
      *
      * 增量摘要策略：旧摘要 + 新增未压缩消息 → 增量摘要，避免多轮压缩后早期信息丢失
      */
     @Async("agentAsyncExecutor")
-    public void checkAndCompress(String conversationId, Long userId) {
-        int count = memoryService.countUncompressed(conversationId);
+    public void summarizeIfNeeded(String conversationId, Long userId) {
+        int count = contextService.countUncompressed(conversationId);
         if (count <= COMPRESS_THRESHOLD) {
             return;
         }
@@ -60,7 +60,7 @@ public class ConversationCompressServiceImpl implements ConversationCompressServ
                     ? existing.getSummaryText() : "";
 
             // 2. 获取新增未压缩消息的文本
-            String newMessagesText = memoryService.getUncompressedText(conversationId);
+            String newMessagesText = contextService.getUncompressedText(conversationId);
             if (newMessagesText.isBlank() && existingSummary.isBlank()) {
                 log.warn("[Compress] 无可压缩内容: conversationId={}", conversationId);
                 return;
