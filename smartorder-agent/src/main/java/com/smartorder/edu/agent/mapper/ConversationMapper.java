@@ -14,19 +14,18 @@ import java.util.List;
 @Mapper
 public interface ConversationMapper extends BaseMapper<Conversation> {
 
-    @Select("SELECT * FROM conversation WHERE conversation_uuid = #{conversationUuid} LIMIT 1")
-    Conversation selectByConversationUuid(@Param("conversationUuid") String conversationUuid);
+    @Select("SELECT * FROM conversation WHERE conversation_id = #{conversationId} LIMIT 1")
+    Conversation selectByConversationId(@Param("conversationId") String conversationId);
 
     /**
      * 行锁读取——同一会话的序号分配与写入必须串行化。
      * 必须在事务内调用，锁持有到事务提交为止。
      */
-    @Select("SELECT * FROM conversation WHERE conversation_uuid = #{conversationUuid} LIMIT 1 FOR UPDATE")
-    Conversation selectByConversationUuidForUpdate(@Param("conversationUuid") String conversationUuid);
+    @Select("SELECT * FROM conversation WHERE conversation_id = #{conversationId} LIMIT 1 FOR UPDATE")
+    Conversation selectByConversationIdForUpdate(@Param("conversationId") String conversationId);
 
     @Select("""
-        SELECT conversation_uuid     AS conversationId,
-               conversation_uuid     AS conversationUuid,
+        SELECT conversation_id       AS conversationId,
                title                 AS title,
                last_message_preview  AS lastMessage,
                message_count         AS messageCount,
@@ -45,8 +44,7 @@ public interface ConversationMapper extends BaseMapper<Conversation> {
                                           @Param("offset") int offset);
 
     @Select("""
-        SELECT conversation_uuid     AS conversationId,
-               conversation_uuid     AS conversationUuid,
+        SELECT conversation_id       AS conversationId,
                title                 AS title,
                last_message_preview  AS lastMessage,
                message_count         AS messageCount,
@@ -56,18 +54,18 @@ public interface ConversationMapper extends BaseMapper<Conversation> {
                pinned                AS pinned,
                created_at            AS createdAt
         FROM conversation
-        WHERE conversation_uuid = #{conversationUuid} AND user_id = #{userId}
+        WHERE conversation_id = #{conversationId} AND user_id = #{userId}
         LIMIT 1
         """)
-    ConversationVO selectVoByConversationUuid(@Param("conversationUuid") String conversationUuid,
-                                              @Param("userId") Long userId);
+    ConversationVO selectVoByConversationId(@Param("conversationId") String conversationId,
+                                            @Param("userId") Long userId);
 
     @Update("""
         UPDATE conversation
         SET title = #{title}, title_source = 'USER'
-        WHERE conversation_uuid = #{conversationUuid} AND user_id = #{userId} AND status = 'ACTIVE'
+        WHERE conversation_id = #{conversationId} AND user_id = #{userId} AND status = 'ACTIVE'
         """)
-    int updateTitle(@Param("conversationUuid") String conversationUuid,
+    int updateTitle(@Param("conversationId") String conversationId,
                     @Param("userId") Long userId,
                     @Param("title") String title);
 
@@ -83,9 +81,9 @@ public interface ConversationMapper extends BaseMapper<Conversation> {
     @Update("""
         UPDATE conversation
         SET title = #{title}, title_source = 'LLM'
-        WHERE conversation_uuid = #{conversationUuid} AND title_source = 'AUTO' AND status = 'ACTIVE'
+        WHERE conversation_id = #{conversationId} AND title_source = 'AUTO' AND status = 'ACTIVE'
         """)
-    int updateTitleIfAuto(@Param("conversationUuid") String conversationUuid,
+    int updateTitleIfAuto(@Param("conversationId") String conversationId,
                           @Param("title") String title);
 
     /**
@@ -94,24 +92,24 @@ public interface ConversationMapper extends BaseMapper<Conversation> {
     @Update("""
         UPDATE conversation
         SET last_message_at = #{lastMessageAt}, last_message_preview = #{preview}
-        WHERE conversation_uuid = #{conversationUuid}
+        WHERE conversation_id = #{conversationId}
         """)
-    int touchLastMessage(@Param("conversationUuid") String conversationUuid,
+    int touchLastMessage(@Param("conversationId") String conversationId,
                          @Param("lastMessageAt") LocalDateTime lastMessageAt,
                          @Param("preview") String preview);
 
-    @Update("UPDATE conversation SET message_count = GREATEST(message_count + #{delta}, 0) WHERE conversation_uuid = #{conversationUuid}")
-    int incrMessageCount(@Param("conversationUuid") String conversationUuid, @Param("delta") int delta);
+    @Update("UPDATE conversation SET message_count = GREATEST(message_count + #{delta}, 0) WHERE conversation_id = #{conversationId}")
+    int incrMessageCount(@Param("conversationId") String conversationId, @Param("delta") int delta);
 
-    @Update("UPDATE conversation SET message_count = #{messageCount} WHERE conversation_uuid = #{conversationUuid}")
-    int updateMessageCount(@Param("conversationUuid") String conversationUuid,
+    @Update("UPDATE conversation SET message_count = #{messageCount} WHERE conversation_id = #{conversationId}")
+    int updateMessageCount(@Param("conversationId") String conversationId,
                            @Param("messageCount") int messageCount);
 
     @Update("""
         UPDATE conversation
         SET status = 'DELETED', deleted_at = NOW(3)
-        WHERE conversation_uuid = #{conversationUuid} AND user_id = #{userId} AND status <> 'DELETED'
+        WHERE conversation_id = #{conversationId} AND user_id = #{userId} AND status <> 'DELETED'
         """)
-    int softDelete(@Param("conversationUuid") String conversationUuid,
+    int softDelete(@Param("conversationId") String conversationId,
                    @Param("userId") Long userId);
 }

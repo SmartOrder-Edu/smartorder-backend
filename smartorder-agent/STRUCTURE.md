@@ -50,7 +50,7 @@
   因此业务 `seq` 与 Stream ID 一一对应；`XREAD` 从 `0-{after}` 精确补发。
 - **MySQL 权威**：任务状态、归属、消息关联、幂等键在 `agent_chat_task`。
   Redis Stream 过期或被清理时，状态查询仍可用；回放缺口返回 `410 CURSOR_EXPIRED`，不静默跳事件。
-- **幂等**：`(user_id, client_request_id)` 唯一键是最终防线；命中未绑定消息的旧行时优先按
+- **幂等**：`(user_id, task_request_id)` 唯一键是最终防线；命中未绑定消息的旧行时优先按
   `conversation_message.task_id` 重新绑定，避免崩溃窗口插出第二对消息。
 - **旧接口兼容**：`/agent/generations` 与返回体里的 `generationId` 只是 deprecated 别名，
   新代码统一使用 `taskId`。

@@ -43,17 +43,17 @@ public interface ConversationMessageMapper extends BaseMapper<ConversationMessag
     List<ConversationMessage> selectByTaskId(@Param("taskId") String taskId);
 
     /**
-     * 消息幂等查询：conversation_uuid + message_uuid（= conversation_message.public_id）。
+     * 消息幂等查询：conversationId + messageUuid（= conversation_message.public_id）。
      * <p>唯一键 {@code uk_conv_message_uuid} 是并发重试的最终防线，这里是快速路径。</p>
      */
     @Select("""
         SELECT * FROM conversation_message
-        WHERE conversation_id = #{conversationUuid}
+        WHERE conversation_id = #{conversationId}
           AND public_id = #{messageUuid}
           AND is_deleted = 0
         LIMIT 1
         """)
-    ConversationMessage selectByMessageUuid(@Param("conversationUuid") String conversationUuid,
+    ConversationMessage selectByMessageUuid(@Param("conversationId") String conversationId,
                                             @Param("messageUuid") String messageUuid);
 
     /**
@@ -111,7 +111,6 @@ public interface ConversationMessageMapper extends BaseMapper<ConversationMessag
     @Select("""
         SELECT
             cm.conversation_id AS conversationId,
-            cm.conversation_id AS conversationUuid,
             COALESCE(
                 cs.title,
                 LEFT((SELECT m.content FROM conversation_message m WHERE m.conversation_id = cm.conversation_id AND m.role = 'user' AND m.is_deleted = 0 ORDER BY m.create_time ASC LIMIT 1), 50)

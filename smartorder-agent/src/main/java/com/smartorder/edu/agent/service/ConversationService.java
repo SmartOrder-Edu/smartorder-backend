@@ -57,8 +57,8 @@ public class ConversationService {
         }
     }
 
-    public ConversationVO getConversation(String conversationUuid, Long userId) {
-        ConversationVO vo = conversationMapper.selectVoByConversationUuid(conversationUuid, userId);
+    public ConversationVO getConversation(String conversationId, Long userId) {
+        ConversationVO vo = conversationMapper.selectVoByConversationId(conversationId, userId);
         if (vo == null) {
             throw new BusinessException("会话不存在或无权访问");
         }
@@ -69,7 +69,7 @@ public class ConversationService {
      * 改名。改名后 title_source=USER，异步 LLM 标题任务不再覆盖。
      */
     @Transactional(rollbackFor = Exception.class)
-    public void rename(String conversationUuid, Long userId, String title) {
+    public void rename(String conversationId, Long userId, String title) {
         if (title == null || title.isBlank()) {
             throw new BusinessException("会话标题不能为空");
         }
@@ -77,35 +77,35 @@ public class ConversationService {
         if (trimmed.length() > TITLE_MAX) {
             trimmed = trimmed.substring(0, TITLE_MAX);
         }
-        int updated = conversationMapper.updateTitle(conversationUuid, userId, trimmed);
+        int updated = conversationMapper.updateTitle(conversationId, userId, trimmed);
         if (updated == 0) {
             throw new BusinessException("会话不存在、已删除或无权操作");
         }
-        log.info("[Conversation] 会话改名: conversationUuid={}, title={}", conversationUuid, trimmed);
+        log.info("[Conversation] 会话改名: conversationId={}, title={}", conversationId, trimmed);
     }
 
     /**
      * 软删会话（消息不删，符合设计；所有消息入口靠 assertActive 兜住）。
      */
     @Transactional(rollbackFor = Exception.class)
-    public void softDelete(String conversationUuid, Long userId) {
-        int updated = conversationMapper.softDelete(conversationUuid, userId);
-        log.info("[Conversation] 软删会话: conversationUuid={}, affected={}", conversationUuid, updated);
+    public void softDelete(String conversationId, Long userId) {
+        int updated = conversationMapper.softDelete(conversationId, userId);
+        log.info("[Conversation] 软删会话: conversationId={}, affected={}", conversationId, updated);
     }
 
     /**
      * 补建会话主表行（幂等）。标题优先取传入的提示，否则用"新对话"。
      */
     @Transactional(rollbackFor = Exception.class)
-    public Conversation createIfAbsent(String conversationUuid, Long userId, String titleHint) {
-        Conversation existing = conversationMapper.selectByConversationUuid(conversationUuid);
+    public Conversation createIfAbsent(String conversationId, Long userId, String titleHint) {
+        Conversation existing = conversationMapper.selectByConversationId(conversationId);
         if (existing != null) {
             return existing;
         }
         Conversation conversation = new Conversation();
         // 主键由应用侧生成（雪花），不走数据库自增——多实例/迁移场景下自增会冲突
         conversation.setId(IdUtil.getSnowflakeNextId());
-        conversation.setConversationUuid(conversationUuid);
+        conversation.setConversationId(conversationId);
         conversation.setUserId(userId);
         conversation.setTitle(truncate(blankToNull(titleHint) == null ? "新对话" : titleHint.trim(), TITLE_MAX));
         conversation.setTitleSource(Conversation.TITLE_SOURCE_AUTO);
@@ -117,15 +117,15 @@ public class ConversationService {
             conversationMapper.insert(conversation);
             return conversation;
         } catch (DuplicateKeyException e) {
-            // 并发补建：另一线程已插入同一 conversation_uuid
-            Conversation conflict = conversationMapper.selectByConversationUuid(conversationUuid);
+            // 并发补建：另一线程已插入同一 conversation_id
+            Conversation conflict = conversationMapper.selectByConversationId(conversationId);
             if (conflict != null) {
                 return conflict;
             }
-            // 查不到同 conversation_uuid 的行，说明冲突的是主键（雪花 ID 重复，极罕见：
+            // 查不到同 conversation_id 的行，说明冲突的是主键（雪花 ID 重复，极罕见：
             // 多实例派生出相同 workerId 时才会发生）。换一个 ID 重试一次。
-            log.warn("[Conversation] 主键冲突且未查到同 conversationUuid 的会话，换 ID 重试: conversationUuid={}, id={}",
-                    conversationUuid, conversation.getId());
+            log.warn("[Conversation] 主键冲突且未查到同 conversationId 的会话，换 ID 重试: conversationId={}, id={}",
+                    conversationId, conversation.getId());
             conversation.setId(IdUtil.getSnowflakeNextId());
             conversationMapper.insert(conversation);
             return conversation;
@@ -140,20 +140,20 @@ public class ConversationService {
      * - 主表行缺失（迁移前的历史会话 / 迁移未执行）→ 记 warn 后放行，
      *   因为消息查询本身还带 user_id 条件，不会造成越权。
      */
-    public void assertActive(String conversationUuid, Long userId) {
-        if (conversationUuid == null || conversationUuid.isBlank()) {
+    public void assertActive(String conversationId, Long userId) {
+        if (conversationId == null || conversationId.isBlank()) {
             return;
         }
         Conversation conversation;
         try {
-            conversation = conversationMapper.selectByConversationUuid(conversationUuid);
+            conversation = conversationMapper.selectByConversationId(conversationId);
         } catch (Exception e) {
-            log.warn("[Conversation] 会话状态校验跳过（主表不可用）: conversationUuid={}, reason={}",
-                    conversationUuid, e.getMessage());
+            log.warn("[Conversation] 会话状态校验跳过（主表不可用）: conversationId={}, reason={}",
+                    conversationId, e.getMessage());
             return;
         }
         if (conversation == null) {
-            log.warn("[Conversation] 会话主表行缺失，按历史数据放行: conversationUuid={}", conversationUuid);
+            log.warn("[Conversation] 会话主表行缺失，按历史数据放行: conversationId={}", conversationId);
             return;
         }
         if (conversation.getUserId() != null && userId != null
@@ -185,7 +185,7 @@ public class ConversationService {
                 }
                 created++;
             } catch (Exception e) {
-                log.warn("[Conversation] 补建会话主表失败: conversationUuid={}, reason={}",
+                log.warn("[Conversation] 补建会话主表失败: conversationId={}, reason={}",
                         vo.getConversationId(), e.getMessage());
             }
         }

@@ -46,7 +46,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * 发送接口的语义：同步开轮并返回会话/消息 ID；同一 clientRequestId 只执行一次业务。
+ * 发送接口的语义：同步开轮并返回会话/消息 ID；同一 taskRequestId 只执行一次业务。
  */
 class AgentChatServiceImplTest {
 
@@ -91,7 +91,7 @@ class AgentChatServiceImplTest {
     }
 
     @Test
-    void shouldReuseGenerationForSameClientRequestId() {
+    void shouldReuseGenerationForSameTaskRequestId() {
         AgentTaskEventStore store = new InMemoryAgentTaskEventStore();
         AgentTaskRegistry manager = newManager(store);
         AgentOrchestrator orchestrator = mock(AgentOrchestrator.class);
@@ -237,7 +237,7 @@ class AgentChatServiceImplTest {
         AgentChatRequest request = new AgentChatRequest();
         request.setUserId(7L);
         request.setMessage(message);
-        request.setConversationUuid(CID);
+        request.setConversationId(CID);
         return request;
     }
 

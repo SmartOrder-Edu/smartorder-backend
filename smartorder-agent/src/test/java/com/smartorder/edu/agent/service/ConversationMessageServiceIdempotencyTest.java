@@ -28,8 +28,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * conversation_uuid + message_uuid 幂等语义：
- * 同 UUID 同内容 → 返回已有行不插入；同 UUID 不同内容 → 409。
+ * conversation_id + message_uuid 幂等语义：
+ * 同 UUID 同内容 -> 返回已有行不插入；同 UUID 不同内容 -> 409。
  */
 class ConversationMessageServiceIdempotencyTest {
 
@@ -53,13 +53,13 @@ class ConversationMessageServiceIdempotencyTest {
 
         Conversation conversation = new Conversation();
         conversation.setId(100L);
-        conversation.setConversationUuid(CONVERSATION);
+        conversation.setConversationId(CONVERSATION);
         conversation.setUserId(USER_ID);
         conversation.setStatus(Conversation.STATUS_ACTIVE);
         conversation.setTitle("测试会话");
         conversation.setTitleSource(Conversation.TITLE_SOURCE_AUTO);
-        when(conversationMapper.selectByConversationUuid(CONVERSATION)).thenReturn(conversation);
-        when(conversationMapper.selectByConversationUuidForUpdate(CONVERSATION)).thenReturn(conversation);
+        when(conversationMapper.selectByConversationId(CONVERSATION)).thenReturn(conversation);
+        when(conversationMapper.selectByConversationIdForUpdate(CONVERSATION)).thenReturn(conversation);
     }
 
     @Test
@@ -100,10 +100,10 @@ class ConversationMessageServiceIdempotencyTest {
     void shouldRejectConversationOwnedByAnotherUser() {
         Conversation other = new Conversation();
         other.setId(100L);
-        other.setConversationUuid(CONVERSATION);
+        other.setConversationId(CONVERSATION);
         other.setUserId(99L);
         other.setStatus(Conversation.STATUS_ACTIVE);
-        when(conversationMapper.selectByConversationUuid(CONVERSATION)).thenReturn(other);
+        when(conversationMapper.selectByConversationId(CONVERSATION)).thenReturn(other);
 
         AgentTaskException error = assertThrows(AgentTaskException.class,
                 () -> service.openReply(CONVERSATION, MESSAGE, null, USER_ID,
@@ -115,7 +115,7 @@ class ConversationMessageServiceIdempotencyTest {
 
     @Test
     void shouldRejectMissingConversationWhenNotCreatingDraft() {
-        when(conversationMapper.selectByConversationUuid(CONVERSATION)).thenReturn(null);
+        when(conversationMapper.selectByConversationId(CONVERSATION)).thenReturn(null);
         when(messageMapper.countByConversationId(CONVERSATION, USER_ID)).thenReturn(0);
 
         AgentTaskException error = assertThrows(AgentTaskException.class,
@@ -124,7 +124,7 @@ class ConversationMessageServiceIdempotencyTest {
 
         assertEquals(404, error.getStatus().value());
         assertEquals("CONVERSATION_NOT_FOUND", error.getCode());
-        verify(conversationMapper, never()).selectByConversationUuidForUpdate(anyString());
+        verify(conversationMapper, never()).selectByConversationIdForUpdate(anyString());
     }
 
     @Test

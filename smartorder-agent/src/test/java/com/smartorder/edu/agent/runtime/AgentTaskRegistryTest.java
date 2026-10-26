@@ -273,8 +273,8 @@ class AgentTaskRegistryTest {
         AgentTask task = fixture.create();
 
         assertEquals(task.getTaskId(),
-                fixture.registry.findTaskIdByClientRequest(7L, "key-1"));
-        assertNull(fixture.registry.findTaskIdByClientRequest(8L, "key-1"));
+                fixture.registry.findTaskIdByTaskRequest(7L, "key-1"));
+        assertNull(fixture.registry.findTaskIdByTaskRequest(8L, "key-1"));
         assertNotNull(fixture.registry.activeTask("c-1", 7L));
         assertNull(fixture.registry.activeTask("c-1", 8L));
     }

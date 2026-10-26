@@ -38,8 +38,8 @@ public class AgentTaskRecord {
 
     private Integer assistantSequenceNo;
 
-    /** 客户端幂等键：同一用户重试只生成一个任务 */
-    private String clientRequestId;
+    /** 任务请求幂等键：同一用户重试只生成一个任务 */
+    private String taskRequestId;
 
     /** 本轮追踪 ID */
     private String traceId;

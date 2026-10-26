@@ -25,12 +25,12 @@ public interface AgentTaskRecordMapper extends BaseMapper<AgentTaskRecord> {
 
     @Select("""
         SELECT * FROM agent_chat_task
-        WHERE user_id = #{userId} AND client_request_id = #{clientRequestId}
+        WHERE user_id = #{userId} AND task_request_id = #{taskRequestId}
         ORDER BY created_at DESC
         LIMIT 1
         """)
-    AgentTaskRecord selectByClientRequest(@Param("userId") Long userId,
-                                          @Param("clientRequestId") String clientRequestId);
+    AgentTaskRecord selectByTaskRequest(@Param("userId") Long userId,
+                                        @Param("taskRequestId") String taskRequestId);
 
     @Select("""
         SELECT * FROM agent_chat_task

@@ -105,7 +105,7 @@ public class AgentTaskRegistry {
      * <p>此时还没有插消息；先抢 MySQL 唯一键，成功后才做事务 A。这样两个并发重试
      * 不会各自插入一对 user/assistant 消息。</p>
      */
-    public Reservation reserve(Long userId, String preferredTaskId, String clientRequestId,
+    public Reservation reserve(Long userId, String preferredTaskId, String taskRequestId,
                                String conversationId, String draftId) {
         if (userId == null) {
             throw AgentTaskException.forbidden();
@@ -116,7 +116,7 @@ public class AgentTaskRegistry {
                 .conversationId(conversationId)
                 .draftId(draftId)
                 .userId(userId)
-                .clientRequestId(clientRequestId)
+                .taskRequestId(taskRequestId)
                 .status(AgentTaskStatus.CREATED.name())
                 .createdAt(now)
                 .updatedAt(now)
@@ -131,10 +131,10 @@ public class AgentTaskRegistry {
     /**
      * 事务 A 完成后绑定会话/消息，并创建本机运行时对象。
      */
-    public AgentTask bindTurn(String taskId, Long userId, String clientRequestId, AgentTurnContext turn) {
+    public AgentTask bindTurn(String taskId, Long userId, String taskRequestId, AgentTurnContext turn) {
         AgentTask task = live.get(taskId);
         if (task == null) {
-            AgentTask created = new AgentTask(taskId, userId, clientRequestId, turn,
+            AgentTask created = new AgentTask(taskId, userId, taskRequestId, turn,
                     System.currentTimeMillis(),
                     (gen, event) -> mirror.append(gen.getTaskId(), event));
             AgentTask existing = live.putIfAbsent(taskId, created);
@@ -144,9 +144,9 @@ public class AgentTaskRegistry {
         taskMetaService.bindTurn(taskId, turn.getConversationId(), turn.getTraceId(),
                 turn.getUserMessageId(), turn.getAssistantMessageId(),
                 turn.getAssistantSequenceNo(), turn.getTitle());
-        log.info("[Task] 绑定本轮消息: taskId={}, userId={}, cid={}, userMsgId={}, assistantMsgId={}, clientRequestId={}",
+        log.info("[Task] 绑定本轮消息: taskId={}, userId={}, cid={}, userMsgId={}, assistantMsgId={}, taskRequestId={}",
                 taskId, userId, turn.getConversationId(),
-                turn.getUserMessageId(), turn.getAssistantMessageId(), clientRequestId);
+                turn.getUserMessageId(), turn.getAssistantMessageId(), taskRequestId);
         return task;
     }
 
@@ -205,8 +205,8 @@ public class AgentTaskRegistry {
         }
     }
 
-    public String findTaskIdByClientRequest(Long userId, String clientRequestId) {
-        AgentTaskMeta meta = taskMetaService.findByClientRequest(userId, clientRequestId);
+    public String findTaskIdByTaskRequest(Long userId, String taskRequestId) {
+        AgentTaskMeta meta = taskMetaService.findByTaskRequest(userId, taskRequestId);
         return meta == null ? null : meta.getTaskId();
     }
 

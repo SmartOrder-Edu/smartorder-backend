@@ -66,14 +66,14 @@ public class AgentTaskException extends RuntimeException {
     }
 
     /**
-     * 同一 conversation_uuid 被新的 draft 复用（明确要新建对话，却复用了旧 UUID）。
+     * 同一 conversationId 被新的 draft 复用（明确要新建对话，却复用了旧 UUID）。
      */
     public static AgentTaskException conversationDraftConflict(String message) {
         return new AgentTaskException(HttpStatus.CONFLICT, "CONVERSATION_DRAFT_CONFLICT", message);
     }
 
     /**
-     * 同一 draft_id 被绑定到不同的 conversation_uuid（draft ↔ conversation 必须一对一）。
+     * 同一 draft_id 被绑定到不同的 conversationId（draft ↔ conversation 必须一对一）。
      */
     public static AgentTaskException draftConversationConflict(String message) {
         return new AgentTaskException(HttpStatus.CONFLICT, "DRAFT_CONVERSATION_CONFLICT", message);
@@ -87,7 +87,7 @@ public class AgentTaskException extends RuntimeException {
     }
 
     /**
-     * 同一 conversation_uuid + message_uuid 重复，但消息内容不一致。
+     * 同一 conversationId + messageUuid 重复，但消息内容不一致。
      */
     public static AgentTaskException messageContentConflict(String message) {
         return new AgentTaskException(HttpStatus.CONFLICT, "MESSAGE_CONTENT_CONFLICT", message);

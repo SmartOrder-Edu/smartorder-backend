@@ -77,7 +77,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         AgentRuntimeContext context = AgentRuntimeContext.builder()
                 .taskId(taskId)
                 .traceId(traceId)
-                .conversationId(turn != null ? turn.getConversationId() : request.resolveConversationUuid())
+                .conversationId(turn != null ? turn.getConversationId() : request.resolveConversationId())
                 .userId(request.getUserId())
                 .message(request.getMessage())
                 .knowledgeBaseIds(request.getKnowledgeBaseIds())
@@ -104,7 +104,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         if (turn == null) {
             try {
                 ConversationMessageService.PendingReply state = conversationMessageService.openReply(
-                        request.resolveConversationUuid(), request.getMessageUuid(), request.getDraftId(),
+                        request.resolveConversationId(), request.getMessageUuid(), request.getDraftId(),
                         request.getUserId(), request.getMessage(), request.getFileIds(), traceId, taskId);
                 if (state.isDuplicate()) {
                     // 旧兼容入口重复提交同一条 message_uuid：不再生成第二份回答
@@ -129,7 +129,6 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
 
         String conversationId = turn.getConversationId();
         request.setConversationId(conversationId);
-        request.setConversationUuid(conversationId);
         context.setConversationId(conversationId);
         context.setConversationPk(turn.getConversationPk());
         context.setTurnId(traceId);

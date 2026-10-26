@@ -24,7 +24,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 鑽夌缁戝畾涓?requestId/draftId 涓€鑷存€э細鍐茬獊蹇呴』 409锛屼笉鑳芥倓鎮勫鐢ㄦ棫浼氳瘽銆? */
+ * 草稿绑定与 requestId/draftId 一致性：冲突必须 409，不能悄悄复用旧会话。
+ */
 class ConversationDraftServiceTest {
 
     private static final String DRAFT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -52,10 +53,10 @@ class ConversationDraftServiceTest {
     }
 
     @Test
-    void shouldRejectNewDraftReusingExistingConversationUuid() {
+    void shouldRejectNewDraftReusingExistingConversationId() {
         ConversationDraft bound = row(OTHER_DRAFT, CONVERSATION, USER_ID);
         when(draftMapper.selectByDraftIdForUpdate(DRAFT)).thenReturn(null);
-        when(draftMapper.selectByConversationUuidForUpdate(CONVERSATION)).thenReturn(bound);
+        when(draftMapper.selectByConversationIdForUpdate(CONVERSATION)).thenReturn(bound);
 
         AgentTaskException error = assertThrows(AgentTaskException.class,
                 () -> service.bindOrAssert(DRAFT, CONVERSATION, USER_ID));
@@ -66,10 +67,10 @@ class ConversationDraftServiceTest {
     }
 
     @Test
-    void shouldRejectSameDraftSwitchingConversationUuid() {
+    void shouldRejectSameDraftSwitchingConversationId() {
         when(draftMapper.selectByDraftIdForUpdate(DRAFT))
                 .thenReturn(row(DRAFT, OTHER_CONVERSATION, USER_ID));
-        when(draftMapper.selectByConversationUuidForUpdate(CONVERSATION)).thenReturn(null);
+        when(draftMapper.selectByConversationIdForUpdate(CONVERSATION)).thenReturn(null);
 
         AgentTaskException error = assertThrows(AgentTaskException.class,
                 () -> service.bindOrAssert(DRAFT, CONVERSATION, USER_ID));
@@ -90,7 +91,7 @@ class ConversationDraftServiceTest {
     @Test
     void shouldCreateBindingAndCacheBothDirections() {
         when(draftMapper.selectByDraftIdForUpdate(DRAFT)).thenReturn(null);
-        when(draftMapper.selectByConversationUuidForUpdate(CONVERSATION)).thenReturn(null);
+        when(draftMapper.selectByConversationIdForUpdate(CONVERSATION)).thenReturn(null);
 
         assertDoesNotThrow(() -> service.bindOrAssert(DRAFT, CONVERSATION, USER_ID));
 
@@ -142,7 +143,7 @@ class ConversationDraftServiceTest {
         AgentTaskRecord record = new AgentTaskRecord();
         record.setTaskId("task-1");
         record.setDraftId(OTHER_DRAFT);
-        when(taskMapper.selectByClientRequest(USER_ID, "req-1")).thenReturn(record);
+        when(taskMapper.selectByTaskRequest(USER_ID, "req-1")).thenReturn(record);
 
         AgentTaskException error = assertThrows(AgentTaskException.class,
                 () -> service.assertRequestDraft(USER_ID, "req-1", DRAFT));
@@ -150,10 +151,10 @@ class ConversationDraftServiceTest {
         assertEquals("REQUEST_DRAFT_CONFLICT", error.getCode());
     }
 
-    private ConversationDraft row(String draftId, String conversationUuid, Long userId) {
+    private ConversationDraft row(String draftId, String conversationId, Long userId) {
         ConversationDraft row = new ConversationDraft();
         row.setDraftId(draftId);
-        row.setConversationUuid(conversationUuid);
+        row.setConversationId(conversationId);
         row.setUserId(userId);
         return row;
     }

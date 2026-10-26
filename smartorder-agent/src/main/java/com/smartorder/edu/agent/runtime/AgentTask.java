@@ -44,9 +44,9 @@ public class AgentTask {
     @Getter
     private final Long userId;
 
-    /** 客户端幂等键，可为空 */
+    /** 任务请求幂等键，可为空 */
     @Getter
-    private final String clientRequestId;
+    private final String taskRequestId;
 
     @Getter
     private final long createdAt;
@@ -97,11 +97,11 @@ public class AgentTask {
     /** 绑定后的运行上下文，仅用于取消与状态同步 */
     private volatile AgentRuntimeContext context;
 
-    public AgentTask(String taskId, Long userId, String clientRequestId,
+    public AgentTask(String taskId, Long userId, String taskRequestId,
                            AgentTurnContext turn, long createdAt, EventListener eventListener) {
         this.taskId = taskId;
         this.userId = userId;
-        this.clientRequestId = clientRequestId;
+        this.taskRequestId = taskRequestId;
         this.createdAt = createdAt;
         this.eventListener = eventListener;
         if (turn != null) {

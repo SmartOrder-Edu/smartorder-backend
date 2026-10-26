@@ -16,12 +16,12 @@ import java.util.Map;
  *       因此可以把 conversationId / messageId 直接返回；即使 SSE 一次都没连上，
  *       前端也知道这段对话落在哪、消息是哪一条。</li>
  *   <li>生成在返回后异步执行，与连接彻底无关；SSE 订阅是只读的，断线重连只是重新订阅。</li>
- *   <li>发送可以安全重试：同一 clientRequestId 命中幂等直接复用，不会重复插入消息或重复生成。</li>
+ *   <li>发送可以安全重试：同一 taskRequestId 命中幂等直接复用，不会重复插入消息或重复生成。</li>
  * </ol>
  */
 public interface AgentChatService {
 
-    AgentTaskVO sendMessage(AgentChatRequest request, Long userId, String clientRequestId);
+    AgentTaskVO sendMessage(AgentChatRequest request, Long userId, String taskRequestId);
 
     AgentTaskSubscriptionPlan validateSubscription(String taskId, Long userId, long afterSeq, AgentEventSink sink);
 

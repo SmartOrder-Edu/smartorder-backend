@@ -47,7 +47,7 @@ public class AgentTaskMetaService {
     /**
      * 幂等预留任务行。
      *
-     * <p>先用 {@code (user_id, client_request_id)} 唯一键抢占；命中已有任务时：</p>
+     * <p>先用 {@code (user_id, task_request_id)} 唯一键抢占；命中已有任务时：</p>
      * <ul>
      *   <li>已绑定 assistant 消息或已终态：真正的重试，直接复用，不再插入消息；</li>
      *   <li>未绑定且刚创建：另一个请求正在 openReply，返回 created=false，避免重复插消息；</li>
@@ -59,8 +59,8 @@ public class AgentTaskMetaService {
         // 先做一次读检查：重试命中“已绑定消息 / 已终态”的任务时直接复用。
         // 这样正常的客户端重试不会走到唯一键冲突，Druid 也不会把可预期的幂等
         // 重试记录成 ERROR（真正的并发冲突仍由下面的 catch 兜底）。
-        if (candidate.getClientRequestId() != null && !candidate.getClientRequestId().isBlank()) {
-            AgentTaskMeta existing = findByClientRequest(candidate.getUserId(), candidate.getClientRequestId());
+        if (candidate.getTaskRequestId() != null && !candidate.getTaskRequestId().isBlank()) {
+            AgentTaskMeta existing = findByTaskRequest(candidate.getUserId(), candidate.getTaskRequestId());
             if (existing != null
                     && (existing.getAssistantMessageId() != null || existing.statusEnum().isTerminal())) {
                 return new Reservation(existing, false);
@@ -70,7 +70,7 @@ public class AgentTaskMetaService {
             taskMapper.insert(toRecord(candidate));
             return new Reservation(candidate, true);
         } catch (DuplicateKeyException duplicate) {
-            AgentTaskMeta existing = findByClientRequest(candidate.getUserId(), candidate.getClientRequestId());
+            AgentTaskMeta existing = findByTaskRequest(candidate.getUserId(), candidate.getTaskRequestId());
             if (existing == null) {
                 throw duplicate;
             }
@@ -94,7 +94,7 @@ public class AgentTaskMetaService {
                 taskMapper.insert(toRecord(candidate));
                 return new Reservation(candidate, true);
             } catch (DuplicateKeyException retryConflict) {
-                AgentTaskMeta latest = findByClientRequest(candidate.getUserId(), candidate.getClientRequestId());
+                AgentTaskMeta latest = findByTaskRequest(candidate.getUserId(), candidate.getTaskRequestId());
                 return new Reservation(latest != null ? latest : existing, false);
             }
         }
@@ -107,11 +107,11 @@ public class AgentTaskMetaService {
         return toMeta(taskMapper.selectByTaskId(taskId));
     }
 
-    public AgentTaskMeta findByClientRequest(Long userId, String clientRequestId) {
-        if (userId == null || clientRequestId == null || clientRequestId.isBlank()) {
+    public AgentTaskMeta findByTaskRequest(Long userId, String taskRequestId) {
+        if (userId == null || taskRequestId == null || taskRequestId.isBlank()) {
             return null;
         }
-        return toMeta(taskMapper.selectByClientRequest(userId, clientRequestId));
+        return toMeta(taskMapper.selectByTaskRequest(userId, taskRequestId));
     }
 
     public AgentTaskMeta findLatestByConversation(String conversationId) {
@@ -214,7 +214,7 @@ public class AgentTaskMetaService {
         record.setUserMessageId(meta.getUserMessageId());
         record.setAssistantMessageId(meta.getAssistantMessageId());
         record.setAssistantSequenceNo(meta.getAssistantSequenceNo());
-        record.setClientRequestId(meta.getClientRequestId());
+        record.setTaskRequestId(meta.getTaskRequestId());
         record.setTraceId(meta.getTraceId());
         record.setStatus(meta.getStatus());
         record.setLastSeq(Math.max(0L, meta.getLastSeq()));
@@ -238,7 +238,7 @@ public class AgentTaskMetaService {
                 .draftId(record.getDraftId())
                 .userId(record.getUserId())
                 .traceId(record.getTraceId())
-                .clientRequestId(record.getClientRequestId())
+                .taskRequestId(record.getTaskRequestId())
                 .status(record.getStatus())
                 .createdAt(toEpochMillis(record.getCreatedAt()))
                 .updatedAt(toEpochMillis(record.getUpdatedAt()))

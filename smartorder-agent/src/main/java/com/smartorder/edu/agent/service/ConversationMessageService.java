@@ -84,7 +84,7 @@ public class ConversationMessageService {
         /** 本轮是否新建了会话（用于 SSE agent.conversation.created） */
         private boolean created;
         /**
-         * true = 命中 conversation_uuid + message_uuid 消息幂等：
+         * true = 命中 conversationId + messageUuid 消息幂等：
          * 本次没有插入任何消息，调用方不得再启动生成，应直接返回已有任务/消息状态。
          */
         private boolean duplicate;
@@ -101,29 +101,31 @@ public class ConversationMessageService {
      * 用户刷新页面时，正在生成的回答在库里是可见的（RUNNING），
      * 服务端崩溃后也有"僵尸行"可清理——这是与旧实现最大的区别。
      *
-     * <p><b>幂等语义</b>：以 {@code conversation_uuid + message_uuid} 为键。
+     * <p><b>幂等语义</b>：以 {@code conversationId + messageUuid} 为键。
      * 同一键重复到达时不再插入，返回已有 user/assistant 行的 ID 与
      * {@link PendingReply#isDuplicate() duplicate=true}；内容不一致则 409。</p>
      *
-     * @param conversationUuid 前端生成的会话 UUID；为空时兼容旧客户端，由服务端生成
+     * @param rawConversationId 前端生成的会话 ID（未清洗）；为空时兼容旧客户端，由服务端生成
      * @param messageUuid      前端生成的消息 UUID（写入 conversation_message.public_id）；
      *                         为空时兼容旧客户端，由服务端生成
      * @param draftId          前端新对话草稿 ID；为空时不校验草稿绑定（旧客户端）
      * @return 待收尾的回复（含 conversationId / 占位行ID / 序号）
      */
     @Transactional(rollbackFor = Exception.class)
-    public PendingReply openReply(String conversationUuid, String messageUuid, String draftId,
+    public PendingReply openReply(String rawConversationId, String messageUuid, String draftId,
                                   Long userId, String content, List<Long> attachmentFileIds,
                                   String traceId, String taskId) {
         pruneStaleStates();
 
-        String requestedConversationUuid = UuidUtils.trimToNull(conversationUuid);
-        String conversationId = requestedConversationUuid;
+        // 入参保留原始值（可能为空白串/未清洗），清洗后落到 requestedConversationId；
+        // conversationId 是本轮最终使用的值——为空时由服务端生成，因此必须留成可变变量。
+        String requestedConversationId = UuidUtils.trimToNull(rawConversationId);
+        String conversationId = requestedConversationId;
         String userMessageUuid = UuidUtils.trimToNull(messageUuid);
         String draft = UuidUtils.trimToNull(draftId);
         if (conversationId != null && !UuidUtils.isValid(conversationId)) {
             throw AgentTaskException.badRequest("INVALID_CONVERSATION_UUID",
-                    "conversation_uuid 格式非法，必须是 36 位 UUID");
+                    "conversationId 格式非法，必须是 36 位 UUID");
         }
         if (userMessageUuid != null && !UuidUtils.isValid(userMessageUuid)) {
             throw AgentTaskException.badRequest("INVALID_MESSAGE_UUID",
@@ -141,14 +143,14 @@ public class ConversationMessageService {
             userMessageUuid = UUID.randomUUID().toString();
         }
 
-        Conversation conversation = conversationMapper.selectByConversationUuid(conversationId);
+        Conversation conversation = conversationMapper.selectByConversationId(conversationId);
         boolean created = false;
         if (conversation == null) {
             // 新对话必须带 draftId；不带 draftId 的“无会话”请求只允许历史数据补建，
-            // 避免客户端把错误/过期的 conversation_uuid 悄悄变成一条新会话。
-            boolean legacyConversation = requestedConversationUuid != null
-                    && messageMapper.countByConversationId(requestedConversationUuid, userId) > 0;
-            if (requestedConversationUuid != null && draft == null && !legacyConversation) {
+            // 避免客户端把错误/过期的 conversationId 悄悄变成一条新会话。
+            boolean legacyConversation = requestedConversationId != null
+                    && messageMapper.countByConversationId(requestedConversationId, userId) > 0;
+            if (requestedConversationId != null && draft == null && !legacyConversation) {
                 throw AgentTaskException.conversationNotFound();
             }
             conversation = conversationService.createIfAbsent(conversationId, userId, autoTitle(content));
@@ -159,10 +161,10 @@ public class ConversationMessageService {
 
         // 行锁：同一会话的写入串行化。并发首条消息可能在上面 select 之后才提交，
         // 这里必须重新取一次，拿不到再补建。
-        Conversation locked = conversationMapper.selectByConversationUuidForUpdate(conversationId);
+        Conversation locked = conversationMapper.selectByConversationIdForUpdate(conversationId);
         if (locked == null) {
             conversationService.createIfAbsent(conversationId, userId, autoTitle(content));
-            locked = conversationMapper.selectByConversationUuidForUpdate(conversationId);
+            locked = conversationMapper.selectByConversationIdForUpdate(conversationId);
             created = true;
         }
         if (locked == null) {
@@ -170,7 +172,7 @@ public class ConversationMessageService {
         }
         assertConversationWritable(locked, userId);
 
-        // 草稿绑定必须在归属校验之后：不能让人用别人的 conversation_uuid 抢占 draft 绑定。
+        // 草稿绑定必须在归属校验之后：不能让人用别人的 conversationId 抢占 draft 绑定。
         conversationDraftService.bindOrAssert(draft, conversationId, userId);
 
         // 消息幂等：唯一键 uk_conv_message_uuid 的快速路径（此时已持有会话行锁）
@@ -464,10 +466,10 @@ public class ConversationMessageService {
         if (conversationId == null || conversationId.isBlank()) {
             return null;
         }
-        Conversation conversation = conversationMapper.selectByConversationUuidForUpdate(conversationId);
+        Conversation conversation = conversationMapper.selectByConversationIdForUpdate(conversationId);
         if (conversation == null) {
             conversationService.createIfAbsent(conversationId, userId, null);
-            conversation = conversationMapper.selectByConversationUuidForUpdate(conversationId);
+            conversation = conversationMapper.selectByConversationIdForUpdate(conversationId);
             if (conversation == null) {
                 log.warn("[Message] 会话主表行补建失败，丢弃消息写入: cid={}", conversationId);
                 return null;

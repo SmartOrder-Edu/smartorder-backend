@@ -3,7 +3,7 @@ package com.smartorder.edu.agent.util;
 import java.util.regex.Pattern;
 
 /**
- * 前端生成的对外标识（conversation_uuid / message_uuid / draft_id）格式校验。
+ * 前端生成的对外标识（conversationId / messageUuid / draftId）格式校验。
  *
  * <p>只做“36 位带连字符的 UUID”这一层宽松校验：既接受 {@code crypto.randomUUID()}
  * 生成的 v4，也接受历史上 {@code UUID.randomUUID()} 写入库的存量值；

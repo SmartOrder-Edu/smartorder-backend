@@ -31,7 +31,7 @@ import java.util.concurrent.RejectedExecutionException;
  * 让尚未迁移的页面（资源 AI 面板、uni-app）继续可用，并同样具备服务端持续执行的能力。</p>
  *
  * <p>TODO(客户端): 移动端正式接入时改走 {@code /agent/tasks} 新链路
- * （clientRequestId 幂等键 + after 游标重连），不要继续复用本兼容入口。</p>
+ * （taskRequestId 幂等键 + after 游标重连），不要继续复用本兼容入口。</p>
  */
 @Slf4j
 @RestController
@@ -54,12 +54,12 @@ public class AgentChatController {
 
         // 连接超时交给心跳与客户端重连处理：这里不设固定超时，避免长回答被 180s 截断
         SseEmitter emitter = new SseEmitter(0L);
-        log.info("[AgentChat] SSE 会话开始: userId={}, cid={}, clientRequestId={}, message={}",
-                userId, request.getConversationId(), request.getClientRequestId(), request.getMessage());
+        log.info("[AgentChat] SSE 会话开始: userId={}, cid={}, taskRequestId={}, message={}",
+                userId, request.getConversationId(), request.getTaskRequestId(), request.getMessage());
 
         AgentTaskVO task;
         try {
-            task = chatService.sendMessage(request, userId, request.getClientRequestId());
+            task = chatService.sendMessage(request, userId, request.getTaskRequestId());
         } catch (Exception e) {
             // 旧入口不能返回 JSON：用 SSE 的 error + done 收敛，避免前端一直转圈
             log.warn("[AgentChat] 创建任务失败: userId={}, cid={}, reason={}",

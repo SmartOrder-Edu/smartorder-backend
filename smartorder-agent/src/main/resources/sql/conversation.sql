@@ -2,16 +2,16 @@
 -- 会话主表（AI 会话的一等实体）
 -- ============================================================
 -- 说明：
---   conversation_uuid 承载原有的 conversation_id（UUID 字符串），由前端在
+--   conversation_id 是对外会话 ID（UUID 字符串），由前端在
 --   新建对话的首条消息时生成；conversation_message.conversation_id 与之对应。
---   draft_id 与 conversation_uuid 一对一，落在 agent_conversation_draft 表。
+--   draft_id 与 conversation_id 一对一，落在 agent_conversation_draft 表。
 --   内部 id 为雪花 ID（应用侧 IdUtil.getSnowflakeNextId() 生成），
 --   只用于行锁（SELECT ... FOR UPDATE）与内部关联，不对外暴露。
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS `conversation` (
   `id`                   BIGINT       NOT NULL                COMMENT '内部主键（雪花ID，应用侧生成），仅用于锁行/关联，不对外',
-  `conversation_uuid`    VARCHAR(36)  NOT NULL                COMMENT '对外会话ID（UUID），由前端新建对话时生成',
+  `conversation_id`      VARCHAR(36)  NOT NULL                COMMENT '对外会话ID（UUID），由前端新建对话时生成',
   `user_id`              BIGINT       NOT NULL                COMMENT '所属用户ID',
   `title`                VARCHAR(200) DEFAULT NULL            COMMENT '会话标题，默认取首条用户消息前30字',
   `title_source`         VARCHAR(16)  NOT NULL DEFAULT 'AUTO' COMMENT 'AUTO=首条消息截断, LLM=模型总结, USER=用户改名',
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS `conversation` (
   `created_at`           DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   `updated_at`           DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_conversation_uuid` (`conversation_uuid`),
+  UNIQUE KEY `uk_conversation_id` (`conversation_id`),
   KEY `idx_user_status_time` (`user_id`, `status`, `pinned`, `last_message_at`),
   KEY `idx_status_time` (`status`, `last_message_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 会话主表';

@@ -22,7 +22,7 @@ public class InMemoryAgentTaskMetaService extends AgentTaskMetaService {
 
     private final Map<String, AgentTaskMeta> tasks = new ConcurrentHashMap<>();
 
-    private final Map<String, String> clientIndex = new ConcurrentHashMap<>();
+    private final Map<String, String> taskRequestIndex = new ConcurrentHashMap<>();
 
     private final Map<String, String> conversationLatest = new ConcurrentHashMap<>();
 
@@ -32,9 +32,9 @@ public class InMemoryAgentTaskMetaService extends AgentTaskMetaService {
 
     @Override
     public synchronized Reservation reserve(AgentTaskMeta candidate) {
-        String key = clientKey(candidate.getUserId(), candidate.getClientRequestId());
+        String key = taskRequestKey(candidate.getUserId(), candidate.getTaskRequestId());
         if (key != null) {
-            String existingId = clientIndex.get(key);
+            String existingId = taskRequestIndex.get(key);
             AgentTaskMeta existing = existingId == null ? null : tasks.get(existingId);
             if (existing != null) {
                 if (existing.getAssistantMessageId() != null || existing.statusEnum().isTerminal()) {
@@ -44,7 +44,7 @@ public class InMemoryAgentTaskMetaService extends AgentTaskMetaService {
                     return new Reservation(copy(existing), false);
                 }
                 tasks.remove(existing.getTaskId());
-                clientIndex.remove(key);
+                taskRequestIndex.remove(key);
             }
         }
         long now = System.currentTimeMillis();
@@ -55,7 +55,7 @@ public class InMemoryAgentTaskMetaService extends AgentTaskMetaService {
         stored.setLastSeq(0L);
         tasks.put(stored.getTaskId(), stored);
         if (key != null) {
-            clientIndex.put(key, stored.getTaskId());
+            taskRequestIndex.put(key, stored.getTaskId());
         }
         if (stored.getConversationId() != null) {
             conversationLatest.put(stored.getConversationId(), stored.getTaskId());
@@ -70,8 +70,8 @@ public class InMemoryAgentTaskMetaService extends AgentTaskMetaService {
     }
 
     @Override
-    public AgentTaskMeta findByClientRequest(Long userId, String clientRequestId) {
-        String taskId = clientIndex.get(clientKey(userId, clientRequestId));
+    public AgentTaskMeta findByTaskRequest(Long userId, String taskRequestId) {
+        String taskId = taskRequestIndex.get(taskRequestKey(userId, taskRequestId));
         return taskId == null ? null : find(taskId);
     }
 
@@ -155,7 +155,7 @@ public class InMemoryAgentTaskMetaService extends AgentTaskMetaService {
         }
         if (meta.getAssistantMessageId() == null) {
             tasks.remove(taskId);
-            clientIndex.values().removeIf(taskId::equals);
+            taskRequestIndex.values().removeIf(taskId::equals);
         }
     }
 
@@ -173,11 +173,11 @@ public class InMemoryAgentTaskMetaService extends AgentTaskMetaService {
         return stale;
     }
 
-    private String clientKey(Long userId, String clientRequestId) {
-        if (userId == null || clientRequestId == null || clientRequestId.isBlank()) {
+    private String taskRequestKey(Long userId, String taskRequestId) {
+        if (userId == null || taskRequestId == null || taskRequestId.isBlank()) {
             return null;
         }
-        return userId + ":" + clientRequestId;
+        return userId + ":" + taskRequestId;
     }
 
     private AgentTaskMeta copy(AgentTaskMeta source) {
@@ -187,7 +187,7 @@ public class InMemoryAgentTaskMetaService extends AgentTaskMetaService {
                 .draftId(source.getDraftId())
                 .userId(source.getUserId())
                 .traceId(source.getTraceId())
-                .clientRequestId(source.getClientRequestId())
+                .taskRequestId(source.getTaskRequestId())
                 .status(source.getStatus())
                 .createdAt(source.getCreatedAt())
                 .updatedAt(source.getUpdatedAt())

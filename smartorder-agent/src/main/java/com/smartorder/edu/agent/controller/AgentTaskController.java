@@ -38,13 +38,13 @@ import java.util.concurrent.RejectedExecutionException;
  * {@code useResumableAgentStream.ts}（SSE 订阅与重连）。
  * 移动端（uni-app）仍在调用 {@code POST /agent/chat/stream} 旧兼容入口，尚未迁移到本链路，
  * 因此这些接口没有移动端消费方，联调与验收以接口文档和后端测试为准。
- * 后续移动端接入只需复用本协议（{@code clientRequestId} 幂等键 + {@code after} 游标），服务端无需改动。</p>
+ * 后续移动端接入只需复用本协议（{@code taskRequestId} 幂等键 + {@code after} 游标），服务端无需改动。</p>
  *
  * <p>协议：</p>
  * <ul>
  *   <li>{@code POST /agent/tasks} 发送消息：同步完成事务 A 并返回
- *       conversationUuid / userMessageId / assistantMessageId / taskId 等 ID，
- *       生成在返回后异步执行；同一 requestId / conversationUuid + messageUuid 幂等复用；</li>
+ *       conversationId / userMessageId / assistantMessageId / taskId 等 ID，
+ *       生成在返回后异步执行；同一 requestId / conversationId + messageUuid 幂等复用；</li>
  *   <li>{@code GET /agent/tasks/{id}/events?after=N} 订阅 SSE，从 Redis Stream 回放 seq &gt; N 的消息片段；</li>
  *   <li>{@code GET /agent/tasks/{id}} 查询状态（断线后兜底）；</li>
  *   <li>{@code POST /agent/tasks/{id}/cancel} 协作式取消；</li>
@@ -70,13 +70,13 @@ public class AgentTaskController {
 
     // 客户端对接：移动端暂未实现——当前仅 Web 端 useAgentChat.ts 调用，uni-app 仍走旧入口
     @PostMapping
-    @Operation(summary = "发送消息并创建对话任务（同步返回 conversationUuid / taskId / messageId，按 requestId + conversationUuid + messageUuid 幂等）",
-            description = "新前端传 conversationUuid + messageUuid + draftId；draftId 与 conversationUuid 一对一，"
-                    + "同一 requestId 换 draftId 返回 409。旧客户端可只传 conversationId/clientRequestId。")
+    @Operation(summary = "发送消息并创建对话任务（同步返回 conversationId / taskId / messageId，按 requestId + conversationId + messageUuid 幂等）",
+            description = "新前端传 conversationId + messageUuid + draftId；draftId 与 conversationId 一对一，"
+                    + "同一 requestId 换 draftId 返回 409。旧客户端可只传 conversationId/taskRequestId。")
     public Result<AgentTaskVO> create(@RequestBody AgentChatRequest request) {
         Long userId = currentUserId();
         request.setUserId(userId);
-        AgentTaskVO vo = chatService.sendMessage(request, userId, request.getClientRequestId());
+        AgentTaskVO vo = chatService.sendMessage(request, userId, request.getTaskRequestId());
         return Result.success(vo);
     }
 

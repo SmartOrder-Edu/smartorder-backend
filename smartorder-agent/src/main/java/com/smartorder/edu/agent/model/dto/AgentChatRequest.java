@@ -18,25 +18,18 @@ public class AgentChatRequest {
     private String message;
 
     /**
-     * @deprecated 旧字段名，等价于 {@link #conversationUuid}。
-     * 新前端只传 conversationUuid；两者同时存在时以 conversationUuid 为准。
+     * 前端生成的会话 UUID（新建对话时生成，重试必须复用同一个值）。
      */
-    @Deprecated
     private String conversationId;
 
     /**
-     * 前端生成的会话 UUID（新建对话时生成，重试必须复用同一个值）。
-     */
-    private String conversationUuid;
-
-    /**
      * 前端生成的消息 UUID（写入 conversation_message.public_id）。
-     * 同一 conversationUuid + messageUuid 重试只会写入一次。
+     * 同一 conversationId + messageUuid 重试只会写入一次。
      */
     private String messageUuid;
 
     /**
-     * 前端生成的新对话草稿 ID。每次“新建对话”一个，与 conversationUuid 一对一；
+     * 前端生成的新对话草稿 ID。每次“新建对话”一个，与 conversationId 一对一；
      * 同一个 requestId 不允许换成另一个 draftId。
      */
     private String draftId;
@@ -75,22 +68,21 @@ public class AgentChatRequest {
     private String clarificationAnswerJson;
 
     /**
-     * 客户端幂等键（可选，建议必传）。
-     * <p>同一用户 + 同一 clientRequestId 只会创建一次生成：响应丢失后重试、
+     * 任务请求幂等键（可选，建议必传）。
+     * <p>同一用户 + 同一 taskRequestId 只会创建一次生成：响应丢失后重试、
      * 或断线后重新创建，都会复用原来的生成任务，不会重复执行模型调用。</p>
      */
-    private String clientRequestId;
+    private String taskRequestId;
 
     /**
-     * 统一取会话 UUID：新字段优先，旧字段兜底。
+     * 统一取会话 ID：空白串归一为 null，由服务端在 openReply 里生成。
+     * <p>只保留一个字段后这里不再做「新字段优先、旧字段兜底」的合并，
+     * 但仍保留方法作为唯一取值入口，避免调用方散落 isBlank 判断。</p>
      */
-    public String resolveConversationUuid() {
-        if (conversationUuid != null && !conversationUuid.isBlank()) {
-            return conversationUuid.trim();
+    public String resolveConversationId() {
+        if (conversationId == null || conversationId.isBlank()) {
+            return null;
         }
-        if (conversationId != null && !conversationId.isBlank()) {
-            return conversationId.trim();
-        }
-        return null;
+        return conversationId.trim();
     }
 }

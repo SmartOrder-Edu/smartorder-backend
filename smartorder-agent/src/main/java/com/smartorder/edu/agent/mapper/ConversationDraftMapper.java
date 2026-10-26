@@ -16,6 +16,6 @@ public interface ConversationDraftMapper extends BaseMapper<ConversationDraft> {
     @Select("SELECT * FROM agent_conversation_draft WHERE draft_id = #{draftId} LIMIT 1 FOR UPDATE")
     ConversationDraft selectByDraftIdForUpdate(@Param("draftId") String draftId);
 
-    @Select("SELECT * FROM agent_conversation_draft WHERE conversation_uuid = #{conversationUuid} LIMIT 1 FOR UPDATE")
-    ConversationDraft selectByConversationUuidForUpdate(@Param("conversationUuid") String conversationUuid);
+    @Select("SELECT * FROM agent_conversation_draft WHERE conversation_id = #{conversationId} LIMIT 1 FOR UPDATE")
+    ConversationDraft selectByConversationIdForUpdate(@Param("conversationId") String conversationId);
 }

@@ -23,7 +23,7 @@ public class AgentTaskMeta {
 
     private String taskId;
 
-    /** 会话 conversation_uuid；新会话在 openReply 之后才能确定，因此允许为空 */
+    /** 会话 conversation_id；新会话在 openReply 之后才能确定，因此允许为空 */
     private String conversationId;
 
     /** 客户端草稿ID；同一 requestId 只允许绑定同一个 draftId */
@@ -34,8 +34,8 @@ public class AgentTaskMeta {
 
     private String traceId;
 
-    /** 客户端幂等键，同一个用户重复提交时复用同一个任务 */
-    private String clientRequestId;
+    /** 任务请求幂等键，同一个用户重复提交时复用同一个任务 */
+    private String taskRequestId;
 
     private String status;
 
