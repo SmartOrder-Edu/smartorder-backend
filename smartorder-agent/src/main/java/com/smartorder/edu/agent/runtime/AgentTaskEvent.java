@@ -7,9 +7,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 生成事件日志中的一条事件。
+ * 任务事件日志中的一条事件。
  *
- * <p>{@code seq} 是本次生成内严格递增的整数游标（从 1 开始），同时作为 SSE 的
+ * <p>{@code seq} 是本次任务内严格递增的整数游标（从 1 开始），同时作为 SSE 的
  * {@code id:} 字段下发。客户端重连时用“已成功应用的 seq”作为 after 游标，
  * 服务端只补发 {@code seq > after} 的事件，因此不会重复也不会跳号。</p>
  *
@@ -20,9 +20,9 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class AgentGenerationEvent {
+public class AgentTaskEvent {
 
-    /** 生成内序号，从 1 开始严格递增 */
+    /** 任务内序号，从 1 开始严格递增 */
     private long seq;
 
     /** SSE 事件名，如 agent.text.delta / done */

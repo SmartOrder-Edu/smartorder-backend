@@ -1,9 +1,9 @@
 package com.smartorder.edu.agent.service;
 
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
-import com.smartorder.edu.agent.model.vo.AgentGenerationVO;
+import com.smartorder.edu.agent.model.vo.AgentTaskVO;
 import com.smartorder.edu.agent.runtime.AgentEventSink;
-import com.smartorder.edu.agent.runtime.AgentGenerationSubscriptionPlan;
+import com.smartorder.edu.agent.runtime.AgentTaskSubscriptionPlan;
 
 import java.util.Map;
 
@@ -21,15 +21,15 @@ import java.util.Map;
  */
 public interface AgentChatService {
 
-    AgentGenerationVO sendMessage(AgentChatRequest request, Long userId, String clientRequestId);
+    AgentTaskVO sendMessage(AgentChatRequest request, Long userId, String clientRequestId);
 
-    AgentGenerationSubscriptionPlan validateSubscription(String generationId, Long userId, long afterSeq, AgentEventSink sink);
+    AgentTaskSubscriptionPlan validateSubscription(String taskId, Long userId, long afterSeq, AgentEventSink sink);
 
-    void attachAsync(AgentGenerationSubscriptionPlan plan);
+    void attachAsync(AgentTaskSubscriptionPlan plan);
 
-    AgentGenerationVO status(String generationId, Long userId);
+    AgentTaskVO status(String taskId, Long userId);
 
-    AgentGenerationVO activeGeneration(String conversationId, Long userId);
+    AgentTaskVO activeTask(String conversationId, Long userId);
 
-    Map<String, Object> cancel(String generationId, Long userId);
+    Map<String, Object> cancel(String taskId, Long userId);
 }

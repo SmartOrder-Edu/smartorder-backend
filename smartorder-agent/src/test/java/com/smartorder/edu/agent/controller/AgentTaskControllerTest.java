@@ -1,7 +1,7 @@
 package com.smartorder.edu.agent.controller;
 
-import com.smartorder.edu.agent.exception.AgentGenerationException;
-import com.smartorder.edu.agent.runtime.AgentGenerationSubscriptionPlan;
+import com.smartorder.edu.agent.exception.AgentTaskException;
+import com.smartorder.edu.agent.runtime.AgentTaskSubscriptionPlan;
 import com.smartorder.edu.agent.service.AgentChatService;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import io.jsonwebtoken.Claims;
@@ -29,11 +29,11 @@ import static org.mockito.Mockito.when;
  * 订阅接口的关键约束：校验失败必须还能返回真实 HTTP 状态码；
  * 校验通过后先返回 emitter，再提交异步 attach。
  */
-class AgentGenerationControllerTest {
+class AgentTaskControllerTest {
 
     private final AgentChatService service = mock(AgentChatService.class);
 
-    private final AgentGenerationController controller = new AgentGenerationController(service);
+    private final AgentTaskController controller = new AgentTaskController(service);
 
     @AfterEach
     void tearDown() {
@@ -43,10 +43,10 @@ class AgentGenerationControllerTest {
     @Test
     void shouldReturnRealHttpStatusWhenValidationFailsBeforeStreamStarts() {
         login(7L);
-        when(service.validateSubscription(eq("g-1"), eq(7L), eq(0L), any()))
-                .thenThrow(AgentGenerationException.cursorExpired(0));
+        when(service.validateSubscription(eq("t-1"), eq(7L), eq(0L), any()))
+                .thenThrow(AgentTaskException.cursorExpired(0));
 
-        ResponseEntity<SseEmitter> response = controller.subscribe("g-1", 0L, null);
+        ResponseEntity<SseEmitter> response = controller.subscribe("t-1", 0L, null);
 
         assertEquals(HttpStatus.GONE, response.getStatusCode());
         verify(service, never()).attachAsync(any());
@@ -55,26 +55,26 @@ class AgentGenerationControllerTest {
     @Test
     void shouldReturnEmitterThenScheduleAttach() {
         login(7L);
-        AgentGenerationSubscriptionPlan plan = new AgentGenerationSubscriptionPlan(null, null, null);
-        when(service.validateSubscription(eq("g-1"), eq(7L), eq(0L), any())).thenReturn(plan);
+        AgentTaskSubscriptionPlan plan = new AgentTaskSubscriptionPlan(null, null, null);
+        when(service.validateSubscription(eq("t-1"), eq(7L), eq(0L), any())).thenReturn(plan);
 
-        ResponseEntity<SseEmitter> response = controller.subscribe("g-1", 0L, null);
+        ResponseEntity<SseEmitter> response = controller.subscribe("t-1", 0L, null);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
         InOrder order = inOrder(service);
-        order.verify(service).validateSubscription(eq("g-1"), eq(7L), eq(0L), any());
+        order.verify(service).validateSubscription(eq("t-1"), eq(7L), eq(0L), any());
         order.verify(service).attachAsync(plan);
     }
 
     @Test
     void shouldReturn503WhenAttachCannotBeScheduled() {
         login(7L);
-        AgentGenerationSubscriptionPlan plan = new AgentGenerationSubscriptionPlan(null, null, null);
-        when(service.validateSubscription(eq("g-1"), eq(7L), eq(0L), any())).thenReturn(plan);
+        AgentTaskSubscriptionPlan plan = new AgentTaskSubscriptionPlan(null, null, null);
+        when(service.validateSubscription(eq("t-1"), eq(7L), eq(0L), any())).thenReturn(plan);
         doThrow(new RejectedExecutionException("full")).when(service).attachAsync(any());
 
-        ResponseEntity<SseEmitter> response = controller.subscribe("g-1", 0L, null);
+        ResponseEntity<SseEmitter> response = controller.subscribe("t-1", 0L, null);
 
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
     }

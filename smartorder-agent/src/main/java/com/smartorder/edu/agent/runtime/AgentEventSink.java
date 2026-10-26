@@ -11,7 +11,7 @@ public interface AgentEventSink {
     /**
      * 发送一条事件。实现方抛出异常表示连接已不可用。
      */
-    void sendEvent(AgentGenerationEvent event) throws Exception;
+    void sendEvent(AgentTaskEvent event) throws Exception;
 
     /**
      * 发送 SSE 注释心跳（不进入业务游标）。

@@ -7,7 +7,7 @@ package com.smartorder.edu.agent.model.enums;
  * 计划被暂停（PAUSED_CLARIFICATION 等）时，本次生成段依旧会正常结束（COMPLETED），
  * 计划是否继续由计划运行态单独表达。</p>
  */
-public enum AgentGenerationStatus {
+public enum AgentTaskStatus {
 
     /** 记录已创建，执行线程尚未开始 */
     CREATED,
@@ -37,7 +37,7 @@ public enum AgentGenerationStatus {
     /**
      * 宽松解析：不认识的值返回 {@code null}，避免历史脏数据导致反序列化失败。
      */
-    public static AgentGenerationStatus fromName(String name) {
+    public static AgentTaskStatus fromName(String name) {
         if (name == null || name.isBlank()) {
             return null;
         }

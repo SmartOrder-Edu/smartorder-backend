@@ -8,7 +8,7 @@ import java.util.List;
  */
 public class RecordingSink implements AgentEventSink {
 
-    public final List<AgentGenerationEvent> events = new ArrayList<>();
+    public final List<AgentTaskEvent> events = new ArrayList<>();
 
     public boolean completed;
 
@@ -17,7 +17,7 @@ public class RecordingSink implements AgentEventSink {
     public long handledSeq;
 
     @Override
-    public void sendEvent(AgentGenerationEvent event) {
+    public void sendEvent(AgentTaskEvent event) {
         events.add(event);
         handledSeq = event.getSeq();
     }
@@ -38,7 +38,7 @@ public class RecordingSink implements AgentEventSink {
 
     public List<Long> seqs() {
         List<Long> seqs = new ArrayList<>();
-        for (AgentGenerationEvent event : events) {
+        for (AgentTaskEvent event : events) {
             seqs.add(event.getSeq());
         }
         return seqs;
@@ -46,7 +46,7 @@ public class RecordingSink implements AgentEventSink {
 
     public List<String> eventNames() {
         List<String> names = new ArrayList<>();
-        for (AgentGenerationEvent event : events) {
+        for (AgentTaskEvent event : events) {
             names.add(event.getEventName());
         }
         return names;

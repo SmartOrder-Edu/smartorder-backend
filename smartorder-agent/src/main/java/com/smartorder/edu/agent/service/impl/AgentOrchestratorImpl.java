@@ -12,7 +12,7 @@ import com.smartorder.edu.agent.model.enums.AgentEventType;
 import com.smartorder.edu.agent.model.enums.AgentRunMode;
 import com.smartorder.edu.agent.model.enums.IntentType;
 import com.smartorder.edu.agent.model.enums.RoutingSource;
-import com.smartorder.edu.agent.runtime.AgentGenerationRegistry;
+import com.smartorder.edu.agent.runtime.AgentTaskRegistry;
 import com.smartorder.edu.agent.runtime.ExecutionBudget;
 import com.smartorder.edu.agent.service.AgentConversationAttachmentService;
 import com.smartorder.edu.agent.service.AgentOrchestrator;
@@ -64,10 +64,10 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
 
     private final AgentRunSupervisor runSupervisor;
 
-    private final AgentGenerationRegistry generationManager;
+    private final AgentTaskRegistry taskRegistry;
 
     @Override
-    public void handle(AgentChatRequest request, SseEmitter emitter, String generationId,
+    public void handle(AgentChatRequest request, SseEmitter emitter, String taskId,
                        AgentTurnContext turn) {
         // 生成任务由发送接口预先分配 traceId；旧入口在这里现生成
         String traceId = turn != null && turn.getTraceId() != null
@@ -75,7 +75,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
                 : UUID.randomUUID().toString();
 
         AgentRuntimeContext context = AgentRuntimeContext.builder()
-                .generationId(generationId)
+                .taskId(taskId)
                 .traceId(traceId)
                 .conversationId(turn != null ? turn.getConversationId() : request.getConversationId())
                 .userId(request.getUserId())
@@ -87,10 +87,10 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
 
         // 生成任务模式：把上下文绑定到生成对象（取消标记、seq 分配都以它为准），
         // 并立刻下发首包，客户端据此确认“这条流是我要续的那次生成”。
-        if (generationId != null) {
-            generationManager.bindContext(generationId, context);
-            dispatcher.emit(emitter, context, AgentEventType.GENERATION_STARTED, Map.of(
-                    "generationId", generationId,
+        if (taskId != null) {
+            taskRegistry.bindContext(taskId, context);
+            dispatcher.emit(emitter, context, AgentEventType.TASK_STARTED, Map.of(
+                    "taskId", taskId,
                     "status", "RUNNING"
             ));
         }
@@ -105,7 +105,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
             try {
                 ConversationMessageService.PendingReply state = conversationMessageService.openReply(
                         request.getConversationId(), request.getUserId(),
-                        request.getMessage(), request.getFileIds(), traceId);
+                        request.getMessage(), request.getFileIds(), traceId, taskId);
                 turn = AgentTurnContext.from(state, traceId);
             } catch (Exception e) {
                 // 会话已删除 / 无权访问 / 数据库异常：不写库，直接以错误事件收敛
@@ -126,7 +126,7 @@ public class AgentOrchestratorImpl implements AgentOrchestrator {
         context.setAssistantMessageId(turn.getAssistantMessageId());
         context.setAssistantSequenceNo(turn.getAssistantSequenceNo());
         // 会话 ID 到这一步才确定：绑定后刷新页面才能找回这次生成
-        generationManager.bindConversation(generationId, conversationId);
+        taskRegistry.bindConversation(taskId, conversationId);
 
         try {
             // 0. 通知前端：会话与占位消息已创建

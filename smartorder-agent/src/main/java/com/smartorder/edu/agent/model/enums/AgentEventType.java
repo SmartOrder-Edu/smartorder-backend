@@ -11,11 +11,11 @@ import lombok.Getter;
 public enum AgentEventType {
 
     /**
-     * 生成任务已开始（首包）。
-     * <p>断线重连后客户端会在回放里再次看到它，因此 payload 里带 generationId，
+     * 对话任务已开始（首包）。
+     * <p>断线重连后客户端会在回放里再次看到它，因此 payload 里带 taskId，
      * 用于确认“回放的确实是我要续的那一次生成”。</p>
      */
-    GENERATION_STARTED("agent.generation.started", "生成任务已开始", false),
+    TASK_STARTED("agent.task.started", "对话任务已开始", false),
 
     TRACE_STARTED("agent.trace.started", "追踪开始", true),
 

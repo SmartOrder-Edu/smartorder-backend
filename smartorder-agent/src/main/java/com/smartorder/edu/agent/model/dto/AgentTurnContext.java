@@ -18,7 +18,10 @@ import lombok.Data;
 @Builder
 public class AgentTurnContext {
 
-    /** 本次生成的追踪 ID，创建生成任务时分配 */
+    /** 本轮对话任务 ID，与 assistant 消息 1:1 */
+    private String taskId;
+
+    /** 本次任务的追踪 ID，创建任务时分配 */
     private String traceId;
 
     private String conversationId;
@@ -48,6 +51,7 @@ public class AgentTurnContext {
             return null;
         }
         return AgentTurnContext.builder()
+                .taskId(turn.getTaskId())
                 .traceId(traceId)
                 .conversationId(turn.getConversationId())
                 .conversationPk(turn.getConversationPk())

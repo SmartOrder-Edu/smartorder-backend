@@ -62,6 +62,8 @@ public class ConversationMessageService {
     @Data
     @Builder
     public static class PendingReply {
+        /** 本轮对话任务 ID；user / assistant 两行写入同一个 task_id */
+        private String taskId;
         private String conversationId;
         private Long conversationPk;
         private Long userMessageId;
@@ -91,7 +93,7 @@ public class ConversationMessageService {
      */
     @Transactional(rollbackFor = Exception.class)
     public PendingReply openReply(String conversationId, Long userId, String content,
-                              List<Long> attachmentFileIds, String traceId) {
+                              List<Long> attachmentFileIds, String traceId, String taskId) {
         pruneStaleStates();
 
         String publicId = (conversationId == null || conversationId.isBlank())
@@ -125,15 +127,16 @@ public class ConversationMessageService {
         int assistantSeq = userSeq + 1;
 
         ConversationMessage userMessage = newMessage(publicId, userId, ROLE_USER, content, userSeq,
-                ConversationMessage.STATUS_COMPLETED, null, 1, traceId, null, null,
+                ConversationMessage.STATUS_COMPLETED, null, 1, traceId, taskId, null, null,
                 toFileIdsJson(attachmentFileIds), now, null);
         ConversationMessage assistantMessage = newMessage(publicId, userId, ROLE_ASSISTANT, "", assistantSeq,
-                ConversationMessage.STATUS_RUNNING, userMessage.getId(), 1, traceId, null, null, null, now, null);
+                ConversationMessage.STATUS_RUNNING, userMessage.getId(), 1, traceId, taskId, null, null, null, now, null);
 
         conversationMapper.incrMessageCount(publicId, 2);
         conversationMapper.touchLastMessage(publicId, now, normalize(content, PREVIEW_MAX));
 
         PendingReply state = PendingReply.builder()
+                .taskId(taskId)
                 .conversationId(publicId)
                 .conversationPk(locked != null ? locked.getId() : null)
                 .userMessageId(userMessage.getId())
@@ -239,7 +242,7 @@ public class ConversationMessageService {
         int seq = nextSequenceNo(conversationId);
         Long parentId = messageMapper.selectLastUserMessageIdForUpdate(conversationId);
         newMessage(conversationId, userId, ROLE_ASSISTANT, content, seq,
-                ConversationMessage.STATUS_COMPLETED, parentId, 1, traceId,
+                ConversationMessage.STATUS_COMPLETED, parentId, 1, traceId, null,
                 reasoningContent, metadataJson, null, now, null);
 
         conversationMapper.incrMessageCount(conversationId, 1);
@@ -259,7 +262,7 @@ public class ConversationMessageService {
         LocalDateTime now = LocalDateTime.now();
         int seq = nextSequenceNo(conversationId);
         newMessage(conversationId, userId, ROLE_USER, content, seq,
-                ConversationMessage.STATUS_COMPLETED, null, 1, null, null, null,
+                ConversationMessage.STATUS_COMPLETED, null, 1, null, null, null, null,
                 toFileIdsJson(attachmentFileIds), now, null);
 
         conversationMapper.incrMessageCount(conversationId, 1);
@@ -278,7 +281,7 @@ public class ConversationMessageService {
         LocalDateTime now = LocalDateTime.now();
         int seq = nextSequenceNo(conversationId);
         newMessage(conversationId, userId, ROLE_TOOL, content, seq,
-                ConversationMessage.STATUS_COMPLETED, null, 0, null, null, null, null, now, toolName);
+                ConversationMessage.STATUS_COMPLETED, null, 0, null, null, null, null, null, now, toolName);
     }
 
     public boolean hasPendingReply(String traceId) {
@@ -291,8 +294,9 @@ public class ConversationMessageService {
 
     private ConversationMessage newMessage(String conversationId, Long userId, String role, String content,
                                            int sequenceNo, String status, Long parentMessageId, int visible,
-                                           String traceId, String reasoningContent, String metadataJson,
-                                           String attachmentFileIds, LocalDateTime now, String toolName) {
+                                           String traceId, String taskId, String reasoningContent,
+                                           String metadataJson, String attachmentFileIds,
+                                           LocalDateTime now, String toolName) {
         ConversationMessage message = new ConversationMessage();
         message.setConversationId(conversationId);
         message.setUserId(userId);
@@ -306,6 +310,7 @@ public class ConversationMessageService {
         message.setIsVisible(visible);
         message.setPublicId(UUID.randomUUID().toString());
         message.setTraceId(traceId);
+        message.setTaskId(taskId);
         message.setReasoningContent(reasoningContent);
         message.setMetadataJson(metadataJson);
         message.setAttachmentFileIds(attachmentFileIds);

@@ -23,16 +23,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class AgentRuntimeContext {
 
     private String traceId;
-    /** 可恢复任务 ID；旧版直接 SSE 调用为空。 */
-    private String taskId;
 
     /**
-     * 本次运行所属的生成任务 ID。
-     * <p>非空表示事件走“生成日志 + 订阅回放”链路：连接断开不会终止生成，
+     * 本次运行所属的对话任务 ID。
+     * <p>非空表示事件走“Redis Stream + 订阅回放”链路：连接断开不会终止生成，
      * 客户端可以用 seq 游标重连补发。为空表示旧入口（计划确认等），
      * 事件直接写给当前 SSE 连接。</p>
      */
-    private String generationId;
+    private String taskId;
 
     private String conversationId;
 
@@ -105,8 +103,8 @@ public class AgentRuntimeContext {
 
     /**
      * 客户端是否已断开 SSE 连接。
-     * <p>只对旧入口（{@link #generationId} 为空）具有“停止执行”的语义；
-     * 生成任务模式下断连只代表订阅中断，任务会继续跑到预算/时限或用户显式取消。</p>
+     * <p>只对旧入口（{@link #taskId} 为空）具有“停止执行”的语义；
+     * 任务模式下断连只代表订阅中断，任务会继续跑到预算/时限或用户显式取消。</p>
      */
     @Builder.Default
     private volatile boolean clientDisconnected = false;
@@ -180,6 +178,6 @@ public class AgentRuntimeContext {
         if (cancelRequested) {
             return true;
         }
-        return generationId == null && clientDisconnected;
+        return taskId == null && clientDisconnected;
     }
 }

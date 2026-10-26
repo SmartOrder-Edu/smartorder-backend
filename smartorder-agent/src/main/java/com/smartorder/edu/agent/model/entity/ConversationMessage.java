@@ -33,6 +33,9 @@ public class ConversationMessage {
     private String reasoningContent;
     private String traceId;
 
+    /** 生成这条消息的对话任务 ID；同一个 task 的 user / assistant 行共用 */
+    private String taskId;
+
     /** 对外消息ID（UUID），前端只认这个 */
     private String publicId;
 

@@ -1,13 +1,13 @@
 package com.smartorder.edu.agent.service.impl;
 
-import com.smartorder.edu.agent.exception.AgentGenerationException;
+import com.smartorder.edu.agent.exception.AgentTaskException;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
 import com.smartorder.edu.agent.model.dto.AgentTurnContext;
-import com.smartorder.edu.agent.model.vo.AgentGenerationVO;
+import com.smartorder.edu.agent.model.vo.AgentTaskVO;
 import com.smartorder.edu.agent.runtime.AgentEventSink;
-import com.smartorder.edu.agent.runtime.AgentGeneration;
-import com.smartorder.edu.agent.runtime.AgentGenerationRegistry;
-import com.smartorder.edu.agent.runtime.AgentGenerationSubscriptionPlan;
+import com.smartorder.edu.agent.runtime.AgentTask;
+import com.smartorder.edu.agent.runtime.AgentTaskRegistry;
+import com.smartorder.edu.agent.runtime.AgentTaskSubscriptionPlan;
 import com.smartorder.edu.agent.service.AgentChatService;
 import com.smartorder.edu.agent.service.AgentOrchestrator;
 import com.smartorder.edu.agent.service.ConversationMessageService;
@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -26,160 +27,167 @@ import java.util.concurrent.RejectedExecutionException;
  *
  * <p><b>为什么发送与订阅必须拆开</b>：</p>
  * <ol>
- *   <li>发送接口在返回前同步完成事务 A（会话、用户消息、assistant 占位行），
- *       因此可以把 conversationId / messageId 直接返回；即使 SSE 一次都没连上，
- *       前端也知道这段对话落在哪、消息是哪一条。</li>
+ *   <li>发送接口在返回前同步完成事务 A（任务行、会话、用户消息、assistant 占位行），
+ *       因此可以把 taskId / conversationId / messageId 直接返回；即使 SSE 一次都没连上，
+ *       前端也知道这段对话落在哪、该查哪个任务。</li>
  *   <li>生成在返回后异步执行，与连接彻底无关；SSE 订阅是只读的，断线重连只是重新订阅。</li>
- *   <li>发送可以安全重试：同一 clientRequestId 命中幂等直接复用，不会重复插入消息或重复生成。</li>
+ *   <li>发送可以安全重试：同一 clientRequestId 命中 MySQL 唯一键直接复用，不会重复插入消息或重复生成。</li>
  * </ol>
  */
 @Slf4j
 @Service
-public class AgentChatServiceImpl implements AgentChatService { 
+public class AgentChatServiceImpl implements AgentChatService {
 
-    private final AgentGenerationRegistry manager;
+    private final AgentTaskRegistry registry;
 
     private final AgentOrchestrator orchestrator;
 
     private final ConversationMessageService conversationMessageService;
 
-    private final ExecutorService generationExecutor;
+    private final ExecutorService taskExecutor;
 
-    public AgentChatServiceImpl(AgentGenerationRegistry manager,
-                                  AgentOrchestrator orchestrator,
-                                  ConversationMessageService conversationMessageService,
-                                  @Qualifier("agentGenerationExecutor") ExecutorService generationExecutor) {
-        this.manager = manager;
+    public AgentChatServiceImpl(AgentTaskRegistry registry,
+                                AgentOrchestrator orchestrator,
+                                ConversationMessageService conversationMessageService,
+                                @Qualifier("agentTaskExecutor") ExecutorService taskExecutor) {
+        this.registry = registry;
         this.orchestrator = orchestrator;
         this.conversationMessageService = conversationMessageService;
-        this.generationExecutor = generationExecutor;
+        this.taskExecutor = taskExecutor;
     }
 
     /**
-     * 创建（或幂等复用）一次生成：同步落库并返回会话/消息 ID，再异步启动编排。
+     * 创建（或幂等复用）一个对话任务：先抢任务行，再落消息，最后异步启动编排。
      */
-    public AgentGenerationVO sendMessage(AgentChatRequest request, Long userId, String clientRequestId) {
+    @Override
+    public AgentTaskVO sendMessage(AgentChatRequest request, Long userId, String clientRequestId) {
+        if (request.getMessage() == null || request.getMessage().isBlank()) {
+            throw new AgentTaskException(HttpStatus.BAD_REQUEST, "EMPTY_MESSAGE", "消息不能为空");
+        }
         String idempotencyKey = normalize(clientRequestId);
 
-        // 这是用来判断任务是否重复生成，保持幂等性的
-        String existingId = manager.findGenerationIdByClientRequest(userId, idempotencyKey);
-        if (existingId != null) {
-            try {
-                AgentGenerationVO existing = manager.status(existingId, userId);
-                existing.setCreated(false);
-                log.info("[Generation] 命中幂等键，复用已有生成: generationId={}, userId={}, key={}",
-                        existingId, userId, idempotencyKey);
-                return existing;
-            } catch (AgentGenerationException e) {
-                log.warn("[Generation] 幂等键指向的生成不可用，将新建: key={}, reason={}",
-                        idempotencyKey, e.getMessage());
-            }
+        // 事务 A 之前先抢 MySQL 任务行：唯一键 (user_id, client_request_id) 是幂等的最终防线。
+        String taskId = UUID.randomUUID().toString();
+        AgentTaskRegistry.Reservation reservation = registry.reserve(
+                userId, taskId, idempotencyKey, request.getConversationId());
+        if (!reservation.created()) {
+            AgentTaskVO existing = registry.status(reservation.taskId(), userId);
+            existing.setCreated(false);
+            log.info("[Task] 命中幂等键，复用已有任务: taskId={}, userId={}, key={}",
+                    reservation.taskId(), userId, idempotencyKey);
+            return existing;
         }
 
-        if (request.getMessage() == null || request.getMessage().isBlank()) {
-            throw new AgentGenerationException(HttpStatus.BAD_REQUEST, "EMPTY_MESSAGE", "消息不能为空");
-        }
-
-        // ===== 事务 A：先落库（会话 + 用户消息 + assistant 占位行），拿到对外 ID =====
         String traceId = UUID.randomUUID().toString();
         AgentTurnContext turn;
         try {
             ConversationMessageService.PendingReply state = conversationMessageService.openReply(
-                    request.getConversationId(), userId, request.getMessage(), request.getFileIds(), traceId);
+                    request.getConversationId(), userId, request.getMessage(),
+                    request.getFileIds(), traceId, reservation.taskId());
             turn = AgentTurnContext.from(state, traceId);
         } catch (RuntimeException e) {
-            // 会话已删除 / 无权访问 / 数据库异常：发送接口直接失败，不创建半截生成任务
-            log.warn("[Generation] 插入消息失败: userId={}, cid={}, reason={}",
+            // 会话已删除 / 无权访问 / 数据库异常：删掉未绑定消息的占位任务，允许客户端重试
+            registry.discardReservation(reservation.taskId());
+            log.warn("[Task] 插入消息失败: userId={}, cid={}, reason={}",
                     userId, request.getConversationId(), e.getMessage());
-            throw new AgentGenerationException(HttpStatus.BAD_REQUEST, "TURN_OPEN_FAILED",
+            throw new AgentTaskException(HttpStatus.BAD_REQUEST, "TURN_OPEN_FAILED",
                     e.getMessage() != null ? e.getMessage() : "会话不可用");
         }
         request.setConversationId(turn.getConversationId());
 
-        AgentGeneration generation = manager.create(userId, idempotencyKey, turn);
-        startAsync(generation, request, turn);
+        AgentTask task = registry.bindTurn(reservation.taskId(), userId, idempotencyKey, turn);
+        startAsync(task, request, turn);
 
-        return AgentGenerationVO.builder()
-                .generationId(generation.getGenerationId())
+        return AgentTaskVO.builder()
+                .taskId(task.getTaskId())
                 .conversationId(turn.getConversationId())
                 .traceId(traceId)
                 .userMessageId(turn.getUserMessageId())
                 .assistantMessageId(turn.getAssistantMessageId())
                 .assistantSequenceNo(turn.getAssistantSequenceNo())
                 .title(turn.getTitle())
-                .status(generation.getStatus().name())
+                .status(task.getStatus().name())
                 .created(true)
                 .lastSeq(0L)
                 .replayable(true)
-                .createdAt(generation.getCreatedAt())
+                .createdAt(task.getCreatedAt())
                 .build();
     }
 
     /**
      * 同步校验订阅：鉴权、游标、可回放性。不向连接写任何字节，失败时抛
-     * {@link AgentGenerationException}，控制器可在响应提交前返回 403/404/410。
+     * {@link AgentTaskException}，控制器可在响应提交前返回 403/404/410。
      */
-    public AgentGenerationSubscriptionPlan validateSubscription(String generationId, Long userId,
-                                                               long afterSeq, AgentEventSink sink) {
-        return manager.validateSubscription(generationId, userId, afterSeq, sink);
+    @Override
+    public AgentTaskSubscriptionPlan validateSubscription(String taskId, Long userId,
+                                                          long afterSeq, AgentEventSink sink) {
+        return registry.validateSubscription(taskId, userId, afterSeq, sink);
     }
 
     /**
-     * 异步接入订阅：回放积压 + 接实时。提交后立即返回，控制器可以先返回 SseEmitter，
+     * 异步接入订阅：回放 Redis Stream 积压 + 接实时。提交后立即返回，控制器可以先返回 SseEmitter，
      * 浏览器不必等整个 backlog 回放完才收到响应。
      *
-     * @throws java.util.concurrent.RejectedExecutionException 生成线程池已满
+     * @throws java.util.concurrent.RejectedExecutionException 执行线程池已满
      */
-    public void attachAsync(AgentGenerationSubscriptionPlan plan) {
-        generationExecutor.execute(() -> {
+    @Override
+    public void attachAsync(AgentTaskSubscriptionPlan plan) {
+        taskExecutor.execute(() -> {
             try {
-                manager.attach(plan);
+                registry.attach(plan);
             } catch (Throwable t) {
                 // 响应已经提交，不能再改成 HTTP 状态码；只能异常收口
-                log.error("[Generation] 异步接入订阅失败: generationId={}",
-                        plan.subscription().getGenerationId(), t);
+                log.error("[Task] 异步接入订阅失败: taskId={}",
+                        plan.subscription().getTaskId(), t);
                 plan.subscription().completeWithError(t);
             }
         });
     }
 
-    public AgentGenerationVO status(String generationId, Long userId) {
-        return manager.status(generationId, userId);
+    @Override
+    public AgentTaskVO status(String taskId, Long userId) {
+        return registry.status(taskId, userId);
     }
 
-    public AgentGenerationVO activeGeneration(String conversationId, Long userId) {
-        return manager.activeGeneration(conversationId, userId);
+    @Override
+    public AgentTaskVO activeTask(String conversationId, Long userId) {
+        return registry.activeTask(conversationId, userId);
     }
 
-    public Map<String, Object> cancel(String generationId, Long userId) {
-        boolean accepted = manager.cancel(generationId, userId);
-        return Map.of(
-                "generationId", generationId,
-                "cancelAccepted", accepted
-        );
+    @Override
+    public Map<String, Object> cancel(String taskId, Long userId) {
+        boolean accepted = registry.cancel(taskId, userId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("taskId", taskId);
+        // 兼容旧客户端的只读别名，新代码不再使用
+        result.put("generationId", taskId);
+        result.put("cancelAccepted", accepted);
+        return result;
     }
 
-    /** “发送接口与生成执行”之间的解耦点：Agent 端自动响应消息存储到 Redis
+    /**
+     * “发送接口与生成执行”之间的解耦点：Agent 输出只写入任务事件日志（内存 + Redis Stream），
+     * 不绑定任何一条 SSE 连接。
      *
-     * @param generation 本次生成
-     * @param request    原始请求
-     * @param turn       已落库的本轮消息
+     * @param task    本次任务
+     * @param request 原始请求
+     * @param turn    已落库的本轮消息
      */
-    private void startAsync(AgentGeneration generation, AgentChatRequest request, AgentTurnContext turn) {
+    private void startAsync(AgentTask task, AgentChatRequest request, AgentTurnContext turn) {
         try {
-            generationExecutor.execute(() -> {
+            taskExecutor.execute(() -> {
                 try {
-                    // emitter 传 null：所有输出都经由生成事件日志，不再绑定某一条连接
-                    orchestrator.handle(request, null, generation.getGenerationId(), turn);
+                    // emitter 传 null：所有输出都经由任务事件日志，不再绑定某一条连接
+                    orchestrator.handle(request, null, task.getTaskId(), turn);
                 } catch (Throwable t) {
-                    log.error("[Generation] 编排线程异常退出: generationId={}", generation.getGenerationId(), t);
-                    manager.fail(generation.getGenerationId(),
-                            t.getMessage() != null ? t.getMessage() : "生成执行失败");
+                    log.error("[Task] 编排线程异常退出: taskId={}", task.getTaskId(), t);
+                    registry.fail(task.getTaskId(),
+                            t.getMessage() != null ? t.getMessage() : "任务执行失败");
                 }
             });
         } catch (RejectedExecutionException e) {
-            log.error("[Generation] 线程池拒绝生成任务: generationId={}", generation.getGenerationId(), e);
-            manager.fail(generation.getGenerationId(), "系统繁忙，生成任务未能启动，请稍后重试");
+            log.error("[Task] 线程池拒绝任务: taskId={}", task.getTaskId(), e);
+            registry.fail(task.getTaskId(), "系统繁忙，任务未能启动，请稍后重试");
         }
     }
 

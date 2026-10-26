@@ -1,27 +1,29 @@
 package com.smartorder.edu.agent.model.vo;
 
-import com.smartorder.edu.agent.model.enums.AgentGenerationStatus;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.smartorder.edu.agent.model.enums.AgentTaskStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 生成任务的对外视图。
+ * 对话任务的对外视图。
  *
- * <p>发送接口返回的就是它：前端在**建立 SSE 之前**就能拿到会话与消息 ID，
- * 因此即使事件流立刻失败，页面也知道这段对话属于哪个会话、占位消息是哪一条。</p>
+ * <p>发送接口返回的就是它：前端在**建立 SSE 之前**就能拿到 taskId 以及会话、
+ * 用户消息、assistant 占位消息 ID。即使事件流一次都没连上，页面也知道这段对话
+ * 属于哪个会话、要查询哪个任务的消息片段。</p>
  *
- * <p><b>客户端对接：移动端暂未实现。</b>当前消费方只有 Web 端；uni-app 尚未接入
- * {@code /agent/generations} 链路，字段语义以本类与接口文档为准。</p>
+ * <p><b>1:1 语义</b>：一条 assistant 消息对应一个 task；
+ * {@code conversation_message.task_id} 与 {@link #taskId} 使用同一个值。</p>
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class AgentGenerationVO {
+public class AgentTaskVO {
 
-    private String generationId;
+    private String taskId;
 
     private String conversationId;
 
@@ -40,10 +42,10 @@ public class AgentGenerationVO {
     /** 会话兜底标题（首条消息时可直接用于侧边栏） */
     private String title;
 
-    /** 见 {@link AgentGenerationStatus} */
+    /** 见 {@link AgentTaskStatus} */
     private String status;
 
-    /** 创建接口：true 表示本次新建；false 表示命中幂等键、复用已有生成 */
+    /** 创建接口：true 表示本次新建；false 表示命中幂等键、复用已有任务 */
     private boolean created;
 
     /** 已产生事件的最大 seq，客户端断线重连时用它作为 after 游标 */
@@ -55,4 +57,15 @@ public class AgentGenerationVO {
     private boolean replayable;
 
     private long createdAt;
+
+    /**
+     * 兼容旧客户端的只读别名（旧路径 /agent/generations 仍可读取）。
+     *
+     * @deprecated 新代码只使用 {@link #taskId}
+     */
+    @Deprecated
+    @JsonProperty("generationId")
+    public String getGenerationIdAlias() {
+        return taskId;
+    }
 }

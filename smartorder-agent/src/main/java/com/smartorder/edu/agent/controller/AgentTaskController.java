@@ -1,9 +1,9 @@
 package com.smartorder.edu.agent.controller;
 
-import com.smartorder.edu.agent.exception.AgentGenerationException;
+import com.smartorder.edu.agent.exception.AgentTaskException;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
-import com.smartorder.edu.agent.model.vo.AgentGenerationVO;
-import com.smartorder.edu.agent.runtime.AgentGenerationSubscriptionPlan;
+import com.smartorder.edu.agent.model.vo.AgentTaskVO;
+import com.smartorder.edu.agent.runtime.AgentTaskSubscriptionPlan;
 import com.smartorder.edu.agent.runtime.SseEmitterEventSink;
 import com.smartorder.edu.agent.service.AgentChatService;
 import com.smartorder.edu.common.model.vo.Result;
@@ -30,7 +30,7 @@ import java.util.Map;
 import java.util.concurrent.RejectedExecutionException;
 
 /**
- * Agent 生成任务接口——发送与订阅分离，支持断线重连与按游标回放。
+ * Agent 对话任务接口——发送与订阅分离，支持断线重连与按游标回放。
  *
  * <p><b>客户端对接状态：移动端暂未实现。</b>本控制器是面向客户端的“发送/订阅分离 + 游标续传”协议，
  * 服务端已实现并有测试覆盖，但客户端侧目前只有 Web 端接了：
@@ -42,14 +42,17 @@ import java.util.concurrent.RejectedExecutionException;
  *
  * <p>协议：</p>
  * <ul>
- *   <li>{@code POST /agent/generations} 发送消息：同步完成事务 A 并返回
- *       conversationId / userMessageId / assistantMessageId / generationId 等 ID，
+ *   <li>{@code POST /agent/tasks} 发送消息：同步完成事务 A 并返回
+ *       conversationId / userMessageId / assistantMessageId / taskId 等 ID，
  *       生成在返回后异步执行；同一 clientRequestId 幂等复用；</li>
- *   <li>{@code GET /agent/generations/{id}/events?after=N} 订阅 SSE，从 seq &gt; N 开始回放；</li>
- *   <li>{@code GET /agent/generations/{id}} 查询状态（断线后兜底）；</li>
- *   <li>{@code POST /agent/generations/{id}/cancel} 协作式取消；</li>
- *   <li>{@code GET /agent/generations/conversations/{cid}/active} 刷新页面后的恢复入口。</li>
+ *   <li>{@code GET /agent/tasks/{id}/events?after=N} 订阅 SSE，从 Redis Stream 回放 seq &gt; N 的消息片段；</li>
+ *   <li>{@code GET /agent/tasks/{id}} 查询状态（断线后兜底）；</li>
+ *   <li>{@code POST /agent/tasks/{id}/cancel} 协作式取消；</li>
+ *   <li>{@code GET /agent/tasks/conversations/{cid}/active} 刷新页面后的恢复入口。</li>
  * </ul>
+ *
+ * <p>旧路径 {@code /agent/generations} 作为 deprecated 别名保留，映射到同一套 task 逻辑；
+ * 返回体额外带 {@code generationId} 只读别名，避免尚未迁移的调用方立即 404。</p>
  *
  * <p>订阅接口在建立流之前同步校验归属与游标，失败时返回真实 HTTP 状态码
  * （403/404/410），前端据此决定“重新登录 / 放弃重试 / 提示记录已过期”；
@@ -58,29 +61,29 @@ import java.util.concurrent.RejectedExecutionException;
  */
 @Slf4j
 @RestController
-@RequestMapping("/agent/generations")
+@RequestMapping({"/agent/tasks", "/agent/generations"})
 @RequiredArgsConstructor
-@Tag(name = "Agent 生成任务", description = "发送消息（返回会话与消息 ID）、SSE 订阅回放、状态与取消")
-public class AgentGenerationController {
+@Tag(name = "Agent 对话任务", description = "发送消息（返回任务与会话 ID）、SSE 订阅 Redis Stream、状态与取消")
+public class AgentTaskController {
 
     private final AgentChatService chatService;
 
     // 客户端对接：移动端暂未实现——当前仅 Web 端 useAgentChat.ts 调用，uni-app 仍走旧入口
     @PostMapping
-    @Operation(summary = "发送消息并创建生成任务（同步返回 conversationId / messageId，按 clientRequestId 幂等）")
-    public Result<AgentGenerationVO> create(@RequestBody AgentChatRequest request) {
+    @Operation(summary = "发送消息并创建对话任务（同步返回 conversationId / taskId / messageId，按 clientRequestId 幂等）")
+    public Result<AgentTaskVO> create(@RequestBody AgentChatRequest request) {
         Long userId = currentUserId();
         request.setUserId(userId);
-        AgentGenerationVO vo = chatService.sendMessage(request, userId, request.getClientRequestId());
+        AgentTaskVO vo = chatService.sendMessage(request, userId, request.getClientRequestId());
         return Result.success(vo);
     }
 
     // 客户端对接：移动端暂未实现——当前仅 Web 端 useResumableAgentStream.ts 订阅，uni-app 未接入
-    @GetMapping(value = "/{generationId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    @Operation(summary = "订阅并回放生成事件（SSE）",
+    @GetMapping(value = "/{taskId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "订阅并回放任务事件（SSE，读取 Redis Stream）",
             description = "after 为客户端已成功应用的最大 seq；支持 Last-Event-ID，二者冲突时返回 400")
     public ResponseEntity<SseEmitter> subscribe(
-            @PathVariable String generationId,
+            @PathVariable String taskId,
             @RequestParam(value = "after", required = false) Long after,
             @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId) {
         Long userId = currentUserId();
@@ -89,26 +92,26 @@ public class AgentGenerationController {
         try {
             cursor = resolveCursor(after, lastEventId);
         } catch (IllegalArgumentException e) {
-            log.info("[GenerationApi] 游标非法: generationId={}, after={}, lastEventId={}",
-                    generationId, after, lastEventId);
+            log.info("[TaskApi] 游标非法: taskId={}, after={}, lastEventId={}",
+                    taskId, after, lastEventId);
             return ResponseEntity.badRequest().build();
         }
 
         SseEmitter emitter = new SseEmitter(0L);
-        AgentGenerationSubscriptionPlan plan;
+        AgentTaskSubscriptionPlan plan;
         try {
             // 同步阶段只做鉴权/游标校验；这一步不能写连接，否则 403/404/410 就来不及了
-            plan = chatService.validateSubscription(generationId, userId, cursor,
+            plan = chatService.validateSubscription(taskId, userId, cursor,
                     new SseEmitterEventSink(emitter));
-        } catch (AgentGenerationException e) {
-            log.info("[GenerationApi] 订阅被拒绝: generationId={}, after={}, status={}, reason={}",
-                    generationId, cursor, e.getStatus().value(), e.getMessage());
+        } catch (AgentTaskException e) {
+            log.info("[TaskApi] 订阅被拒绝: taskId={}, after={}, status={}, reason={}",
+                    taskId, cursor, e.getStatus().value(), e.getMessage());
             return ResponseEntity.status(e.getStatus()).build();
         }
 
         emitter.onTimeout(emitter::complete);
-        emitter.onError(ex -> log.debug("[GenerationApi] 订阅连接断开: generationId={}, reason={}",
-                generationId, ex.getMessage()));
+        emitter.onError(ex -> log.debug("[TaskApi] 订阅连接断开: taskId={}, reason={}",
+                taskId, ex.getMessage()));
 
         try {
             // 回放与实时接入在生成线程池上执行：控制器立刻返回，首字节不再等 backlog。
@@ -116,7 +119,7 @@ public class AgentGenerationController {
             // 在响应初始化后按序 flush，因此不会丢回放事件。
             chatService.attachAsync(plan);
         } catch (RejectedExecutionException e) {
-            log.warn("[GenerationApi] 订阅线程池已满，拒绝接入: generationId={}", generationId);
+            log.warn("[TaskApi] 订阅线程池已满，拒绝接入: taskId={}", taskId);
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         }
         // 禁止代理压缩/缓冲：SSE 需要逐帧尽快到达浏览器，否则心跳与增量会被攒着发
@@ -128,24 +131,24 @@ public class AgentGenerationController {
     }
 
     // 客户端对接：移动端暂未实现——当前仅 Web 端断线兜底查询调用，uni-app 未接入
-    @GetMapping("/{generationId}")
-    @Operation(summary = "查询生成任务状态")
-    public Result<AgentGenerationVO> status(@PathVariable String generationId) {
-        return Result.success(chatService.status(generationId, currentUserId()));
+    @GetMapping("/{taskId}")
+    @Operation(summary = "查询对话任务状态")
+    public Result<AgentTaskVO> status(@PathVariable String taskId) {
+        return Result.success(chatService.status(taskId, currentUserId()));
     }
 
     // 客户端对接：移动端暂未实现——当前仅 Web 端停止按钮调用，uni-app 未接入
-    @PostMapping("/{generationId}/cancel")
-    @Operation(summary = "取消生成任务（协作式）")
-    public Result<Map<String, Object>> cancel(@PathVariable String generationId) {
-        return Result.success(chatService.cancel(generationId, currentUserId()));
+    @PostMapping("/{taskId}/cancel")
+    @Operation(summary = "取消对话任务（协作式）")
+    public Result<Map<String, Object>> cancel(@PathVariable String taskId) {
+        return Result.success(chatService.cancel(taskId, currentUserId()));
     }
 
     // 客户端对接：移动端暂未实现——当前仅 Web 端刷新恢复调用，uni-app 未接入
     @GetMapping("/conversations/{conversationId}/active")
-    @Operation(summary = "查询会话当前生成（刷新页面恢复用）")
-    public Result<AgentGenerationVO> activeGeneration(@PathVariable String conversationId) {
-        return Result.success(chatService.activeGeneration(conversationId, currentUserId()));
+    @Operation(summary = "查询会话当前任务（刷新页面恢复用）")
+    public Result<AgentTaskVO> activeTask(@PathVariable String conversationId) {
+        return Result.success(chatService.activeTask(conversationId, currentUserId()));
     }
 
     /**

@@ -298,14 +298,14 @@ langchain4j:
 # reasoning-effort 仅对 deepseek-v4 模式生效，可选值: high, xhigh
 agent:
   # =======================================================
-  # SSE 断线重连：生成任务与事件回放配置
+  # SSE 断线重连：对话任务与 Redis Stream 回放配置
   # =======================================================
   sse:
-    # 事件归档实现：redis（默认，支持进程重启/跨实例回放）| memory（单机测试）
+    # 事件归档实现：redis（默认，Redis Stream，支持进程重启/跨实例回放）| memory（单机测试）
     event-store: ${AGENT_SSE_EVENT_STORE:redis}
-    # 终态生成的事件保留时长（小时）
+    # 终态任务的事件在 Redis Stream 中保留时长（小时）
     replay-retention-hours: ${AGENT_SSE_REPLAY_RETENTION_HOURS:24}
-    # 终态生成在内存中保留多久（分钟），便于断开后立刻重连
+    # 终态任务在内存中保留多久（分钟），便于断开后立刻重连
     memory-retention-minutes: ${AGENT_SSE_MEMORY_RETENTION_MINUTES:5}
     # SSE 注释心跳间隔（秒），0 表示关闭
     heartbeat-seconds: ${AGENT_SSE_HEARTBEAT_SECONDS:15}

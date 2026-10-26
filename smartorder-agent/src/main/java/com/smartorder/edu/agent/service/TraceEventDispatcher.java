@@ -7,7 +7,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 /**
  * 追踪事件分发器——统一事件出口。
  *
- * <p>有生成上下文（{@code context.generationId} 非空）时，事件先写入生成事件日志再推送，
+ * <p>有生成上下文（{@code context.taskId} 非空）时，事件先写入生成事件日志再推送，
  * 支持按 seq 回放；没有生成上下文时（计划确认等旧入口），保持原来的“直接写 SSE 连接”。</p>
  */
 public interface TraceEventDispatcher {

@@ -19,7 +19,7 @@ public class SseEmitterEventSink implements AgentEventSink {
     }
 
     @Override
-    public void sendEvent(AgentGenerationEvent event) throws Exception {
+    public void sendEvent(AgentTaskEvent event) throws Exception {
         SseEmitter.SseEventBuilder builder = SseEmitter.event()
                 .name(event.getEventName())
                 .data(event.getData());
@@ -40,7 +40,7 @@ public class SseEmitterEventSink implements AgentEventSink {
         try {
             emitter.complete();
         } catch (Exception e) {
-            log.debug("[GenerationSse] 连接已完成或已断开: {}", e.getMessage());
+            log.debug("[TaskSse] 连接已完成或已断开: {}", e.getMessage());
         }
     }
 
@@ -49,7 +49,7 @@ public class SseEmitterEventSink implements AgentEventSink {
         try {
             emitter.completeWithError(error);
         } catch (Exception e) {
-            log.debug("[GenerationSse] 连接已关闭: {}", e.getMessage());
+            log.debug("[TaskSse] 连接已关闭: {}", e.getMessage());
         }
     }
 

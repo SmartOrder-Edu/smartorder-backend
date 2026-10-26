@@ -4,9 +4,9 @@ import com.alibaba.fastjson.JSON;
 import com.smartorder.edu.agent.model.dto.AgentRuntimeContext;
 import com.smartorder.edu.agent.model.dto.AgentTraceEventDTO;
 import com.smartorder.edu.agent.model.enums.AgentEventType;
-import com.smartorder.edu.agent.model.enums.AgentGenerationStatus;
-import com.smartorder.edu.agent.runtime.AgentGenerationEvent;
-import com.smartorder.edu.agent.runtime.AgentGenerationRegistry;
+import com.smartorder.edu.agent.model.enums.AgentTaskStatus;
+import com.smartorder.edu.agent.runtime.AgentTaskEvent;
+import com.smartorder.edu.agent.runtime.AgentTaskRegistry;
 import com.smartorder.edu.agent.service.TraceEventDispatcher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +20,7 @@ import java.util.Map;
 /**
  * 追踪事件分发器实现
  *
- * <p>生成任务模式：事件交给 {@link AgentGenerationRegistry}，由生成对象分配 seq、
+ * <p>生成任务模式：事件交给 {@link AgentTaskRegistry}，由生成对象分配 seq、
  * 写入回放日志并推给所有订阅者；本类不再直接持有连接，因此连接断开不影响生成。</p>
  *
  * <p>旧入口模式（计划确认/澄清/确认门）：保持原有行为，直接写当前 SseEmitter，
@@ -33,22 +33,22 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
 
     private final TraceEventAsyncPersister asyncPersister;
 
-    private final AgentGenerationRegistry generationManager;
+    private final AgentTaskRegistry taskRegistry;
 
     @Override
     public void emit(SseEmitter emitter, AgentRuntimeContext context, AgentEventType eventType, Object payload) {
-        AgentGenerationEvent generationEvent = generationManager.publish(context, eventType, payload);
-        if (generationEvent != null) {
+        AgentTaskEvent taskEvent = taskRegistry.publish(context, eventType, payload);
+        if (taskEvent != null) {
             // 生成任务模式：只负责归档到 trace 表（审计），推送已由生成对象完成
             if (eventType.isPersistable()) {
-                asyncPersister.persistAsync(toDto(context, eventType, (int) generationEvent.getSeq(), payload));
+                asyncPersister.persistAsync(toDto(context, eventType, (int) taskEvent.getSeq(), payload));
             }
             return;
         }
-        if (context.getGenerationId() != null) {
+        if (context.getTaskId() != null) {
             // 生成已终态：异步迟到的事件（如标题）不能再进回放日志，丢弃即可
-            log.debug("[TraceDispatcher] 生成已结束，丢弃迟到事件: generationId={}, event={}",
-                    context.getGenerationId(), eventType.getEventName());
+            log.debug("[TraceDispatcher] 生成已结束，丢弃迟到事件: taskId={}, event={}",
+                    context.getTaskId(), eventType.getEventName());
             return;
         }
         emitLegacy(emitter, context, eventType, payload);
@@ -57,8 +57,8 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
     @Override
     public void emitEphemeral(SseEmitter emitter, AgentRuntimeContext context,
                               AgentEventType eventType, Object payload) {
-        if (context.getGenerationId() != null) {
-            generationManager.publishEphemeral(context, eventType.getEventName(), payload);
+        if (context.getTaskId() != null) {
+            taskRegistry.publishEphemeral(context, eventType.getEventName(), payload);
             return;
         }
         emitLegacy(emitter, context, eventType, payload);
@@ -72,11 +72,11 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
 
         Map<String, Object> donePayload = buildDonePayload(context);
 
-        if (context.getGenerationId() != null) {
-            AgentGenerationStatus terminalStatus = generationManager.isCancelRequested(context)
-                    ? AgentGenerationStatus.CANCELLED
-                    : AgentGenerationStatus.COMPLETED;
-            generationManager.finish(context, donePayload, terminalStatus, null);
+        if (context.getTaskId() != null) {
+            AgentTaskStatus terminalStatus = taskRegistry.isCancelRequested(context)
+                    ? AgentTaskStatus.CANCELLED
+                    : AgentTaskStatus.COMPLETED;
+            taskRegistry.finish(context, donePayload, terminalStatus, null);
             return;
         }
 
@@ -105,8 +105,8 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
         Map<String, Object> donePayload = buildDonePayload(context);
         donePayload.put("error", errorMsg);
 
-        if (context.getGenerationId() != null) {
-            generationManager.finish(context, donePayload, AgentGenerationStatus.FAILED, errorMsg);
+        if (context.getTaskId() != null) {
+            taskRegistry.finish(context, donePayload, AgentTaskStatus.FAILED, errorMsg);
             return;
         }
 
@@ -150,7 +150,7 @@ public class TraceEventDispatcherImpl implements TraceEventDispatcher {
     private AgentTraceEventDTO toDto(AgentRuntimeContext context, AgentEventType eventType,
                                      int seq, Object payload) {
         return AgentTraceEventDTO.builder()
-                .generationId(context.getGenerationId())
+                .taskId(context.getTaskId())
                 .traceId(context.getTraceId())
                 .conversationId(context.getConversationId())
                 .userId(context.getUserId())

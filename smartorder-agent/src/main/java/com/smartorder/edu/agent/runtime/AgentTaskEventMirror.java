@@ -1,8 +1,10 @@
 package com.smartorder.edu.agent.runtime;
 
-import com.smartorder.edu.agent.repository.AgentGenerationEventStore;
+import com.smartorder.edu.agent.repository.AgentTaskEventStore;
+import com.smartorder.edu.agent.repository.AgentTaskRepository;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -16,26 +18,29 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * 事件归档的异步镜像。
  *
- * <p>为什么异步：一次生成会推送成百上千个 delta 事件，如果每个事件都同步等一次
+ * <p>为什么异步：一次任务会推送成百上千个 delta 事件，如果每个事件都同步等一次
  * 远程 Redis RTT（10~30ms），流式输出会被明显拖慢。这里用单线程 + 有界队列：
- * 追加顺序由队列保证，与 seq 顺序一致；生成本身只做一次 {@code offer}。</p>
+ * 追加顺序由队列保证，与 seq 顺序一致；任务本身只做一次 {@code offer}。</p>
  *
  * <p>终态时调用 {@link #flush(String)} 等待队列排空，再写终态元数据，
  * 保证“状态是 COMPLETED”时日志里一定已经有 done 事件。</p>
  *
- * <p>队列满或写入失败不会打断生成：标记该生成 replayDegraded，
+ * <p>队列满或写入失败不会打断任务：标记 replayDegraded，
  * 本机重连仍能从内存日志完整回放，跨进程回放则明确失败而不是静默丢事件。</p>
  */
 @Slf4j
 @Component
-public class AgentGenerationEventMirror {
+@RequiredArgsConstructor
+public class AgentTaskEventMirror {
 
     /** 队列容量：按单事件约 0.5KB 估算，20 万条约 100MB 上限，实际远达不到 */
     private static final int QUEUE_CAPACITY = 200_000;
 
     private static final long FLUSH_TIMEOUT_SECONDS = 5;
 
-    private final AgentGenerationEventStore store;
+    private final AgentTaskEventStore store;
+
+    private final AgentTaskRepository taskRepository;
 
     private final BlockingQueue<Task> queue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
 
@@ -43,62 +48,70 @@ public class AgentGenerationEventMirror {
 
     private final ConcurrentHashMap<String, Boolean> degradedMarked = new ConcurrentHashMap<>();
 
-    private final Thread worker;
+    private final Thread worker = new Thread(this::loop, "task-archive");
 
     private long dropped;
 
-    public AgentGenerationEventMirror(AgentGenerationEventStore store) {
-        this.store = store;
-        this.worker = new Thread(this::loop, "generation-archive");
-        this.worker.setDaemon(true);
-    }
-
     @PostConstruct
     public void start() {
+        worker.setDaemon(true);
         worker.start();
     }
 
     @PreDestroy
     public void stop() {
+        // 先停入口（append 会直接丢弃新事件），再让 worker 把队列里已有的事件写完，
+        // 最后才 interrupt。直接 interrupt 会让 poll 抛异常跳出循环，队列里的尾部事件全丢。
         running.set(false);
-        worker.interrupt();
+        try {
+            worker.join(FLUSH_TIMEOUT_SECONDS * 1000L);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        if (worker.isAlive()) {
+            worker.interrupt();
+            log.warn("[TaskMirror] 停机排空超时，剩余事件未归档: {}", queue.size());
+        }
     }
 
     /**
      * 追加一条事件到归档队列（非阻塞）。
      */
-    public void append(String generationId, AgentGenerationEvent event) {
+    public void append(String taskId, AgentTaskEvent event) {
         if (!running.get()) {
             return;
         }
-        if (!queue.offer(Task.event(generationId, event))) {
+        if (!queue.offer(Task.event(taskId, event))) {
             dropped++;
             if (dropped % 100 == 1) {
-                log.error("[GenerationMirror] 归档队列已满，事件被丢弃: generationId={}, dropped={}",
-                        generationId, dropped);
+                log.error("[TaskMirror] 归档队列已满，事件被丢弃: taskId={}, dropped={}",
+                        taskId, dropped);
             }
-            markDegraded(generationId);
+            markDegraded(taskId);
         }
     }
 
     /**
      * 等待队列中此前入队的事件全部落库。终态屏障使用。
      */
-    public void flush(String generationId) {
+    public void flush(String taskId) {
         if (!running.get()) {
             return;
         }
         CountDownLatch latch = new CountDownLatch(1);
-        if (!queue.offer(Task.barrier(generationId, latch))) {
-            log.warn("[GenerationMirror] 队列已满，跳过终态屏障: generationId={}", generationId);
+        if (!queue.offer(Task.barrier(taskId, latch))) {
+            log.warn("[TaskMirror] 队列已满，跳过终态屏障: taskId={}", taskId);
+            markDegraded(taskId);
             return;
         }
         try {
             if (!latch.await(FLUSH_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                log.warn("[GenerationMirror] 终态屏障等待超时: generationId={}", generationId);
+                log.warn("[TaskMirror] 终态屏障等待超时: taskId={}", taskId);
+                markDegraded(taskId);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            markDegraded(taskId);
         }
     }
 
@@ -121,7 +134,7 @@ public class AgentGenerationEventMirror {
                 runTask(next);
             }
         }
-        log.info("[GenerationMirror] 归档线程退出，剩余任务={}", queue.size());
+        log.info("[TaskMirror] 归档线程退出，剩余任务={}", queue.size());
     }
 
     private void runTask(Task task) {
@@ -130,22 +143,21 @@ public class AgentGenerationEventMirror {
             return;
         }
         try {
-            store.appendEvent(task.generationId, task.event);
+            store.appendEvent(task.taskId, task.event);
         } catch (Exception e) {
-            markDegraded(task.generationId);
-            if (degradedMarked.putIfAbsent(task.generationId, Boolean.TRUE) == null) {
-                log.error("[GenerationMirror] 事件归档失败，该生成只能本机回放: generationId={}, seq={}",
-                        task.generationId, task.event.getSeq(), e);
+            markDegraded(task.taskId);
+            if (degradedMarked.putIfAbsent(task.taskId, Boolean.TRUE) == null) {
+                log.error("[TaskMirror] 事件归档失败，该生成只能本机回放: taskId={}, seq={}",
+                        task.taskId, task.event.getSeq(), e);
             }
         }
     }
 
-    private void markDegraded(String generationId) {
-        try {
-            store.markReplayDegraded(generationId);
-        } catch (Exception e) {
-            log.debug("[GenerationMirror] 降级标记写入失败: {}", e.getMessage());
+    private void markDegraded(String taskId) {
+        if (taskRepository == null || taskId == null) {
+            return;
         }
+        taskRepository.markReplayDegraded(taskId);
     }
 
     /**
@@ -153,24 +165,24 @@ public class AgentGenerationEventMirror {
      */
     private static final class Task {
 
-        private final String generationId;
+        private final String taskId;
 
-        private final AgentGenerationEvent event;
+        private final AgentTaskEvent event;
 
         private final CountDownLatch barrier;
 
-        private Task(String generationId, AgentGenerationEvent event, CountDownLatch barrier) {
-            this.generationId = generationId;
+        private Task(String taskId, AgentTaskEvent event, CountDownLatch barrier) {
+            this.taskId = taskId;
             this.event = event;
             this.barrier = barrier;
         }
 
-        static Task event(String generationId, AgentGenerationEvent event) {
-            return new Task(generationId, event, null);
+        static Task event(String taskId, AgentTaskEvent event) {
+            return new Task(taskId, event, null);
         }
 
-        static Task barrier(String generationId, CountDownLatch latch) {
-            return new Task(generationId, null, latch);
+        static Task barrier(String taskId, CountDownLatch latch) {
+            return new Task(taskId, null, latch);
         }
     }
 }

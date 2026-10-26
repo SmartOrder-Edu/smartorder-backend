@@ -6,7 +6,7 @@ import com.smartorder.edu.agent.model.dto.RouteContext;
 import com.smartorder.edu.agent.model.enums.AgentRunMode;
 import com.smartorder.edu.agent.model.enums.IntentType;
 import com.smartorder.edu.agent.model.enums.RoutingSource;
-import com.smartorder.edu.agent.runtime.AgentGenerationRegistry;
+import com.smartorder.edu.agent.runtime.AgentTaskRegistry;
 import com.smartorder.edu.agent.service.AgentConversationAttachmentService;
 import com.smartorder.edu.agent.service.ConversationContextService;
 import com.smartorder.edu.agent.service.ConversationTitleService;
@@ -42,7 +42,7 @@ class AgentOrchestratorImplTest {
         ConversationMessageService messageService = mock(ConversationMessageService.class);
         ConversationTitleService titleService = mock(ConversationTitleService.class);
         AgentRunSupervisor runSupervisor = mock(AgentRunSupervisor.class);
-        AgentGenerationRegistry generationManager = mock(AgentGenerationRegistry.class);
+        AgentTaskRegistry taskRegistry = mock(AgentTaskRegistry.class);
         AgentOrchestratorImpl orchestrator = new AgentOrchestratorImpl(
                 routeService,
                 reActEngine,
@@ -54,7 +54,7 @@ class AgentOrchestratorImplTest {
                 messageService,
                 titleService,
                 runSupervisor,
-                generationManager
+                taskRegistry
         );
         IntentRouteResult routeResult = IntentRouteResult.builder()
                 .intentType("知识问答")
@@ -76,7 +76,7 @@ class AgentOrchestratorImplTest {
                 .title("我准备考研")
                 .created(false)
                 .build();
-        when(messageService.openReply(any(), any(), any(), any(), any())).thenReturn(turnState);
+        when(messageService.openReply(any(), any(), any(), any(), any(), any())).thenReturn(turnState);
         when(routeService.route(any(RouteContext.class))).thenReturn(routeResult);
         when(contextService.getRecentChatMessages("conversation-1", 30)).thenReturn(List.of());
         doAnswer(invocation -> {
@@ -95,7 +95,7 @@ class AgentOrchestratorImplTest {
         // 事务 A（openReply 落用户消息 + 占位行）必须先于意图路由
         InOrder order = inOrder(messageService, routeService);
         order.verify(messageService).openReply(eq("conversation-1"), eq(7L),
-                eq("我准备考研，但是大二的时候没有怎么学会数据结构"), any(), any());
+                eq("我准备考研，但是大二的时候没有怎么学会数据结构"), any(), any(), any());
         order.verify(routeService).route(any(RouteContext.class));
         verify(reActEngine).execute(eq(request), eq(routeResult), any(), eq(emitter));
 

@@ -1,16 +1,17 @@
 package com.smartorder.edu.agent.controller;
 
 import com.alibaba.fastjson.JSON;
-import com.smartorder.edu.agent.exception.AgentGenerationException;
+import com.smartorder.edu.agent.exception.AgentTaskException;
 import com.smartorder.edu.agent.model.dto.AgentChatRequest;
-import com.smartorder.edu.agent.model.vo.AgentGenerationVO;
-import com.smartorder.edu.agent.runtime.AgentGenerationSubscriptionPlan;
+import com.smartorder.edu.agent.model.vo.AgentTaskVO;
+import com.smartorder.edu.agent.runtime.AgentTaskSubscriptionPlan;
 import com.smartorder.edu.agent.runtime.SseEmitterEventSink;
 import com.smartorder.edu.agent.service.AgentChatService;
 import com.smartorder.edu.common.util.ThreadLocalUtils;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
@@ -23,31 +24,28 @@ import java.util.concurrent.RejectedExecutionException;
 /**
  * Agent 对话控制器 — 结构化 SSE 流式响应（兼容入口）
  *
- * <p>新链路请使用 {@code POST /agent/generations}（同步返回 conversationId / messageId）
- * + {@code GET /agent/generations/{id}/events}（SSE 输出与断线重连）。</p>
+ * <p>新链路请使用 {@code POST /agent/tasks}（同步返回 conversationId / messageId）
+ * + {@code GET /agent/tasks/{id}/events}（SSE 输出与断线重连）。</p>
  *
- * <p>这里保留旧的 POST 入口，等价于“创建生成 + 从 0 订阅”，
- * 让尚未迁移的页面（资源 AI 面板、uni-app）继续可用，并同样具备服务端持续生成的能力。</p>
+ * <p>这里保留旧的 POST 入口，等价于“创建任务 + 从 0 订阅”，
+ * 让尚未迁移的页面（资源 AI 面板、uni-app）继续可用，并同样具备服务端持续执行的能力。</p>
  *
- * <p>TODO(客户端): 移动端正式接入时改走 {@code /agent/generations} 新链路
+ * <p>TODO(客户端): 移动端正式接入时改走 {@code /agent/tasks} 新链路
  * （clientRequestId 幂等键 + after 游标重连），不要继续复用本兼容入口。</p>
  */
 @Slf4j
 @RestController
 @RequestMapping("/agent")
+@RequiredArgsConstructor
 @Tag(name = "Agent 对话", description = "AI Agent 流式对话接口")
 public class AgentChatController {
 
     private final AgentChatService chatService;
 
-    public AgentChatController(AgentChatService chatService) {
-        this.chatService = chatService;
-    }
-
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "与 Agent 流式对话（结构化 SSE）",
                description = "发送消息给学习 Agent，通过结构化 SSE 事件流接收回复。" +
-                       "事件类型包括 agent.generation.started、agent.trace.started、agent.route.completed、" +
+                       "事件类型包括 agent.task.started、agent.trace.started、agent.route.completed、" +
                        "agent.think.delta、agent.tool.started/completed、agent.text.delta、" +
                        "agent.trace.completed、done")
     public SseEmitter chatStream(@RequestBody AgentChatRequest request) {
@@ -59,36 +57,36 @@ public class AgentChatController {
         log.info("[AgentChat] SSE 会话开始: userId={}, cid={}, clientRequestId={}, message={}",
                 userId, request.getConversationId(), request.getClientRequestId(), request.getMessage());
 
-        AgentGenerationVO generation;
+        AgentTaskVO task;
         try {
-            generation = chatService.sendMessage(request, userId, request.getClientRequestId());
+            task = chatService.sendMessage(request, userId, request.getClientRequestId());
         } catch (Exception e) {
             // 旧入口不能返回 JSON：用 SSE 的 error + done 收敛，避免前端一直转圈
-            log.warn("[AgentChat] 创建生成失败: userId={}, cid={}, reason={}",
+            log.warn("[AgentChat] 创建任务失败: userId={}, cid={}, reason={}",
                     userId, request.getConversationId(), e.getMessage());
             return sseError(e.getMessage() != null ? e.getMessage() : "会话不可用，请刷新后重试");
         }
 
-        AgentGenerationSubscriptionPlan plan;
+        AgentTaskSubscriptionPlan plan;
         try {
             // 同步校验（通常只是内存检查），失败仍可以走 SSE error + done 收敛
-            plan = chatService.validateSubscription(generation.getGenerationId(), userId, 0L,
+            plan = chatService.validateSubscription(task.getTaskId(), userId, 0L,
                     new SseEmitterEventSink(emitter));
-        } catch (AgentGenerationException e) {
-            log.warn("[AgentChat] 订阅校验失败: generationId={}, reason={}",
-                    generation.getGenerationId(), e.getMessage());
+        } catch (AgentTaskException e) {
+            log.warn("[AgentChat] 订阅校验失败: taskId={}, reason={}",
+                    task.getTaskId(), e.getMessage());
             return sseError(e.getMessage() != null ? e.getMessage() : "订阅失败，请稍后重试");
         }
 
         emitter.onTimeout(emitter::complete);
-        emitter.onError(ex -> log.error("[AgentChat] SSE 连接错误: cid={}, generationId={}",
-                request.getConversationId(), generation.getGenerationId(), ex));
+        emitter.onError(ex -> log.error("[AgentChat] SSE 连接错误: cid={}, taskId={}",
+                request.getConversationId(), task.getTaskId(), ex));
 
         try {
             // 回放与实时接入异步执行，避免 servlet 线程先写满整段 backlog
             chatService.attachAsync(plan);
         } catch (RejectedExecutionException e) {
-            log.error("[AgentChat] 订阅线程池已满: generationId={}", generation.getGenerationId());
+            log.error("[AgentChat] 订阅线程池已满: taskId={}", task.getTaskId());
             return sseError("系统繁忙，订阅暂不可用，请稍后重试");
         }
         return emitter;

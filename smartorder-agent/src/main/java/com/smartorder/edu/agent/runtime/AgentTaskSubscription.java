@@ -7,13 +7,13 @@ import lombok.extern.slf4j.Slf4j;
  * 一条 SSE 订阅（一次“连接”）。
  *
  * <p>订阅只负责把事件写到某个 {@link AgentEventSink}，并记录最后成功发送的 seq。
- * 连接断开时只需要丢弃订阅本身，生成任务继续执行——这就是“生成与连接解耦”的落点。</p>
+ * 连接断开时只需要丢弃订阅本身，对话任务继续执行——这就是“任务与连接解耦”的落点。</p>
  */
 @Slf4j
-public class AgentGenerationSubscription {
+public class AgentTaskSubscription {
 
     @Getter
-    private final String generationId;
+    private final String taskId;
 
     /** 客户端声明的已应用游标：服务端只补发 seq 大于它的事件 */
     @Getter
@@ -30,8 +30,8 @@ public class AgentGenerationSubscription {
     /** 是否已经完成过连接（避免重复 complete） */
     private volatile boolean completed;
 
-    public AgentGenerationSubscription(String generationId, long afterSeq, AgentEventSink sink) {
-        this.generationId = generationId;
+    public AgentTaskSubscription(String taskId, long afterSeq, AgentEventSink sink) {
+        this.taskId = taskId;
         this.afterSeq = afterSeq;
         this.sink = sink;
         this.lastSentSeq = afterSeq;
@@ -40,7 +40,7 @@ public class AgentGenerationSubscription {
     /**
      * 投递一条事件。返回 false 表示连接已废，调用方应把订阅摘掉。
      */
-    public boolean deliver(AgentGenerationEvent event) {
+    public boolean deliver(AgentTaskEvent event) {
         if (closed) {
             return false;
         }
@@ -49,8 +49,8 @@ public class AgentGenerationSubscription {
             lastSentSeq = event.getSeq();
             return true;
         } catch (Exception e) {
-            log.info("[GenerationSub] 事件发送失败，连接断开: generationId={}, seq={}, reason={}",
-                    generationId, event.getSeq(), e.getMessage());
+            log.info("[TaskSub] 事件发送失败，连接断开: taskId={}, seq={}, reason={}",
+                    taskId, event.getSeq(), e.getMessage());
             closed = true;
             return false;
         }
@@ -67,8 +67,8 @@ public class AgentGenerationSubscription {
             sink.sendHeartbeat();
             return true;
         } catch (Exception e) {
-            log.debug("[GenerationSub] 心跳失败，连接断开: generationId={}, reason={}",
-                    generationId, e.getMessage());
+            log.debug("[TaskSub] 心跳失败，连接断开: taskId={}, reason={}",
+                    taskId, e.getMessage());
             closed = true;
             return false;
         }
