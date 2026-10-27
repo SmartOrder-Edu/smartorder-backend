@@ -10,8 +10,10 @@ import com.smartorder.edu.agent.service.impl.AgentOrchestratorImpl;
 import com.smartorder.edu.agent.util.TitleInputExtractor;
 import com.smartorder.edu.agent.util.TitleNormalizer;
 import com.smartorder.edu.agent.util.UuidUtils;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -20,10 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 会话消息服务——聊天消息落库与回复收尾。
@@ -38,6 +38,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * - 锁持有时间 = 事务 A 的 5 条 SQL（毫秒级），不会卡住 SSE。
  * - {@code uk_conv_seq(conversation_id, sequence_no)} 是序号唯一性的最终防线；
  *   {@code uk_conv_message_uuid(conversation_id, public_id)} 是消息幂等的最终防线。
+ * <p>
+ * <b>待收尾状态存 Redis</b>：openReply 在请求线程写、complete/fail/cancel 在编排线程读，
+ * 这份状态本来就跨线程跨阶段，放进 {@link PendingReplyStore} 后既能跨进程可见，
+ * 也自带 TTL——进程崩在一轮中间不会把占位行永久吊在 RUNNING。
  */
 @Slf4j
 @Service
@@ -51,22 +55,21 @@ public class ConversationMessageService {
     private static final int PREVIEW_MAX = 200;
     private static final int ERROR_MAX = 500;
 
-    /** 未收尾的回复状态超过该时长视为泄漏，openReply 时顺手清理 */
-    private static final long STATE_TTL_MS = 30 * 60 * 1000L;
-
     private final ConversationMapper conversationMapper;
     private final ConversationMessageMapper messageMapper;
     private final ConversationService conversationService;
     private final ConversationDraftService conversationDraftService;
 
-    /** traceId → 本轮待收尾的回复；complete/fail/cancel 后移除 */
-    private final Map<String, PendingReply> pendingReplies = new ConcurrentHashMap<>();
+    /** traceId → 本轮待收尾的回复；complete/fail/cancel 后移除（Redis，带 TTL） */
+    private final PendingReplyStore pendingReplyStore;
 
     /**
      * 一轮问答中待收尾的回复（用户消息 + assistant 占位行）
      */
     @Data
     @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class PendingReply {
         /** 本轮对话任务 ID；user / assistant 两行写入同一个 task_id */
         private String taskId;
@@ -115,8 +118,6 @@ public class ConversationMessageService {
     public PendingReply openReply(String rawConversationId, String messageUuid, String draftId,
                                   Long userId, String content, List<Long> attachmentFileIds,
                                   String traceId, String taskId) {
-        pruneStaleStates();
-
         // 入参保留原始值（可能为空白串/未清洗），清洗后落到 requestedConversationId；
         // conversationId 是本轮最终使用的值——为空时由服务端生成，因此必须留成可变变量。
         String requestedConversationId = UuidUtils.trimToNull(rawConversationId);
@@ -221,7 +222,8 @@ public class ConversationMessageService {
                 .duplicate(false)
                 .openedAt(System.currentTimeMillis())
                 .build();
-        pendingReplies.put(traceId, state);
+        // 落 Redis：此后 complete/fail/cancel 可能在任何线程、任何实例上收尾
+        pendingReplyStore.save(traceId, state);
 
         log.info("[Message] 开启回复: cid={}, traceId={}, created={}, userSeq={}, msgUuid={}, userMsgId={}, assistantMsgId={}",
                 conversationId, traceId, created, userSeq, userMessageUuid,
@@ -291,7 +293,7 @@ public class ConversationMessageService {
      */
     @Transactional(rollbackFor = Exception.class)
     public boolean completeReply(String traceId, String content, String reasoningContent, String metadataJson) {
-        PendingReply state = traceId == null ? null : pendingReplies.get(traceId);
+        PendingReply state = pendingReplyStore.load(traceId);
         if (state == null) {
             return false;
         }
@@ -300,11 +302,11 @@ public class ConversationMessageService {
                 reasoningContent, metadataJson, now);
         if (updated == 0) {
             // 占位行已被收尾（同一轮第二次调用）→ 交给调用方 INSERT 新气泡
-            pendingReplies.remove(traceId);
+            pendingReplyStore.remove(traceId);
             return false;
         }
         conversationMapper.touchLastMessage(state.getConversationId(), now, normalize(content, PREVIEW_MAX));
-        pendingReplies.remove(traceId);
+        pendingReplyStore.remove(traceId);
         log.info("[Message] 完成回复: cid={}, traceId={}, msgId={}", state.getConversationId(),
                 traceId, state.getAssistantMessageId());
         return true;
@@ -319,13 +321,13 @@ public class ConversationMessageService {
      */
     @Transactional(rollbackFor = Exception.class)
     public boolean failReply(String traceId, String errorMessage, String partialContent) {
-        PendingReply state = traceId == null ? null : pendingReplies.get(traceId);
+        PendingReply state = pendingReplyStore.load(traceId);
         if (state == null) {
             return false;
         }
         int updated = messageMapper.markFailed(state.getAssistantMessageId(), partialContent,
                 truncate(errorMessage, ERROR_MAX), LocalDateTime.now());
-        pendingReplies.remove(traceId);
+        pendingReplyStore.remove(traceId);
         log.warn("[Message] 失败回复: cid={}, traceId={}, msgId={}, affected={}, reason={}",
                 state.getConversationId(), traceId, state.getAssistantMessageId(), updated,
                 truncate(errorMessage, 120));
@@ -337,13 +339,13 @@ public class ConversationMessageService {
      */
     @Transactional(rollbackFor = Exception.class)
     public boolean cancelReply(String traceId, String partialContent) {
-        PendingReply state = traceId == null ? null : pendingReplies.get(traceId);
+        PendingReply state = pendingReplyStore.load(traceId);
         if (state == null) {
             return false;
         }
         int updated = messageMapper.markCancelled(state.getAssistantMessageId(), partialContent,
                 LocalDateTime.now());
-        pendingReplies.remove(traceId);
+        pendingReplyStore.remove(traceId);
         log.info("[Message] 用户中止: cid={}, traceId={}, msgId={}, affected={}",
                 state.getConversationId(), traceId, state.getAssistantMessageId(), updated);
         return updated > 0;
@@ -411,7 +413,7 @@ public class ConversationMessageService {
     }
 
     public boolean hasPendingReply(String traceId) {
-        return traceId != null && pendingReplies.containsKey(traceId);
+        return traceId != null && pendingReplyStore.exists(traceId);
     }
 
     // ============================================================
@@ -510,13 +512,5 @@ public class ConversationMessageService {
     private String truncate(String text, int max) {
         if (text == null) return null;
         return text.length() <= max ? text : text.substring(0, max);
-    }
-
-    private void pruneStaleStates() {
-        if (pendingReplies.size() < 512) {
-            return;
-        }
-        long threshold = System.currentTimeMillis() - STATE_TTL_MS;
-        pendingReplies.entrySet().removeIf(e -> e.getValue().getOpenedAt() < threshold);
     }
 }

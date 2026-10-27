@@ -1,6 +1,7 @@
 package com.smartorder.edu.agent.runtime;
 
 import com.smartorder.edu.agent.runtime.store.AgentTaskEventStore;
+import com.smartorder.edu.agent.runtime.store.AgentTaskStateStore;
 import com.smartorder.edu.agent.service.AgentTaskMetaService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -9,7 +10,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -27,6 +27,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <p>队列满或写入失败不会打断任务：标记 replayDegraded，
  * 本机重连仍能从内存日志完整回放，跨进程回放则明确失败而不是静默丢事件。</p>
+ *
+ * <p><b>降级标记为什么在 Redis</b>：“这个任务已经降级过”原来是本进程的一个
+ * {@code ConcurrentHashMap} 去重，多实例下每个节点都会各记一遍、各打一条错误日志；
+ * 而且它描述的其实是<b>任务</b>的属性（replayable=false），不是本进程的状态。
+ * 现在标记与属性都写 Redis（SETNX 决定谁打日志），重启也不会重复告警。</p>
  */
 @Slf4j
 @Component
@@ -42,11 +47,11 @@ public class AgentTaskEventMirror {
 
     private final AgentTaskMetaService taskMetaService;
 
+    private final AgentTaskStateStore stateStore;
+
     private final BlockingQueue<Task> queue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
 
     private final AtomicBoolean running = new AtomicBoolean(true);
-
-    private final ConcurrentHashMap<String, Boolean> degradedMarked = new ConcurrentHashMap<>();
 
     private final Thread worker = new Thread(this::loop, "task-archive");
 
@@ -145,19 +150,35 @@ public class AgentTaskEventMirror {
         try {
             store.appendEvent(task.taskId, task.event);
         } catch (Exception e) {
-            markDegraded(task.taskId);
-            if (degradedMarked.putIfAbsent(task.taskId, Boolean.TRUE) == null) {
+            if (markDegraded(task.taskId)) {
                 log.error("[TaskMirror] 事件归档失败，该生成只能本机回放: taskId={}, seq={}",
                         task.taskId, task.event.getSeq(), e);
             }
         }
     }
 
-    private void markDegraded(String taskId) {
-        if (taskMetaService == null || taskId == null) {
-            return;
+    /**
+     * 标记"事件归档不完整"。
+     *
+     * @return true 表示本次是第一个标记的（跨节点去重），可以打错误日志
+     */
+    private boolean markDegraded(String taskId) {
+        if (taskId == null) {
+            return false;
         }
-        taskMetaService.markReplayDegraded(taskId);
+        boolean first = false;
+        if (stateStore != null) {
+            try {
+                first = stateStore.markReplayDegraded(taskId);
+            } catch (Exception e) {
+                log.warn("[TaskMirror] 降级标记写入 Redis 失败: taskId={}, reason={}",
+                        taskId, e.getMessage());
+            }
+        }
+        if (taskMetaService != null) {
+            taskMetaService.markReplayDegraded(taskId);
+        }
+        return first;
     }
 
     /**

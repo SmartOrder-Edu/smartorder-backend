@@ -1,9 +1,9 @@
 package com.smartorder.edu.agent.runtime;
 
 import com.smartorder.edu.agent.model.dto.AgentRuntimeContext;
-import com.smartorder.edu.agent.model.dto.AgentTurnContext;
 import com.smartorder.edu.agent.model.enums.AgentEventType;
 import com.smartorder.edu.agent.model.enums.AgentTaskStatus;
+import com.smartorder.edu.agent.runtime.store.InMemoryAgentTaskStateStore;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -142,19 +142,25 @@ class AgentTaskTest {
     // ============ 辅助 ============
 
     private AgentTask newGeneration(AgentTask.EventListener listener) {
-        AgentTurnContext turn = AgentTurnContext.builder()
-                .traceId("t-1")
+        // 状态由共享存储承载：本机对象只是时序/回放句柄，构造时给一份初始快照即可
+        long now = System.currentTimeMillis();
+        AgentTaskState state = AgentTaskState.builder()
+                .taskId("g-test")
+                .userId(7L)
+                .taskRequestId("key-1")
                 .conversationId("c-1")
-                .conversationPk(1L)
+                .traceId("t-1")
                 .userMessageId(11L)
                 .assistantMessageId(12L)
-                .userSequenceNo(1)
                 .assistantSequenceNo(2)
                 .title("测试会话")
-                .titleSource("AUTO")
-                .created(true)
+                .status(AgentTaskStatus.CREATED.name())
+                .createdAt(now)
+                .updatedAt(now)
+                .replayable(true)
+                .nodeId("test-node")
                 .build();
-        return new AgentTask("g-test", 7L, "key-1", turn, System.currentTimeMillis(), listener);
+        return new AgentTask(state, new InMemoryAgentTaskStateStore(), listener);
     }
 
     private AgentRuntimeContext context(AgentTask task) {

@@ -1,6 +1,7 @@
 package com.smartorder.edu.agent.runtime;
 
 import com.smartorder.edu.agent.runtime.store.AgentTaskEventStore;
+import com.smartorder.edu.agent.runtime.store.InMemoryAgentTaskStateStore;
 import com.smartorder.edu.agent.service.AgentTaskMetaService;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +19,8 @@ class AgentTaskEventMirrorTest {
     @Test
     void shouldDrainQueuedEventsOnShutdown() {
         AgentTaskEventStore store = mock(AgentTaskEventStore.class);
-        AgentTaskEventMirror mirror = new AgentTaskEventMirror(store, mock(AgentTaskMetaService.class));
+        AgentTaskEventMirror mirror = new AgentTaskEventMirror(store,
+                mock(AgentTaskMetaService.class), new InMemoryAgentTaskStateStore());
         mirror.start();
 
         for (int seq = 1; seq <= 50; seq++) {

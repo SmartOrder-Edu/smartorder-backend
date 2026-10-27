@@ -5,7 +5,6 @@ import com.smartorder.edu.agent.mapper.ConversationMessageMapper;
 import com.smartorder.edu.agent.model.entity.ConversationMessage;
 import com.smartorder.edu.agent.runtime.store.AgentTaskEventStore;
 import com.smartorder.edu.agent.service.AgentTaskMetaService;
-import com.smartorder.edu.agent.runtime.AgentTask;
 import com.smartorder.edu.agent.runtime.AgentTaskEvent;
 import com.smartorder.edu.agent.runtime.AgentTaskMeta;
 import com.smartorder.edu.agent.runtime.AgentTaskRegistry;
@@ -63,7 +62,7 @@ class InterruptedReplyRecoveryTest {
         ConversationMessage row = runningRow(1L, "c-1");
         when(messageMapper.selectRunningAssistantMessages()).thenReturn(List.of(row));
         when(taskMetaService.find("task-1")).thenReturn(meta("task-1", 1L, "RUNNING"));
-        when(registry.getLive("task-1")).thenReturn(mock(AgentTask.class));
+        when(registry.isExecuting("task-1")).thenReturn(true);
 
         recovery.recoverOnStartup();
 

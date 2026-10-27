@@ -46,6 +46,18 @@ public class AgentTaskException extends RuntimeException {
                 "任务正在启动，请稍后重试: " + taskId);
     }
 
+    /**
+     * 任务正在另一个实例上执行。
+     *
+     * <p>本实例没有它的内存事件日志，也没有执行权：既不能接管回放（会缺事件），
+     * 更不能判定中断（会往还在生成的流里写 error+done）。让客户端带退避重试，
+     * 由网关把请求路由回执行节点。</p>
+     */
+    public static AgentTaskException taskNotLocal(String taskId, String nodeId) {
+        return new AgentTaskException(HttpStatus.SERVICE_UNAVAILABLE, "TASK_NOT_LOCAL",
+                "任务正在实例 " + nodeId + " 上执行，请稍后重试: " + taskId);
+    }
+
     public static AgentTaskException cursorExpired(long after) {
         return new AgentTaskException(HttpStatus.GONE, "CURSOR_EXPIRED",
                 "游标之前的事件已过期或被裁剪，无法保证完整回放: after=" + after);

@@ -8,7 +8,9 @@ import com.smartorder.edu.agent.model.enums.AgentEventType;
 import com.smartorder.edu.agent.model.enums.AgentTaskStatus;
 import com.smartorder.edu.agent.model.vo.AgentTaskVO;
 import com.smartorder.edu.agent.runtime.store.AgentTaskEventStore;
+import com.smartorder.edu.agent.runtime.store.AgentTaskStateStore;
 import com.smartorder.edu.agent.runtime.store.InMemoryAgentTaskEventStore;
+import com.smartorder.edu.agent.runtime.store.InMemoryAgentTaskStateStore;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -279,6 +281,73 @@ class AgentTaskRegistryTest {
         assertNull(fixture.registry.activeTask("c-1", 8L));
     }
 
+    // ============ 跨节点语义（状态在 Redis，不在本机 Map） ============
+
+    @Test
+    void shouldNotInterruptOrReplayTaskOwnedByAnotherLiveNode() {
+        Fixture fixture = new Fixture();
+        String taskId = "task-remote";
+        fixture.stateStore.save(remoteState(taskId, "node-b", 1L));
+        fixture.stateStore.registerAliveNode("node-b");
+
+        // 执行者还活着：本机既没有事件日志也没有执行权，绝不能在这里伪造中断
+        assertTrue(fixture.registry.isExecuting(taskId));
+        AgentTaskException error = assertThrows(AgentTaskException.class,
+                () -> fixture.registry.validateSubscription(taskId, 7L, 0L, new RecordingSink()));
+        assertEquals(503, error.getStatus().value());
+        assertEquals("TASK_NOT_LOCAL", error.getCode());
+    }
+
+    @Test
+    void shouldConvergeTaskWhoseExecutorNodeIsGone() {
+        Fixture fixture = new Fixture();
+        String taskId = "task-orphan";
+        fixture.stateStore.save(remoteState(taskId, "node-ghost", 0L));
+
+        // 租约过期 = 执行者真的没了，此时才允许补发中断
+        assertFalse(fixture.registry.isExecuting(taskId));
+        RecordingSink sink = new RecordingSink();
+        validateAndAttach(fixture.registry, taskId, 7L, 0L, sink);
+
+        assertEquals(List.of("agent.error", "done"), sink.eventNames());
+        assertEquals("INTERRUPTED", fixture.registry.status(taskId, 7L).getStatus());
+    }
+
+    @Test
+    void shouldForwardCancelToExecutorOnAnotherNode() {
+        Fixture fixture = new Fixture();
+        String taskId = "task-remote-cancel";
+        fixture.stateStore.save(remoteState(taskId, "node-b", 1L));
+        fixture.stateStore.registerAliveNode("node-b");
+
+        // 取消不再要求"请求必须打到执行节点"：标记写共享存储，执行节点轮询消费
+        assertTrue(fixture.registry.cancel(taskId, 7L));
+        assertTrue(fixture.stateStore.isCancelRequested(taskId));
+
+        // 归属校验仍然生效；执行者已消失时不能假装接受
+        assertThrows(AgentTaskException.class, () -> fixture.registry.cancel(taskId, 8L));
+        fixture.stateStore.expireAliveNode("node-b");
+        assertFalse(fixture.registry.cancel(taskId, 7L));
+    }
+
+    /** 构造一份"由别的节点执行"的任务状态 */
+    private static AgentTaskState remoteState(String taskId, String nodeId, long lastSeq) {
+        long now = System.currentTimeMillis();
+        return AgentTaskState.builder()
+                .taskId(taskId)
+                .userId(7L)
+                .taskRequestId("key-remote")
+                .conversationId("c-remote")
+                .assistantMessageId(12L)
+                .status(AgentTaskStatus.RUNNING.name())
+                .createdAt(now)
+                .updatedAt(now)
+                .lastSeq(lastSeq)
+                .replayable(true)
+                .nodeId(nodeId)
+                .build();
+    }
+
     /** 测试用同步订阅：validate（校验）+ attach（回放/接入），与控制器两阶段路径一致。 */
     private static void validateAndAttach(AgentTaskRegistry registry, String taskId,
                                           Long userId, long afterSeq, AgentEventSink sink) {
@@ -292,12 +361,15 @@ class AgentTaskRegistryTest {
 
         private final AgentTaskEventStore store = new InMemoryAgentTaskEventStore();
 
+        /** 运行时状态现在是"共享存储"，重启注册表时复用同一个实例即可模拟不丢状态 */
+        private final InMemoryAgentTaskStateStore stateStore = new InMemoryAgentTaskStateStore();
+
         private final InMemoryAgentTaskMetaService tasks = new InMemoryAgentTaskMetaService();
 
-        private final AgentTaskRegistry registry = newManager(store, tasks);
+        private final AgentTaskRegistry registry = newManager(store, stateStore, tasks);
 
         AgentTaskRegistry restartedRegistry() {
-            return newManager(store, tasks);
+            return newManager(store, stateStore, tasks);
         }
 
         AgentTask create() {
@@ -330,9 +402,11 @@ class AgentTaskRegistryTest {
                     .build();
         }
 
-        private static AgentTaskRegistry newManager(AgentTaskEventStore store, InMemoryAgentTaskMetaService tasks) {
+        private static AgentTaskRegistry newManager(AgentTaskEventStore store,
+                                                    AgentTaskStateStore stateStore,
+                                                    InMemoryAgentTaskMetaService tasks) {
             // 同步镜像：测试里不启线程，直接写存储，等价于“归档一直成功”
-            AgentTaskEventMirror mirror = new AgentTaskEventMirror(store, tasks) {
+            AgentTaskEventMirror mirror = new AgentTaskEventMirror(store, tasks, stateStore) {
                 @Override
                 public void append(String taskId, AgentTaskEvent event) {
                     store.appendEvent(taskId, event);
@@ -342,7 +416,7 @@ class AgentTaskRegistryTest {
                 public void flush(String taskId) {
                 }
             };
-            return new AgentTaskRegistry(tasks, store, mirror, new AgentSseProperties());
+            return new AgentTaskRegistry(tasks, store, stateStore, mirror, new AgentSseProperties());
         }
     }
 

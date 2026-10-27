@@ -35,11 +35,12 @@ import java.util.Objects;
  * {@code agent_chat_task.task_id} 是同一个值，不需要再通过会话索引反查，
  * 也不会把别的任务正文写进当前气泡。</p>
  *
- * <p><b>与在线链路的分工</b>：本类只处理“库里是 RUNNING、但本机已经没有执行者”的占位行；
- * 本机仍持有 live 任务的（执行线程还活着）一律跳过，交给正常收尾。</p>
+ * <p><b>与在线链路的分工</b>：本类只处理“库里是 RUNNING、但已经没有执行者”的占位行；
+ * 执行者仍然存活的（本机或其它节点）一律跳过，交给正常收尾。</p>
  *
- * <p><b>多实例注意</b>：判活只看本机 {@link AgentTaskRegistry}，与任务的单实例执行语义一致；
- * 多实例部署需要网关粘滞会话，否则别的节点在跑的任务会被误判为中断。</p>
+ * <p><b>多实例</b>：判活走 {@link AgentTaskRegistry#isExecuting(String)}——它读的是
+ * Redis 里的任务状态与节点租约，而不是本机内存。因此"任务正在另一个实例上跑"
+ * 不会再被误判成中断；只有执行者进程真的消失（租约过期）才收敛。</p>
  */
 @Slf4j
 @Component
@@ -113,8 +114,8 @@ public class InterruptedReplyRecovery {
      */
     private boolean recoverOne(ConversationMessage row) {
         AgentTaskMeta meta = resolveMeta(row);
-        if (meta != null && registry.getLive(meta.getTaskId()) != null) {
-            // 本机还在跑：不是僵尸，等它自己收尾
+        if (meta != null && registry.isExecuting(meta.getTaskId())) {
+            // 还在跑（本机或其它节点）：不是僵尸，等它自己收尾
             return false;
         }
         String content = meta == null ? null : rebuildContent(meta);

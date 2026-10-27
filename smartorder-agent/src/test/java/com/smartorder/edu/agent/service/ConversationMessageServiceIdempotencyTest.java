@@ -49,7 +49,8 @@ class ConversationMessageServiceIdempotencyTest {
                 conversationMapper,
                 messageMapper,
                 mock(ConversationService.class),
-                mock(ConversationDraftService.class));
+                mock(ConversationDraftService.class),
+                new com.smartorder.edu.agent.service.impl.InMemoryPendingReplyStore());
 
         Conversation conversation = new Conversation();
         conversation.setId(100L);

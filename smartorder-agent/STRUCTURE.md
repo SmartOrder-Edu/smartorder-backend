@@ -19,7 +19,8 @@
 | `exception/` | 业务异常 | `AgentTaskException`、`BudgetExceededException`、`AttachmentNotReadyException` |
 | `constant/` | 协议常量 | `AgentEventNames` |
 | `util/` | 无状态工具与加载器 | `PromptLoader`、`TitleNormalizer`、`TitleInputExtractor`、`ConfirmationWords`、`AgentStreamCursor` |
-| `runtime/` | **对话任务运行时内核**：内存聚合、事件、订阅、SSE 出口、执行预算 | `AgentTask`、`AgentTaskRegistry`、`AgentTaskEvent(Meta/Subscription)`、`AgentEventSink`、`SseEmitterEventSink`、`AgentTaskEventMirror`、`ExecutionBudget` |
+| `runtime/` | **对话任务运行时内核**：状态聚合、事件、订阅、SSE 出口、执行预算 | `AgentTask`（本机执行句柄）、`AgentTaskState`（Redis 状态快照）、`AgentTaskRegistry`、`AgentTaskEvent(Meta/Subscription)`、`AgentEventSink`、`SseEmitterEventSink`、`AgentTaskEventMirror`、`ExecutionBudget` |
+| `runtime/store/` | **任务非表存储**：事件归档 + 运行时状态 | `AgentTaskEventStore` + `{Redis,InMemory}AgentTaskEventStore`（Redis Stream）、`AgentTaskStateStore` + `{Redis,InMemory}AgentTaskStateStore`（状态/取消/中断/节点租约） |
 | `repository/` | **非表数据访问接口** + MySQL 任务仓储 | `AgentTaskEventStore` + `impl/{Redis,InMemory}AgentTaskEventStore`（Redis Stream）、`AgentTaskRepository` + `impl/MyBatisAgentTaskRepository` |
 | `task/` | 定时任务 | `InterruptedReplyRecovery`（从 Redis Stream 恢复中断正文并收敛任务） |
 | `rag/` | RAG 子模块（检索/重排/评测，保持纵向内聚） | 26 个类 |
@@ -32,10 +33,12 @@
    （无接口的业务服务放 `service/`，例如 `PlanDraftService`）。
 2. **接口与实现**：对外有多个调用方的业务服务写成「`service/X` 接口 + `service/impl/XImpl` 实现」，
    注解（`@Service`、`@Async`、`@Transactional`）只写在实现类上。
-3. **运行时对象不是实体**：对话任务的内存态（带锁、seq 分配、订阅广播）放 `runtime/`，
+3. **运行时对象不是实体**：对话任务的本机执行态（锁、seq 分配、订阅广播）放 `runtime/`，
    不要塞进 `model/entity`；线程安全边界与事件回放语义都由这一层负责。
-4. **数据访问二选一**：表数据走 `mapper`（MyBatis-Plus）；Redis/内存等非表存储走 `repository`。
-   任务元数据属表数据，权威副本在 MySQL；Redis 只存事件片段。
+   **任务状态不放本机**：`status`/`lastSeq`/绑定/取消/中断标记一律经 `AgentTaskStateStore` 落 Redis，
+   本机 `Map` 只能存不可序列化的 SSE 订阅句柄。
+4. **数据访问二选一**：表数据走 `mapper`（MyBatis-Plus）；Redis/内存等非表存储走 `runtime/store`。
+   任务元数据属表数据，落库权威在 MySQL；Redis 存事件片段与运行时状态（活跃/中断/取消/节点租约）。
 5. **`rag`、`tool` 保持纵向**：它们是自洽的子模块，内部按 analysis/retriever/rerank 等职责分包，
    不拆到全局分层里，避免把 AI 工具链切碎。
 

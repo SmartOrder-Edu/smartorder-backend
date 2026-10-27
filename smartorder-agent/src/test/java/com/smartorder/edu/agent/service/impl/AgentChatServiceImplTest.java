@@ -17,6 +17,7 @@ import com.smartorder.edu.agent.runtime.AgentTaskSubscriptionPlan;
 import com.smartorder.edu.agent.runtime.RecordingSink;
 import com.smartorder.edu.agent.runtime.store.AgentTaskEventStore;
 import com.smartorder.edu.agent.runtime.store.InMemoryAgentTaskEventStore;
+import com.smartorder.edu.agent.runtime.store.InMemoryAgentTaskStateStore;
 import com.smartorder.edu.agent.service.AgentChatService;
 import com.smartorder.edu.agent.service.AgentOrchestrator;
 import com.smartorder.edu.agent.service.ConversationDraftService;
@@ -243,7 +244,8 @@ class AgentChatServiceImplTest {
 
     private AgentTaskRegistry newManager(AgentTaskEventStore store) {
         InMemoryAgentTaskMetaService tasks = new InMemoryAgentTaskMetaService();
-        AgentTaskEventMirror mirror = new AgentTaskEventMirror(store, tasks) {
+        InMemoryAgentTaskStateStore stateStore = new InMemoryAgentTaskStateStore();
+        AgentTaskEventMirror mirror = new AgentTaskEventMirror(store, tasks, stateStore) {
             @Override
             public void append(String taskId, AgentTaskEvent event) {
                 store.appendEvent(taskId, event);
@@ -253,6 +255,6 @@ class AgentChatServiceImplTest {
             public void flush(String taskId) {
             }
         };
-        return new AgentTaskRegistry(tasks, store, mirror, new AgentSseProperties());
+        return new AgentTaskRegistry(tasks, store, stateStore, mirror, new AgentSseProperties());
     }
 }
