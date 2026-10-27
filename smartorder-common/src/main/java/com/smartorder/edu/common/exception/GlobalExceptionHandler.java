@@ -6,6 +6,8 @@ import com.smartorder.edu.common.model.vo.Result;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.NestedExceptionUtils;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
@@ -17,6 +19,7 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -28,6 +31,12 @@ import java.util.regex.Pattern;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    /** MySQL：Unknown column 'xxx' in 'where clause' */
+    private static final Pattern UNKNOWN_COLUMN = Pattern.compile("Unknown column '([^']+)'");
+
+    /** MySQL：Table 'db.tbl' doesn't exist */
+    private static final Pattern UNKNOWN_TABLE = Pattern.compile("Table '([^']+)' doesn't exist");
 
     /** SSE 客户端断开时响应已不可写，交由容器回收，不能再返回 JSON Result。 */
     @ExceptionHandler(AsyncRequestNotUsableException.class)
@@ -76,6 +85,38 @@ public class GlobalExceptionHandler {
             }
         }
         return Result.fail(ResultCode.DUPLICATE_KEY_ERROR, friendlyMsg);
+    }
+
+
+    /**
+     * 处理数据库访问异常（含 MyBatis 的 BadSqlGrammarException）。
+     *
+     * <p>MyBatis 的异常 message 是一整段「### Error querying database ... SQL: ... Cause: ...」，
+     * 直接 {@code log.error(..., e)} 会让一条 SQL 错误在日志里刷两遍、前端也展示不下。
+     * 这里只打一行「方法 + 接口 + 根因」，并把「表/列不存在」这类**改 SQL 重试也没用**的错误
+     * 翻译成可执行的提示——它们 100% 是代码与库结构不同步，需要跑迁移脚本。</p>
+     */
+    @ExceptionHandler(DataAccessException.class)
+    public Result<String> handleDataAccessException(DataAccessException e, HttpServletRequest request) {
+        Throwable root = NestedExceptionUtils.getMostSpecificCause(e);
+        String rootCause = root.getMessage() == null ? "" : root.getMessage();
+
+        log.error("[DB] 数据库访问失败: {} {} | {} | 根因: {}",
+                request.getMethod(), request.getRequestURI(),
+                e.getClass().getSimpleName(), rootCause);
+
+        Matcher column = UNKNOWN_COLUMN.matcher(rootCause);
+        if (column.find()) {
+            return Result.fail(ResultCode.SYSTEM_ERROR, String.format(
+                    "数据库缺少字段 %s，代码与表结构不同步，请执行 docs/后端docs/sql 下对应迁移脚本",
+                    column.group(1)));
+        }
+        Matcher table = UNKNOWN_TABLE.matcher(rootCause);
+        if (table.find()) {
+            return Result.fail(ResultCode.SYSTEM_ERROR, String.format(
+                    "数据库缺少表 %s，请先执行建表脚本", table.group(1)));
+        }
+        return Result.fail(ResultCode.SYSTEM_ERROR, "数据库访问异常，请稍后重试");
     }
 
 
@@ -146,10 +187,12 @@ public class GlobalExceptionHandler {
 
 
     @ExceptionHandler(Exception.class)
-    public Result<String> handleException(Exception e) {
-        // 在这里可以添加日志记录等操作
-        log.error("未处理的异常: {}", e.getMessage(), e);
-        return Result.fail(ResultCode.SYSTEM_ERROR, e.getMessage());
+    public Result<String> handleException(Exception e, HttpServletRequest request) {
+        // 原始 message 可能含 SQL、内部路径、框架类名，既不适合回传前端，也不该再拼进日志
+        // （堆栈里已经有）。改成「回传错误编号 + 服务端日志同一编号」，两边对得上即可。
+        String errorId = UUID.randomUUID().toString().substring(0, 8);
+        log.error("[未处理异常][{}] {} {}", errorId, request.getMethod(), request.getRequestURI(), e);
+        return Result.fail(ResultCode.SYSTEM_ERROR, "系统异常，请稍后重试（错误编号 " + errorId + "）");
     }
 
 
